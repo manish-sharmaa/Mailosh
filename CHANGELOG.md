@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.1.1 — 2026-09-05
+
+Bug fixes from a review of the client code. No new features; nothing in the
+deployment story changes.
+
+### Reading and triage
+
+- `z` after auto-advance un-archives the last conversation again, instead of
+  un-reading the next one: the passive mark-read-on-open no longer takes the
+  undo slot, and no longer toasts "Marked as read" on every open.
+- `s` in an open conversation can unstar as well as star.
+- Archived rows are no longer left as invisible zero-height ghosts — still
+  focusable, still counted — when an unrelated swap lands during the collapse.
+- Returning from a conversation whose row has left the list keeps the cursor
+  near where the reader was, rather than on row 1.
+
+### Compose
+
+- Sending inside the ten-second undo window no longer leaves a copy of the
+  sent message in Drafts when an autosave landed in between.
+- Save-and-close, discard and pop-out abort an in-flight autosave first, so a
+  draft is never duplicated or resurrected.
+- A mail-server failure during attachment upload is reported instead of
+  silently dropping the file.
+- A failed load of the compose module is reported and retried on the next
+  attempt, rather than leaving compose dead until reload.
+
+### Labels
+
+- Type-to-create from the picker also applies the new label to the selection,
+  with an undo token. `POST /labels` accepts `ids`.
+- The picker's search field stays available in label mode, so an account with
+  fewer than seven labels can create one from there.
+- One list refresh per label change instead of two.
+
+### Live updates, palette, sign-in
+
+- A session signed out in another tab reaches the login page immediately,
+  instead of showing "connection lost" for up to two minutes.
+- Catch-up refetches carry the real last event id.
+- The ⌘K palette keeps its cursor on the same command when mail arrives while
+  it is open.
+- The sign-in form no longer stays busy after a Back to a cached page.
+
+### Server
+
+- Only a CSRF failure is translated into the "signed out elsewhere" toast;
+  other 403s keep their real status.
+
 ## 0.1.0 — 2026-09-05
 
 The first tagged release. Mailosh is a self-hosted webmail client for

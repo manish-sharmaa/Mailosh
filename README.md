@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-[![Release](https://img.shields.io/badge/release-v0.1.0-1a73e8)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.1.1-1a73e8)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-3776ab)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-passing-2ea043)](#tests)
@@ -41,7 +41,7 @@ no signup.
 
 <a id="status"></a>
 
-## Status — v0.1.0
+## Status — v0.1.1
 
 **Reading, composing, searching and organising all work**, covered by 2,877
 unit tests plus integration tests that run against a live stack.
