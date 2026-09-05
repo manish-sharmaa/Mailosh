@@ -69,11 +69,6 @@ step:
 - **No external security review.** See `SECURITY.md`, which names the parts
   most worth attacking.
 
-### Not built yet
-
-`/settings/*` pages (only the Quick settings panel exists), send-and-archive,
-scheduled send, recipient autocomplete, signatures, and multi-account.
-
 ### Requirements
 
 Docker and Docker Compose, a domain, and a host that can receive on port 25 —
