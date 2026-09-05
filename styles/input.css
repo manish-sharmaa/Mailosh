@@ -1,0 +1,3491 @@
+@import "tailwindcss";
+/* Phase 1D surfaces, split out so search and labels can be authored in
+   parallel. Imported here rather than built separately: `make css` has
+   one entry point, and these need this file's theme tokens. */
+@import "./search.css";
+@import "./labels.css";
+/* Phase 1E. `responsive.css` is imported last of the four so its
+   breakpoint overrides win against the component rules above without
+   needing specificity tricks. */
+@import "./a11y.css";
+@import "./responsive.css";
+
+/* ==========================================================================
+   Design tokens — spec §4.1 (Graphite & Blue, approach C in
+   docs/design/mockups/visual-style.html), amended by the
+   polish pass in docs/design/polish-v2-spec.md §1 (depth,
+   contrast and motion; the frame, the accent, Inter, the density system
+   and the twelve label colours are all unchanged by it). Plain CSS custom
+   properties carry the theme; `@theme inline` below maps the subset of
+   them Tailwind utilities need onto Tailwind's own namespaces. Three
+   blocks, in increasing specificity of "how did the user get dark mode":
+   `:root` is the light default; `:root[data-theme=dark]` is an explicit
+   user choice (`data-theme` rendered server-side onto `<html>` — no flash);
+   the `@media` block is "OS prefers dark AND the user hasn't explicitly
+   forced light" (`:not([data-theme=light])` matches both "no data-theme
+   attribute at all" and `data-theme="system"`), so system-preference dark
+   mode still works with zero client-side JS before first paint. The dark
+   values are therefore intentionally duplicated between the second and
+   third blocks — genuinely two different activation conditions, not a
+   copy/paste slip. Any token added or changed in one of them MUST be
+   written into the other, identically.
+   ========================================================================== */
+
+:root {
+  /* Surfaces */
+  --bg: #EBEEF3;
+  --surface: #FFFFFF;
+  --surface-2: #FFFFFF;
+  --field: #E4E9F0;
+  --read: #F6F8FB;
+  --hover: #E4EAF3;
+
+  /* Borders */
+  --line: #DDE3EB;
+  --line-2: #C3CBD6;
+
+  /* Text */
+  --fg: #111827;
+  --fg-2: #4E5867;
+  --fg-3: #616A79;
+  --fg-disabled: #9AA2AF;
+
+  /* Interactive glyphs and control washes (polish v2 §1.2). `--ctl-hover`
+     and `--ctl-active` are alpha, not opaque, on purpose: one token has to
+     lift off the top bar (`--bg`), the toolbar (`--surface`), a read row
+     and an already-hovered row. An opaque value can only be right on one
+     of them — which is how `.btn-icon:hover` came to paint exactly the
+     colour `.row:hover` had already painted (rest vs hover: 1.000:1). */
+  --icon: #4E5867;
+  --icon-strong: #111827;
+  --icon-quiet: #616A79;
+  --ctl-line: #7D8797;
+  --ctl-hover: rgba(17, 24, 39, .07);
+  --ctl-active: rgba(17, 24, 39, .13);
+
+  /* Accent */
+  --accent: #1A73E8;
+  --accent-ink: #1258C4;
+  --accent-soft: #DCE9FC;
+  --accent-hover: #1667D2;
+  --accent-press: #1259B8;
+  --accent-wash: rgba(26, 115, 232, .08);
+  --on-accent: #FFFFFF;
+
+  /* Focus ring (spec §11's "3:1 UI/focus"). Its own token rather than
+     `--accent` directly, because the ring has a contrast obligation the
+     brand fill does not: it must clear 3:1 against *every* ground a
+     focusable control can sit on. In light that is `--accent` itself —
+     measured 4.51 surface / 4.23 read row / 3.72 hover row / 3.67 selected
+     row / 3.87 page / 3.69 field — so nothing moves here. Dark is where
+     they part; see the dark block. Local overrides (`.toast`) re-point
+     this on inverted surfaces rather than adding a second ring rule. */
+  --focus: #1A73E8;
+
+  /* Status */
+  --star: #F59E0B;
+  --star-ink: #B45309;
+  --danger: #DC2626;
+  --warn: #B45309;
+  --success: #15803D;
+
+  /* Toast */
+  --toast: #111827;
+  --toast-fg: #FFFFFF;
+  --toast-link: #7FB3F5;
+
+  /* Elevation (polish v2 §1.2). --shadow-1 = a hovered row and nothing
+     else in 1A; --shadow-2 = menus, popovers, the docked compose;
+     --shadow-3 = genuinely floating layers (toast, palette, modal). */
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .10);
+  --shadow-2: 0 2px 4px -2px rgba(16, 24, 40, .06), 0 6px 14px -4px rgba(16, 24, 40, .12);
+  --shadow-3: 0 4px 10px -4px rgba(16, 24, 40, .10), 0 18px 44px -12px rgba(16, 24, 40, .24);
+  --shadow-accent: 0 1px 2px rgba(18, 89, 184, .26), 0 4px 10px -3px rgba(26, 115, 232, .34);
+  --shadow-accent-hover: 0 2px 4px rgba(18, 89, 184, .28), 0 8px 18px -4px rgba(26, 115, 232, .44);
+
+  /* Shape and motion — theme-independent, so declared once, here.
+     `--dur-*`/`--ease*` exist because `transition-property` with no
+     duration is a no-op: CSS's initial `transition-duration` is 0s, and
+     `--default-transition-duration` below is a Tailwind *theme* variable
+     that only reaches the `transition` utility class. Every component rule
+     writes an explicit `transition` shorthand instead. */
+  --radius-pill: 999px;
+  --dur-1: 120ms;
+  --dur-2: 160ms;
+  --dur-3: 200ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+
+  /* Label colours (12) — order matches mailosh.ui.format.avatar_color's
+     0..11 index: indigo, emerald, rose, amber, sky, violet, teal, orange,
+     pink, lime, slate, red. */
+  --label-indigo: #6366F1;
+  --label-emerald: #10B981;
+  --label-rose: #F43F5E;
+  --label-amber: #F59E0B;
+  --label-sky: #0EA5E9;
+  --label-violet: #8B5CF6;
+  --label-teal: #14B8A6;
+  --label-orange: #F97316;
+  --label-pink: #EC4899;
+  --label-lime: #84CC16;
+  --label-slate: #64748B;
+  --label-red: #EF4444;
+
+  /* Label *ink* — the text colour of a chip, spec §4.1: "text = the
+     colour's ink shade (light) or the light shade (dark)". These twelve
+     used to be derived at paint time as
+     `color-mix(in srgb, var(--chip) 58%, var(--fg))`, and that mix cannot
+     satisfy AA across the four grounds a chip sits on (`--surface`,
+     `--read`, `--hover`, `--accent-soft`): the yellow-green half of the
+     palette stayed far too light. Measured worst-ground ratios before:
+     orange 3.72, amber 3.75, lime 3.78, emerald 4.00, teal 4.01, pink
+     4.20, sky 4.29, rose 4.32, red 4.45 — nine of twelve under 4.5. Each
+     ink below is the same hue two or three steps darker (the wash stays
+     the label's own colour, so the chip still reads as its label), and the
+     new worst-ground floor is 4.95 (violet), with every other label at
+     5.25 or better. */
+  --label-indigo-ink: #4338CA;
+  --label-emerald-ink: #065F46;
+  --label-rose-ink: #9F1239;
+  --label-amber-ink: #92400E;
+  --label-sky-ink: #075985;
+  --label-violet-ink: #6D28D9;
+  --label-teal-ink: #115E59;
+  --label-orange-ink: #9A3412;
+  --label-pink-ink: #9D174D;
+  --label-lime-ink: #3F6212;
+  --label-slate-ink: #334155;
+  --label-red-ink: #991B1B;
+}
+
+/* Dark — explicit user choice. Carbon rules (spec §4.1): no pure black,
+   greys as depth, lighter surface = nearer. Text weights are raised over
+   Carbon's 90/65/42 (polish v2 §1.1): 42% is a *disabled* value, and the
+   12px dates and Comfortable preview lines set in `--fg-3` are body text.
+   A shadow on a #0D1015 ground carries almost no information, so every
+   dark elevation is paired with a lighter surface — the edge is what
+   reads, not the blur. */
+:root[data-theme=dark] {
+  --bg: #0D1015;
+  --surface: #1C2029;
+  --surface-2: #22262F;
+  --field: #22262F;
+  --read: #15191F;
+  --hover: #272D39;
+
+  --line: #2C313C;
+  --line-2: #3D4350;
+
+  --fg: rgba(255, 255, 255, .92);
+  --fg-2: rgba(255, 255, 255, .72);
+  --fg-3: rgba(255, 255, 255, .56);
+  --fg-disabled: rgba(255, 255, 255, .38);
+
+  --icon: rgba(255, 255, 255, .74);
+  --icon-strong: rgba(255, 255, 255, .95);
+  --icon-quiet: rgba(255, 255, 255, .60);
+  --ctl-line: rgba(255, 255, 255, .38);
+  --ctl-hover: rgba(255, 255, 255, .09);
+  --ctl-active: rgba(255, 255, 255, .15);
+
+  --accent: #1E6FD6;
+  --accent-ink: #A9C9F8;
+  --accent-soft: #1B2942;
+  --accent-hover: #1A73E8;
+  --accent-press: #195FBB;
+  --accent-wash: rgba(42, 128, 234, .16);
+  --on-accent: #FFFFFF;
+
+  /* Dark is where the ring and the brand fill part company. `--accent`
+     (#1E6FD6) is a *dimmed* blue by design (spec §4.1), and dimmed is
+     exactly what a focus ring cannot afford on the Carbon greys: measured
+     against `--bg`/`--surface`/`--read`/`--hover`/`--accent-soft` it is
+     3.90 / 3.34 / 3.61 / **2.83** / **2.98** — the hovered row and the
+     selected row both fail spec §11's 3:1. (The "9.04/7.74/8.37/6.55/5.94"
+     recorded in the `:focus-visible` comment below was measured against
+     the *pre-retune* #8AB4F8 dark accent and has been stale since the
+     accent moved.) #4A8FE7 is the same hue lifted until the worst ground
+     clears: 5.78 / 4.95 / 5.35 / 4.19 / 4.42. The brand accent itself is
+     untouched — buttons, the nav pill and the row bar's identity all keep
+     #1E6FD6. */
+  --focus: #4A8FE7;
+
+  --star: #FBBF24;
+  --star-ink: #FBBF24;
+  --danger: #F87171;
+  --warn: #FBBF24;
+  --success: #4ADE80;
+
+  --toast: #F3F4F6;
+  --toast-fg: #111827;
+  --toast-link: #1667D2;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .55), 0 1px 3px rgba(0, 0, 0, .40);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, .55), 0 8px 20px -6px rgba(0, 0, 0, .55);
+  --shadow-3: 0 6px 14px -6px rgba(0, 0, 0, .50), 0 24px 56px -12px rgba(0, 0, 0, .72);
+  --shadow-accent: 0 1px 2px rgba(0, 0, 0, .60), 0 4px 12px -4px rgba(0, 0, 0, .50);
+  --shadow-accent-hover: 0 2px 4px rgba(0, 0, 0, .62), 0 8px 20px -6px rgba(0, 0, 0, .55);
+
+  --label-indigo: #818CF8;
+  --label-emerald: #34D399;
+  --label-rose: #FB7185;
+  --label-amber: #FBBF24;
+  --label-sky: #38BDF8;
+  --label-violet: #A78BFA;
+  --label-teal: #2DD4BF;
+  --label-orange: #FB923C;
+  --label-pink: #F472B6;
+  --label-lime: #A3E635;
+  --label-slate: #94A3B8;
+  --label-red: #F87171;
+
+  /* Dark chip ink. The chip's wash is transparent, so its composited
+     background lightens with the row underneath it — and the ratio is
+     therefore worst on the two lightest rows, `--hover` and the selected
+     `--accent-soft`. Painting the text in the label colour itself (what
+     shipped) measured 3.51 indigo, 3.77 violet, 3.83 red, 3.91 rose, 3.93
+     slate and 3.94 pink on a hovered row: six failures. One step lighter
+     per hue puts the worst ground at 5.25 (indigo) with everything else
+     above 5.5. The dot in the sidebar and the label's identity still use
+     `--label-*`; only chip text moves. */
+  --label-indigo-ink: #A5B4FC;
+  --label-emerald-ink: #6EE7B7;
+  --label-rose-ink: #FDA4AF;
+  --label-amber-ink: #FCD34D;
+  --label-sky-ink: #7DD3FC;
+  --label-violet-ink: #C4B5FD;
+  --label-teal-ink: #5EEAD4;
+  --label-orange-ink: #FDBA74;
+  --label-pink-ink: #F9A8D4;
+  --label-lime-ink: #BEF264;
+  --label-slate-ink: #CBD5E1;
+  --label-red-ink: #FCA5A5;
+}
+
+/* Dark — OS preference, no explicit override. Same values as above. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme=light]) {
+    --bg: #0D1015;
+    --surface: #1C2029;
+    --surface-2: #22262F;
+    --field: #22262F;
+    --read: #15191F;
+    --hover: #272D39;
+
+    --line: #2C313C;
+    --line-2: #3D4350;
+
+    --fg: rgba(255, 255, 255, .92);
+    --fg-2: rgba(255, 255, 255, .72);
+    --fg-3: rgba(255, 255, 255, .56);
+    --fg-disabled: rgba(255, 255, 255, .38);
+
+    --icon: rgba(255, 255, 255, .74);
+    --icon-strong: rgba(255, 255, 255, .95);
+    --icon-quiet: rgba(255, 255, 255, .60);
+    --ctl-line: rgba(255, 255, 255, .38);
+    --ctl-hover: rgba(255, 255, 255, .09);
+    --ctl-active: rgba(255, 255, 255, .15);
+
+    --accent: #1E6FD6;
+    --accent-ink: #A9C9F8;
+    --accent-soft: #1B2942;
+    --accent-hover: #1A73E8;
+    --accent-press: #195FBB;
+    --accent-wash: rgba(42, 128, 234, .16);
+    --on-accent: #FFFFFF;
+
+    --focus: #4A8FE7;
+
+    --star: #FBBF24;
+    --star-ink: #FBBF24;
+    --danger: #F87171;
+    --warn: #FBBF24;
+    --success: #4ADE80;
+
+    --toast: #F3F4F6;
+    --toast-fg: #111827;
+    --toast-link: #1667D2;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, .55), 0 1px 3px rgba(0, 0, 0, .40);
+    --shadow-2: 0 2px 6px rgba(0, 0, 0, .55), 0 8px 20px -6px rgba(0, 0, 0, .55);
+    --shadow-3: 0 6px 14px -6px rgba(0, 0, 0, .50), 0 24px 56px -12px rgba(0, 0, 0, .72);
+    --shadow-accent: 0 1px 2px rgba(0, 0, 0, .60), 0 4px 12px -4px rgba(0, 0, 0, .50);
+    --shadow-accent-hover: 0 2px 4px rgba(0, 0, 0, .62), 0 8px 20px -6px rgba(0, 0, 0, .55);
+
+    --label-indigo: #818CF8;
+    --label-emerald: #34D399;
+    --label-rose: #FB7185;
+    --label-amber: #FBBF24;
+    --label-sky: #38BDF8;
+    --label-violet: #A78BFA;
+    --label-teal: #2DD4BF;
+    --label-orange: #FB923C;
+    --label-pink: #F472B6;
+    --label-lime: #A3E635;
+    --label-slate: #94A3B8;
+    --label-red: #F87171;
+
+    --label-indigo-ink: #A5B4FC;
+    --label-emerald-ink: #6EE7B7;
+    --label-rose-ink: #FDA4AF;
+    --label-amber-ink: #FCD34D;
+    --label-sky-ink: #7DD3FC;
+    --label-violet-ink: #C4B5FD;
+    --label-teal-ink: #5EEAD4;
+    --label-orange-ink: #FDBA74;
+    --label-pink-ink: #F9A8D4;
+    --label-lime-ink: #BEF264;
+    --label-slate-ink: #CBD5E1;
+    --label-red-ink: #FCA5A5;
+  }
+}
+
+/* Tailwind 4 CSS-first theme map. `inline` (rather than a plain `@theme`
+   block) makes every generated utility reference `var(--bg)` etc. directly,
+   instead of Tailwind snapshotting a static value onto its own `:root`
+   variable at build time — required here since our tokens are
+   theme/density-reactive (swapped by the `[data-theme]`/`[data-density]`
+   attribute and the OS media query above), not fixed. Deliberately not
+   exhaustive: `--toast`/`--toast-fg`/`--toast-link`, `--ctl-hover`/
+   `--ctl-active`, `--accent-wash`/`--accent-hover`/`--accent-press`,
+   `--star-ink`, `--shadow-accent*`, the `--dur-*`/`--ease*` pair and the
+   12 `--label-*` tokens above stay plain custom properties, consumed
+   directly via `var()` by the component rules below and by label-chip
+   markup — they have no sensible utility form. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-field: var(--field);
+  --color-read: var(--read);
+  --color-hover: var(--hover);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-disabled: var(--fg-disabled);
+  --color-icon: var(--icon);
+  --color-icon-strong: var(--icon-strong);
+  --color-icon-quiet: var(--icon-quiet);
+  --color-ctl-line: var(--ctl-line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-star: var(--star);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-success: var(--success);
+  --font-sans: "Inter", "Inter Fallback", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --default-transition-duration: 120ms;
+  --default-transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+  --radius-kbd: 4px;
+  --radius-ctl: 6px;
+  --radius-field: 8px;
+  --radius-card: 10px;
+  --radius-palette: 12px;
+  --radius-pill: var(--radius-pill);
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  --shadow-3: var(--shadow-3);
+}
+
+/* Density — row height + line count per `[data-density]` on `<html>`.
+   Comfortable is the shipped default (Global Constraints), so it's also
+   `:root`'s own fallback, not just `[data-density=comfortable]`'s value —
+   an unset/unrecognized `data-density` still renders at the right size
+   rather than falling through to no `--row-h` at all. Scales row height
+   directly, never by rescaling Tailwind's `--spacing` (spec §4.3) — that
+   would resize padding/gaps app-wide, not just list rows. */
+:root,
+[data-density=comfortable] {
+  --row-h: 52px;
+  --row-lines: 2;
+}
+[data-density=standard] {
+  --row-h: 44px;
+  --row-lines: 1;
+}
+[data-density=compact] {
+  --row-h: 36px;
+  --row-lines: 1;
+}
+
+/* ==========================================================================
+   Type — Inter, self-hosted (spec §4.2). The variable font covers weight
+   400-700 (this app's own type scale never goes outside that), subset to
+   latin + the punctuation/currency/arrow glyphs this UI actually uses
+   (`make fonts`, unicode-range chosen per the Task 2 brief). "Inter
+   Fallback" is a metric-matched local-Arial substitute — same
+   advance widths as Inter itself, via `size-adjust`/`*-override` — so text
+   set in `--font-sans` doesn't visibly reflow the instant the real webfont
+   finishes loading (`font-display: swap` between them).
+   ========================================================================== */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/static/fonts/inter-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  size-adjust: 107.47%;
+  ascent-override: 90.14%;
+  descent-override: 22.44%;
+  line-gap-override: 0%;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  [data-theme=dark] {
+    color-scheme: dark;
+  }
+  /* Third leg, mirroring the token blocks above exactly: OS prefers dark
+     AND the user hasn't explicitly forced light (`prefs.theme="system"`,
+     or no preference recorded yet). Without this, system-dark pages kept
+     every custom-property token correctly dark but left color-scheme at
+     its "light" default, so native form controls/scrollbars still
+     rendered with light UA chrome against a dark page (review finding). */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme=light]) {
+      color-scheme: dark;
+    }
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Never remove outlines (spec §4.2) — :focus-visible only, so a mouse
+     click doesn't leave a ring, but keyboard/AT navigation always does.
+     Two documented exceptions live with their components below
+     (`.btn-icon`, `.nav-item`), both because 2px of offset would collide
+     with a neighbour.
+
+     Ring contrast is measured in `--focus`'s own comment in the token
+     block, not here: the numbers polish v2 §7 recorded at this line
+     ("9.04/7.74/8.37/6.55/5.94 in dark") were taken against the #8AB4F8
+     dark accent and went stale the moment §4.1 retuned it to #1E6FD6,
+     under which two of those five grounds measured below 3:1. `--focus`
+     is `--accent` in light and a lifted #4A8FE7 in dark for that reason;
+     the rings below all reference it rather than `--accent` so a single
+     token still governs every one of them. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* Spec §4.2: "`prefers-reduced-motion: reduce` sets all durations to 0".
+     Delays are part of that promise — a 0s transition that still waits
+     300ms (`.list-skeleton`) is motion the reader asked not to have, just
+     invisible motion — so they are zeroed here too. `scroll-behavior` is
+     deliberately absent: nothing in this app sets it, and every
+     `scrollIntoView` call omits `behavior`, so scrolling is already
+     instant. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0s !important;
+      transition-delay: 0s !important;
+      animation-duration: 0s !important;
+      animation-delay: 0s !important;
+    }
+  }
+}
+
+/* ==========================================================================
+   Components (spec §4.2/§5, polish v2 §2-§7) — the small set of
+   hand-styled classes this task's own layout/macros need (`.kbd` from
+   `mailosh.ui.macros.kbd`) plus the row/nav/chip/toast primitives every
+   later list/thread/palette task builds on, so their markup has somewhere
+   to opt into the design system from day one rather than reinventing it
+   per template.
+
+   Every interactive rule below writes an explicit `transition` shorthand
+   with one of the `--dur-*` tokens. `transition-property` on its own does
+   nothing (initial `transition-duration` is 0s) — that was the whole of
+   "nothing in this UI moves". The `prefers-reduced-motion` block in
+   `@layer base` zeroes all of them with `!important`, so none of these
+   need a guard of their own.
+   ========================================================================== */
+
+@layer components {
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4em;
+    padding: 2px 5px;
+    font: 500 10.5px/1 var(--font-sans);
+    color: var(--icon-quiet);
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-kbd);
+  }
+
+  /* Icon buttons (polish v2 §2). Circular target, `--icon` at rest and
+     `--icon-strong` on hover/press, over an alpha wash that reads
+     identically on the top bar, the toolbar, a read row and a hovered
+     row. Measured light: glyph 5.95:1 on a hovered row, 7.20:1 on the
+     toolbar, 6.19:1 on the top bar; hover glyph 14.7:1. Dark: 8.26 /
+     9.44 / 10.57, hover glyph 12.6. */
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-pill);
+    color: var(--icon);
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease),
+      box-shadow var(--dur-1) var(--ease);
+  }
+  .btn-icon:hover {
+    background: var(--ctl-hover);
+    color: var(--icon-strong);
+  }
+  .btn-icon:active {
+    background: var(--ctl-active);
+    color: var(--icon-strong);
+  }
+  /* 2px of offset would clip inside a 52px row. */
+  .btn-icon:focus-visible {
+    outline-offset: 1px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    /* `--chip` and `--chip-ink` are set per element by list/row.html and
+       thread/header.html as `--chip: var(--label-<name>)` /
+       `--chip-ink: var(--label-<name>-ink)`. The wash stays the label's
+       own colour at spec §4.1's 14% (18% dark); the text is the palette's
+       ink shade, which is the only half of the pair that can be tuned for
+       contrast without changing what colour the label *is*. Deriving the
+       ink with a `color-mix` against `--fg` (what shipped) failed AA on
+       nine of twelve labels in light and six of twelve in dark — see the
+       `--label-*-ink` block above for the measurements. Because the ink
+       tokens are themselves theme-swapped, `color` is now declared once
+       for both themes and only the wash needs the dark overrides. */
+    background: color-mix(in srgb, var(--chip) 14%, transparent);
+    color: var(--chip-ink, var(--fg));
+  }
+  :root[data-theme=dark] .chip {
+    background: color-mix(in srgb, var(--chip) 18%, transparent);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme=light]) .chip {
+      background: color-mix(in srgb, var(--chip) 18%, transparent);
+    }
+  }
+  /* The "+2" overflow chip carries no label colour of its own, so it opts
+     out of the mix in every theme — hence the matching dark selectors. */
+  .chip-more,
+  :root[data-theme=dark] .chip-more {
+    background: var(--field);
+    color: var(--fg-2);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme=light]) .chip-more {
+      background: var(--field);
+      color: var(--fg-2);
+    }
+  }
+
+  /* Nav pills (polish v2 §5.1). `<nav>` keeps `px-2`, so a pill is the
+     full 208px of the rail — Gmail's and Proton's full-width pill, and
+     the reason the hover finally reads (1.148 light / 1.254 dark, against
+     1.038 before). Active fill vs the nav ground: 1.105 / 1.523. */
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: var(--radius-pill);
+    color: var(--fg-2);
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .nav-item svg {
+    color: var(--icon);
+  }
+  .nav-item:hover {
+    background: var(--ctl-hover);
+    color: var(--fg);
+  }
+  .nav-item:hover svg {
+    color: var(--icon-strong);
+  }
+  .nav-item[aria-current=page] {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+  .nav-item[aria-current=page] svg {
+    color: var(--accent);
+  }
+  /* Keep the active fill visible under a hover rather than replacing it. */
+  .nav-item[aria-current=page]:hover {
+    box-shadow: inset 0 0 0 999px var(--ctl-hover);
+  }
+  /* A full-bleed pill has no room for an outside ring. */
+  .nav-item:focus-visible {
+    outline-offset: -2px;
+  }
+
+  /* Disabled controls take a token colour, not an opacity. Stacking .55
+     opacity on `--fg-2` produced an effective 36% white in dark, which is
+     why every top-bar control read as disabled — including the ones that
+     are not (polish v2 §2). */
+  .nav-item[aria-disabled=true],
+  .btn-icon[aria-disabled=true],
+  [role=search][aria-disabled=true] {
+    cursor: default;
+  }
+  .btn-icon[aria-disabled=true] {
+    color: var(--fg-disabled);
+  }
+  .btn-icon[aria-disabled=true]:hover,
+  .btn-icon[aria-disabled=true]:active {
+    background: transparent;
+    color: var(--fg-disabled);
+  }
+  .nav-item[aria-disabled=true] {
+    opacity: .55;
+  }
+
+  /* The search pill gains a resting hairline so it still reads as a field
+     against the deeper `--bg` (polish v2 §3.2). Focus adds the accent
+     border + `--accent-wash` ring when search itself ships in 1D. */
+  [role=search] {
+    border: 1px solid var(--line);
+    transition:
+      background-color var(--dur-1) var(--ease),
+      border-color var(--dur-1) var(--ease),
+      box-shadow var(--dur-1) var(--ease);
+  }
+  [role=search]:hover:not([aria-disabled=true]) {
+    border-color: var(--line-2);
+  }
+
+  /* Connection-lost banner (spec §5.4), rendered by
+     `fragments/offline.html` into its own grid row under the top bar and
+     shown while `$store.ui.offline` is set.
+
+     The active-nav-item pair — `--accent-ink` on `--accent-soft` — rather
+     than `--warn`, for two reasons: the copy is reassuring rather than
+     alarming ("Reconnecting to your mailbox", not "Connection lost"), and
+     that pair is already vetted in all three theme blocks (6.10:1 light,
+     8.72:1 dark) where `--warn` has no paired surface token and would have
+     needed one added to each of them for a single strip.
+
+     `display: flex` is safe against the `hidden` attribute this element
+     ships with: Tailwind's preflight `[hidden]` rule carries `!important`,
+     so it wins over this despite sitting in an earlier layer. That is what
+     the whole hidden/shown mechanism rests on — see the fragment's own
+     comment before changing either half. */
+  .offline {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line);
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  /* Nav (spec §5.2) — the Compose button, the label dot/count, the More
+     disclosure and the section heading. `.nav-item` itself is above.
+     Press *shrinks* the shadow rather than translating the button: depth,
+     not bounce (polish v2 §4 — no transform on hover or press anywhere in
+     this pass). Label on fill measures 4.95:1 light / 9.04:1 dark, and
+     each of rest/hover/press is distinguishable from the others by fill
+     alone (1.245/1.579 light, 1.226/1.306 dark). */
+  .compose-btn {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 38px;
+    margin: 2px 0 12px;
+    padding: 0 14px;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 600;
+    letter-spacing: -.005em;
+    cursor: pointer;
+    box-shadow: var(--shadow-accent);
+    transition:
+      background-color var(--dur-2) var(--ease),
+      box-shadow var(--dur-2) var(--ease);
+  }
+  .compose-btn:hover {
+    background: var(--accent-hover);
+    box-shadow: var(--shadow-accent-hover);
+  }
+  .compose-btn:active {
+    background: var(--accent-press);
+    box-shadow: var(--shadow-1);
+  }
+  .compose-btn[aria-disabled=true] {
+    opacity: .6;
+    cursor: default;
+  }
+  .compose-btn[aria-disabled=true]:hover {
+    background: var(--accent);
+    box-shadow: var(--shadow-accent);
+  }
+  .compose-btn .kbd {
+    margin-left: auto;
+    background: rgba(255, 255, 255, .16);
+    border-color: rgba(255, 255, 255, .32);
+    border-bottom-width: 1px;
+    color: var(--on-accent);
+  }
+  :root[data-theme=dark] .compose-btn .kbd {
+    background: rgba(0, 0, 0, .14);
+    border-color: rgba(0, 0, 0, .28);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme=light]) .compose-btn .kbd {
+      background: rgba(0, 0, 0, .14);
+      border-color: rgba(0, 0, 0, .28);
+    }
+  }
+
+  .nav-count {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .nav-dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    margin: 0 3px;
+    border-radius: 50%;
+  }
+  .nav-heading {
+    display: flex;
+    align-items: center;
+    padding: 16px 12px 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+  .nav-more > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .nav-more > summary::-webkit-details-marker {
+    display: none;
+  }
+  /* A disclosure's own state change, not a hover or a press — the one
+     place this pass animates a transform (polish v2 §6). */
+  .nav-chev {
+    transition: transform var(--dur-2) var(--ease);
+  }
+  .nav-more[open] .nav-chev {
+    transform: rotate(180deg);
+  }
+
+  /* List toolbar (44px, spec §4.3) and the surface the rows sit on. */
+  .list-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+    height: 44px;
+    padding: 0 8px 0 14px;
+    border-bottom: 1px solid var(--line);
+    color: var(--fg-2);
+  }
+  .toolbar-sep {
+    width: 1px;
+    height: 18px;
+    margin: 0 7px;
+    background: var(--line);
+  }
+  .list-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+  .list {
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  /* The checkbox square shared by the toolbar's select-all and every row
+     (polish v2 §5.3). The old `opacity: .6` is gone: it took the outline
+     to 1.23:1 light / 1.38:1 dark, well under AA's 3:1 for a control.
+     `--ctl-line` measures 3.63 on `--surface`, 3.41 on a read row and
+     3.00 on a hovered row (light); 3.53 / 3.55 / 3.34 (dark). */
+  .check-box,
+  .row-check {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--ctl-line);
+    border-radius: 4px;
+    background: var(--surface);
+    color: transparent;
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      border-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .check-box:hover,
+  .row-check:hover,
+  .row:hover .row-check {
+    border-color: var(--icon-strong);
+  }
+  .check-box[aria-checked=true],
+  .check-box[aria-pressed=true],
+  .row-check[aria-pressed=true] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+  }
+  .check-box[aria-checked=mixed] {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  /* On a tinted row an unchecked box needs the accent edge to stay at 3:1
+     (it measures 3.85 light / 5.94 dark there). */
+  .row.is-selected .row-check,
+  .row[aria-current=true] .row-check {
+    border-color: var(--accent);
+  }
+  /* Tri-state glyphs: neither is drawn at "false" (the box itself is the
+     control), a dash at "mixed", a tick at "true". */
+  .check-all,
+  .check-some {
+    display: none;
+  }
+  .check-box[aria-checked=true] .check-all,
+  .check-box[aria-checked=mixed] .check-some {
+    display: block;
+  }
+
+  /* A row carries two independent shadows — the focus/open accent bar and
+     the hover lift — so they compose through two custom properties rather
+     than competing for the one `box-shadow` declaration. They used to
+     compete, and the bar won: `.row.is-focused` and `.row[aria-current]`
+     are the same specificity as `.row:hover` and are written after it, so
+     a hovered row that was also the keyboard cursor lost its elevation
+     entirely. Since app.js puts `.is-focused` on row 1 at load, that made
+     the *first* row a reader hovers the one with the weakest feedback in
+     the list. Substitution happens at computed-value time, so this is
+     order-independent by construction, not by rule placement.
+
+     Both rest values keep the layer count and the `inset` flag of the
+     values that replace them (`--shadow-1` is a two-layer shadow), which
+     is what lets `transition: box-shadow` interpolate rather than snap. */
+  .row {
+    --row-bar: inset 0 0 0 transparent;
+    --row-lift: 0 0 0 transparent, 0 0 0 transparent;
+    --row-quiet: var(--fg-3);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: var(--row-h);
+    padding: 0 12px 0 14px;
+    background: var(--read);
+    border-bottom: 1px solid var(--line);
+    box-shadow: var(--row-bar), var(--row-lift);
+    position: relative;
+    transition:
+      background-color var(--dur-2) var(--ease),
+      box-shadow var(--dur-2) var(--ease),
+      border-color var(--dur-2) var(--ease);
+  }
+  .row.is-unread {
+    background: var(--surface);
+  }
+  /* 12px quiet text (the date, the Comfortable preview line) is body text
+     and owes 4.5:1, and `--fg-3` does not pay it on a tinted row: 4.25 on
+     `--accent-soft`, and 4.14 once the focus wash sits on a hovered row.
+     One inherited property re-pointed by the tinted states, rather than a
+     second `color` rule per element — `.row.is-unread .row-date`'s own
+     `--fg` still outranks it. Light floor moves 3.91 -> 5.15, dark
+     4.49 -> 6.26, across all eight read/unread x hover/wash/tint grounds. */
+  .row.is-focused,
+  .row.is-selected,
+  .row[aria-current=true] {
+    --row-quiet: var(--fg-2);
+  }
+  /* Read -> hover is 1.137 light / 1.277 dark (it was 1.048 / 1.100 —
+     *less* of a step than read-vs-unread itself). `z-index` so the lift's
+     shadow paints over its neighbours rather than under them. */
+  .row:hover {
+    --row-lift: var(--shadow-1);
+    background: var(--hover);
+    border-bottom-color: transparent;
+    z-index: 1;
+  }
+  /* The row above a hovered row drops its hairline too, so the lift has a
+     clean top edge. `:has()` is baseline in every browser this app
+     supports; where it is missing the only consequence is that hairline
+     staying drawn — harmless, and no layout change. */
+  .row:has(+ .row:hover) {
+    border-bottom-color: transparent;
+  }
+  /* Keyboard cursor: the accent bar keeps its identity, the wash makes it
+     legible without stealing the selected state's stronger fill. A
+     gradient layer, not a background-color, so the read/unread colour
+     underneath survives (delta 1.097 light / 1.192 dark). */
+  .row.is-focused {
+    --row-bar: inset 3px 0 0 var(--focus);
+    background-image: linear-gradient(var(--accent-wash), var(--accent-wash));
+  }
+  .row.is-selected {
+    background: var(--accent-soft);
+  }
+  .row[aria-current=true] {
+    --row-bar: inset 3px 0 0 var(--focus);
+    background: var(--accent-soft);
+  }
+  /* The bar is drawn `inset`, but the `:focus-visible` ring is not: at the
+     base rule's `outline-offset: 2px` it lands 2px *outside* a row that is
+     already the full width of `.list`, whose `overflow-y: auto` clips it —
+     so a keyboard reader saw the ring's top and bottom strokes and no
+     sides. Pulling the offset inward keeps all four strokes inside the
+     scrollport. This is the third documented exception to "never remove
+     outlines" and, like `.nav-item`'s, it moves the ring rather than
+     dropping it. Contrast holds on the fill the ring now sits on rather
+     than the list ground it used to: across focused x read/unread/hover/
+     selected, `--focus` measures 4.44/4.08/3.48/3.63 in dark and
+     3.83/4.06/3.39/3.34 in light — worst case 3.34, still over 3:1. */
+  .row:focus-visible {
+    outline-offset: -2px;
+  }
+  /* A row on its way out (static/js/actions.js). Height and opacity move
+     together over `--dur-2`, so the rows below close the gap in the same
+     beat the row fades and a bulk archive reads as one movement rather
+     than a flash followed by a jump. The transition is declared on the
+     leaving state rather than on `.row`, since it is the only state that
+     animates either property. The reduced-motion block in `@layer base`
+     zeroes the duration; actions.js drops its matching delay there too, so
+     the row is simply gone rather than gone-after-160ms-of-nothing. */
+  .row.is-leaving {
+    height: 0;
+    opacity: 0;
+    overflow: hidden;
+    border-bottom-color: transparent;
+    pointer-events: none;
+    transition:
+      height var(--dur-2) var(--ease),
+      opacity var(--dur-2) var(--ease);
+  }
+
+  /* Spec §5.3's rendering budget for a long list: rows past the first
+     hundred are skipped entirely until they scroll near the viewport.
+     `auto` keeps the reserved height honest once a row has been laid out,
+     so the scrollbar never jumps. */
+  .row:nth-child(n+101) {
+    content-visibility: auto;
+    contain-intrinsic-size: auto var(--row-h);
+  }
+
+  /* The row's real hit target (review finding B2). The row used to be a
+     bare `<div>` carrying `hx-get`, so it had no pointer cursor, did
+     nothing on Cmd/middle-click or "Open link in new tab", and was inert
+     with JS off. This is a real anchor to the conversation, stretched
+     over the whole row; `hx-boost` (rather than `hx-get`) is what makes
+     htmx hand a Cmd/Ctrl-click back to the browser instead of swallowing
+     it, while a plain click still swaps `#main` in place.
+
+     It sits *under* the row's own controls: the anchor is a positioned
+     child at `z-index: 0`, the checkbox/star/hover-actions are positioned
+     at `z-index: 1`, so their clicks reach them and everything else in
+     the row (sender, subject, chips, date) opens the conversation. */
+  .row-link {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    cursor: pointer;
+  }
+  .row-check,
+  .row-star,
+  .row-actions {
+    position: relative;
+    z-index: 1;
+  }
+
+  .row-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+  }
+  /* The amber fill stays the identity colour; the darker stroke is what
+     carries contrast in light, where the fill alone is only 1.67-2.15:1
+     on the four row states (polish v2 §5.4). Off-star: 4.25-5.46 light,
+     5.62-7.19 dark. On-star outline: 3.91-5.02 light, 7.50-10.56 dark.
+     `--star` has a dark value of its own (spec §1.1 always said #FBBF24;
+     the token was declared once in `:root` and dark rendered the light
+     amber, so that value had never actually shipped). The stroke was and
+     is what carries the contrast, so this is cosmetic — it moves the dark
+     fill from 5.83-7.59 to 7.50-10.56, i.e. onto the same colour as the
+     stroke, which is what makes the dark star read as one solid mark. */
+  .row-star {
+    flex: none;
+    color: var(--icon-quiet);
+    cursor: pointer;
+    transition: color var(--dur-1) var(--ease);
+  }
+  .row-star:hover {
+    color: var(--icon-strong);
+  }
+  .row-star.is-on,
+  .msg-star.is-on {
+    color: var(--star-ink);
+  }
+  .row-star.is-on svg,
+  .msg-star.is-on svg {
+    fill: var(--star);
+    stroke: var(--star-ink);
+    stroke-width: 1.5;
+  }
+
+  .row-from {
+    flex: none;
+    width: 170px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--fg-2);
+  }
+  .row.is-unread .row-from {
+    font-weight: 600;
+    color: var(--fg);
+  }
+  /* 1099.98, not 1100: spec §4.3 puts the sender column at 170px down to
+     and including 1100, and 140 only below it. `max-width: 1100px` fires
+     *at* 1100 and took a pixel off the wrong side of the boundary. The
+     hundredths match the convention in `responsive.css`, whose own 1100 and
+     768 boundaries were measured exact. */
+  @media (max-width: 1099.98px) {
+    .row-from {
+      width: 140px;
+    }
+  }
+
+  .row-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--fg-2);
+  }
+  .row-subject {
+    color: var(--fg);
+  }
+  .row.is-unread .row-subject {
+    font-weight: 600;
+  }
+  /* Compact/Standard put subject and snippet on one line, separated the way
+     Gmail does; Comfortable (the shipped default) breaks them onto two. */
+  .row-preview::before {
+    content: " – ";
+  }
+  [data-density=comfortable] .row-text {
+    white-space: normal;
+    line-height: 1.35;
+  }
+  [data-density=comfortable] .row-subject,
+  [data-density=comfortable] .row-preview {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  [data-density=comfortable] .row-preview {
+    font-size: 12px;
+    color: var(--row-quiet);
+  }
+  [data-density=comfortable] .row-preview::before {
+    content: none;
+  }
+
+  .row-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+  }
+  .row-chips {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  /* Date and hover actions share one fixed-width cell, so swapping between
+     them never reflows the subject beside it: three 28px buttons + gaps. */
+  .row-end {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex: none;
+    width: 88px;
+  }
+  .row-date {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--row-quiet);
+  }
+  .row.is-unread .row-date {
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .row-actions {
+    display: none;
+    align-items: center;
+    gap: 2px;
+  }
+  .row:hover .row-date,
+  .row:focus-within .row-date {
+    display: none;
+  }
+  .row:hover .row-actions,
+  .row:focus-within .row-actions {
+    display: flex;
+  }
+  /* Every row ships both mail buttons and `.is-unread` picks one
+     (list/row.html), which is what makes the optimistic mark-as-read in
+     actions.js a class flip rather than a DOM rebuild. `display` toggles
+     it, not `visibility` or opacity, so the one that does not apply is out
+     of the tab order and out of the accessibility tree too. */
+  .row .act-read {
+    display: none;
+  }
+  .row.is-unread .act-read {
+    display: inline-flex;
+  }
+  .row.is-unread .act-unread {
+    display: none;
+  }
+
+  /* Endless-scroll sentinel: present only while another page exists. */
+  .row-sentinel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 44px;
+  }
+  /* The sentinel carries `role="row"`, so its contents have to sit inside a
+     `role="gridcell"` (list/rows.html). That cell is a `<span>`, and an
+     inline box would drop the spinner's width/height on the floor — as a
+     direct flex child it was blockified for free. */
+  .sentinel-cell {
+    display: flex;
+    align-items: center;
+  }
+  .sentinel-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--line-2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: om-spin 700ms linear infinite;
+  }
+  @keyframes om-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Skeleton — spec §5.4: visible only once a request has been in flight
+     for 300ms. htmx toggles `.htmx-request` on this element (every list
+     request points `hx-indicator` at it); the delay lives entirely in the
+     transition, so a fast swap never paints a frame of it. */
+  .list-skeleton {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: var(--surface);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms linear;
+    transition-delay: 300ms;
+  }
+  .list-skeleton.htmx-request {
+    opacity: 1;
+  }
+  .skeleton-row {
+    background: var(--surface);
+  }
+  .skeleton-bar {
+    height: 9px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--line) 25%, var(--hover) 37%, var(--line) 63%);
+    background-size: 400% 100%;
+    animation: om-shimmer 1.4s ease infinite;
+  }
+  .skeleton-grow {
+    flex: 1;
+  }
+  @keyframes om-shimmer {
+    0% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0 50%;
+    }
+  }
+
+  /* Empty state (spec §5.4) and the 404 page that reuses its register. */
+  .empty-state {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 72px 24px;
+    text-align: center;
+  }
+  .empty-art {
+    width: 120px;
+    margin-bottom: 10px;
+  }
+  .empty-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .empty-body {
+    color: var(--fg-2);
+  }
+
+  /* Conversation view (spec §7, mockup key-moments.html §1).
+
+     A card is a native `<details>`: the whole `<summary>` row is the
+     control, and the same row is both the collapsed one-liner (avatar,
+     name, snippet, date) and the open card's header (avatar, name,
+     address, date). Which of the two the reader sees is one pair of rules
+     below — `.msg-snippet` and `.msg-addr` swapping on `[open]` — rather
+     than two blocks of markup that could drift apart.
+
+     The star and the ⋮ menu are absolutely positioned siblings of that
+     `<details>`, not children of its `<summary>`: interactive content
+     inside a summary either toggles the disclosure on its way (the star)
+     or is invalid outright (the menu is itself a `<details>`). Same
+     technique as `.row-controls` painting above `.row-link`. */
+  .thread-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 18px 32px;
+  }
+  .thread-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 2px 12px;
+  }
+  .thread-subject {
+    min-width: 0;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -.012em;
+  }
+  .thread-chips {
+    display: flex;
+    flex: none;
+    gap: 6px;
+  }
+
+  .msg {
+    position: relative;
+    margin-bottom: 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+  }
+  /* Unread mail keeps saying so inside the conversation, not just in the
+     list it came from. An inset edge rather than a border so the card's
+     own geometry does not shift by a pixel when it is read. */
+  .msg.is-unread {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  .msg-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    /* The right inset is where `.msg-tools` paints. Reserving it here is
+       what keeps the date clear of the star even on a narrow card. */
+    padding: 12px 74px 12px 16px;
+    border-radius: var(--radius-card);
+    cursor: pointer;
+    list-style: none;
+  }
+  .msg-summary::-webkit-details-marker {
+    display: none;
+  }
+  .msg-fold:not([open]) > .msg-summary:hover {
+    background: var(--hover);
+  }
+  .msg-summary:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  .avatar-sm {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    color: #fff;
+    font-weight: 600;
+  }
+  .msg-who {
+    display: flex;
+    flex: 1;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+  }
+  .msg-name {
+    flex: none;
+    font-weight: 600;
+  }
+  .msg-addr {
+    flex: none;
+    color: var(--fg-3);
+    font-size: 12px;
+  }
+  .msg-snippet {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg-2);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* One row, two states. */
+  .msg-fold[open] > .msg-summary .msg-snippet,
+  .msg-fold:not([open]) > .msg-summary .msg-addr {
+    display: none;
+  }
+  .msg-when {
+    flex: none;
+    color: var(--fg-3);
+    font-size: 12px;
+  }
+
+  .msg-tools {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  /* A collapsed row is one line and one control: the row itself. */
+  .msg-fold:not([open]) ~ .msg-tools {
+    display: none;
+  }
+
+  /* The account menu on the top bar's avatar. Reuses `.menu-panel` and
+     `.menu-item` from the message menu below rather than growing a second
+     popover vocabulary -- the two are the same object with different
+     contents, and a reader who has opened one knows how the other behaves. */
+  .account-menu {
+    position: relative;
+    margin-left: 6px;
+  }
+  .account-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+  }
+  /* The disclosure triangle, in both engines. Safari needs the WebKit
+     pseudo-element; `list-style: none` above is what Firefox and Chromium
+     read. Missing either leaves a marker beside a round avatar. */
+  .account-avatar::-webkit-details-marker {
+    display: none;
+  }
+  .account-avatar::marker {
+    content: "";
+  }
+  .account-avatar:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .account-panel {
+    min-width: 232px;
+  }
+  /* Who you are signed in as. Not a control: the menu exists because a
+     reader wants to leave, and the first question they ask is which
+     account they are leaving. */
+  .account-who {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 8px 10px 9px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+  .account-name {
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  /* When there is no display name this is the only line, so it carries the
+     weight the name would have had. `:only-child` rather than a second
+     class: the template decides whether a name exists, and the stylesheet
+     should not need telling twice. */
+  .account-email:only-child {
+    color: var(--fg);
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .account-email {
+    color: var(--fg-2);
+    font-size: 12px;
+    /* Long addresses wrap rather than widening the panel past the viewport
+       edge on a phone. */
+    overflow-wrap: anywhere;
+  }
+
+  .msg-menu {
+    position: relative;
+  }
+  .msg-menu-toggle {
+    list-style: none;
+  }
+  .msg-menu-toggle::-webkit-details-marker {
+    display: none;
+  }
+  .menu-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 20;
+    min-width: 214px;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface-2);
+    box-shadow: var(--shadow-2);
+  }
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 6px;
+    color: var(--fg);
+    font-size: 13px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color var(--dur-1) var(--ease);
+  }
+  .menu-item svg {
+    flex: none;
+    color: var(--icon);
+  }
+  .menu-item:hover,
+  .menu-item:focus-visible {
+    background: var(--hover);
+  }
+  .menu-item-danger,
+  .menu-item-danger svg {
+    color: var(--danger);
+  }
+
+  /* The recipient disclosure sits under the name, indented past the
+     avatar (16px of card padding + a 32px avatar + the 10px gap). */
+  .msg-recipients {
+    padding: 0 16px 0 58px;
+  }
+  .msg-details {
+    position: relative;
+    display: inline-block;
+  }
+  .msg-details-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--fg-3);
+    font-size: 12px;
+    list-style: none;
+    cursor: pointer;
+    transition: color var(--dur-1) var(--ease);
+  }
+  .msg-details-toggle::-webkit-details-marker {
+    display: none;
+  }
+  .msg-details-toggle:hover {
+    color: var(--fg-2);
+  }
+  .msg-details-chev {
+    width: 12px;
+    height: 12px;
+    transition: transform var(--dur-1) var(--ease);
+  }
+  .msg-details[open] .msg-details-chev {
+    transform: rotate(180deg);
+  }
+  .msg-details-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 20;
+    min-width: 272px;
+    max-width: min(440px, 72vw);
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface-2);
+    box-shadow: var(--shadow-2);
+    font-size: 12px;
+  }
+  .msg-details-row {
+    display: flex;
+    gap: 10px;
+    padding: 2px 0;
+  }
+  .msg-details-row dt {
+    flex: none;
+    width: 66px;
+    color: var(--fg-3);
+    text-align: right;
+  }
+  .msg-details-row dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .msg-body {
+    padding: 10px 16px 14px 58px;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .msg-text {
+    /* The measure belongs to the text, not to the card: an HTML message's
+       frame is laid out by the sender and has to keep the full width. */
+    max-width: 68ch;
+    font: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  /* Height is the resize handshake's (`/m/{id}/html` posts its own
+     document height); this is only what the frame occupies until the
+     first message arrives.
+
+     One class, not two. `thread/message.html` used to spell its own
+     `<iframe class="msg-frame">` inline while `thread/frame.html` — the
+     partial the remote-image banner swaps — rendered `.mail-frame`, which
+     nothing here styled: the card looked right and every swapped-in frame
+     dropped to the UA's default 300x150 box. The card includes the
+     partial now, and `.mail-frame` is the only spelling left. */
+  /* Everything the "Show original" swap replaces: the dark-restyle strip
+     and the frame under it. `thread/message.html` renders the pair;
+     `POST /m/{id}/restyle` answers with the frame alone, so the swap is
+     what removes the strip. */
+  .frame-area {
+    display: block;
+  }
+  .mail-frame-wrap {
+    display: block;
+  }
+  /* The placeholder `thread/message.html` renders until `GET /m/{id}/frame`
+     answers with the banner and the real frame. It keeps `.mail-frame`'s
+     starting height for two reasons: the swap lands without the card
+     jumping under the reader, and a zero-height box is one an
+     IntersectionObserver may never report as intersecting -- which for an
+     `intersect once` trigger means a message body that never loads at
+     all. */
+  .frame-loading {
+    min-height: 200px;
+  }
+  .mail-frame {
+    display: block;
+    width: 100%;
+    height: 200px;
+    border: 0;
+  }
+
+  /* The blocked-remote-images banner (spec §7, `thread/banner.html`) —
+     a strip above the frame and inside the same wrapper, so the swap that
+     loads the images carries the banner away with it rather than leaving
+     it behind still claiming they are blocked. */
+  .frame-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-field);
+    background: var(--field);
+    font-size: 12px;
+  }
+  .frame-banner-icon {
+    flex: none;
+    margin-top: 1px;
+    color: var(--fg-3);
+  }
+  .frame-banner-text {
+    flex: 1;
+    min-width: 0;
+    color: var(--fg-2);
+  }
+  /* The hosts sit on their own line under the count, in the quieter text
+     colour: the count is the claim, the hosts are the evidence for it. */
+  .frame-banner-hosts {
+    display: block;
+    color: var(--fg-3);
+    overflow-wrap: anywhere;
+  }
+  .frame-banner-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  /* The form wraps one button and one hidden input; it is a layout
+     no-op that exists so the address travels as a form field rather than
+     as JSON in an attribute (see thread/banner.html). */
+  .frame-banner-form {
+    display: flex;
+  }
+  .frame-banner-btn {
+    flex: none;
+    /* A `From` address can be long enough to push the frame sideways.
+       Clipped rather than wrapped: the button stays one line high next to
+       a two-line message, and the full address is still readable in the
+       banner's own copy above. */
+    max-width: 240px;
+    overflow: hidden;
+    height: 24px;
+    padding: 0 9px;
+    border-radius: var(--radius-pill);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: background-color var(--dur-1) var(--ease);
+  }
+  .frame-banner-btn:hover {
+    background: var(--ctl-hover);
+  }
+  .frame-banner-btn:active {
+    background: var(--ctl-active);
+  }
+  .frame-banner-btn:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* The dark-restyle strip says "showing this message in dark mode", so it
+     may only be on screen while the page actually is. `thread/message.html`
+     gates on the reader's *settings* (dark restyle on, theme not light),
+     which is all the server can know; this is the other half — a "system"
+     reader whose OS is light gets the same markup and never sees it.
+
+     Three selectors for the same reason the token blocks above have three:
+     `[data-theme=light]` is an explicit choice, and the media query covers
+     "OS prefers light" for both an explicit `system` and no attribute at
+     all. `display: none` rather than opacity: there is nothing to reveal
+     here, and the form inside must leave the tab order with it. */
+  .frame-banner-dark {
+    display: none;
+  }
+  :root[data-theme=dark] .frame-banner-dark {
+    display: flex;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme=light]) .frame-banner-dark {
+      display: flex;
+    }
+  }
+  .msg-truncated {
+    max-width: 68ch;
+    margin-top: 10px;
+    color: var(--fg-3);
+    font-size: 12px;
+  }
+  .msg-truncated a {
+    color: var(--accent);
+  }
+  .msg-truncated a:hover {
+    text-decoration: underline;
+  }
+
+  /* Attachment chips (spec §7, `thread/attachments.html`). A wrapping row
+     of pills under the body; `max-width` is the card's, not the text
+     measure's, since a chip is a control rather than something to read. */
+  .attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .attachment-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    height: 34px;
+    padding: 0 6px 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-field);
+    background: var(--surface);
+    font-size: 12px;
+  }
+  .attachment-chip:hover {
+    background: var(--read);
+  }
+  .chip-glyph {
+    flex: none;
+    color: var(--fg-3);
+  }
+  .chip-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg);
+    font-weight: 500;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .chip-size {
+    flex: none;
+    color: var(--fg-3);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Faded, never removed. `display: none` would take these two links out
+     of the box tree and therefore out of the tab order, and a control that
+     cannot be focused can never reveal itself — which is precisely the bug
+     spec §11 forbids and 1A already fixed once on list rows. `opacity`
+     leaves them focusable at all times, so Tab reaches them and
+     `:focus-within` below paints them in. */
+  .chip-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity var(--dur-1) var(--ease);
+  }
+  .attachment-chip:hover .chip-actions,
+  .attachment-chip:focus-within .chip-actions {
+    opacity: 1;
+  }
+  /* Narrower than the 32px `.btn-icon` default: two of them have to sit
+     inside a 34px chip without deciding its height. */
+  .chip-btn {
+    width: 26px;
+    height: 26px;
+  }
+  /* A pointer must never be able to press a control it cannot see. Hover
+     and focus both make the group visible before this is lifted, so the
+     only state it applies to is the one where nothing is shown. */
+  .attachment-chip:not(:hover):not(:focus-within) .chip-btn {
+    pointer-events: none;
+  }
+
+  .quote > summary {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    margin: 8px 0;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: var(--field);
+    color: var(--fg-2);
+    font-weight: 700;
+    letter-spacing: .15em;
+    list-style: none;
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .quote > summary:hover {
+    color: var(--fg);
+  }
+  .quote > summary::-webkit-details-marker {
+    display: none;
+  }
+  .quote .msg-text {
+    color: var(--fg-2);
+  }
+
+  /* Quote depth (spec §7). `mailosh.render.plain_text.render_plain` puts
+     `.q1`–`.q4` on the *line*, never on a wrapper: one quoted block
+     routinely mixes levels ("> > they said" under "> I asked"), and a
+     single wrapper element cannot colour both. Text steps from `--fg-2`
+     to `--fg-3` as the quote gets older, so depth still reads without
+     colour vision; the 2px left rule carries the four label colours that
+     actually tell the levels apart. `.q4` is also every level below it —
+     `quote_depth` caps at 4 rather than inventing a fifth colour.
+
+     Every value here is built from tokens that already exist in all three
+     theme blocks (`--fg-2`/`--fg-3` and four of the twelve label colours),
+     so no new token is introduced and the two dark blocks stay identical
+     to each other. `color-mix` is what makes the two interior steps
+     theme-independent: hardcoding them would have meant two more values
+     to keep in sync by hand. */
+  .q1,
+  .q2,
+  .q3,
+  .q4 {
+    border-left: 2px solid;
+    padding-left: 8px;
+  }
+  .q1 {
+    color: var(--fg-2);
+    border-left-color: var(--label-sky);
+  }
+  .q2 {
+    color: color-mix(in oklab, var(--fg-2) 67%, var(--fg-3));
+    border-left-color: var(--label-emerald);
+  }
+  .q3 {
+    color: color-mix(in oklab, var(--fg-2) 33%, var(--fg-3));
+    border-left-color: var(--label-violet);
+  }
+  .q4 {
+    color: var(--fg-3);
+    border-left-color: var(--label-slate);
+  }
+
+  .toast {
+    /* The toast is the one inverted surface in the app — dark ground in
+       the light theme, light ground in the dark one — so the ring that
+       clears 3:1 everywhere else is the wrong one here. Dark theme's
+       lifted `--focus` (#4A8FE7) measures 2.99 on the light `--toast`,
+       while `--accent` measures 4.44; in light both are the same colour
+       and `--accent` measures 3.94 on the dark toast. Re-pointing the
+       token locally keeps one ring rule for the whole app. */
+    --focus: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    padding: 9px 12px 9px 14px;
+    background: var(--toast);
+    color: var(--toast-fg);
+    border-radius: var(--radius-card);
+    font-size: 13px;
+    box-shadow: var(--shadow-3);
+    animation: om-toast-in var(--dur-3) var(--ease-out);
+  }
+  /* 200ms in, 150ms out, both a 6px rise (polish v2 §6). app.js adds
+     `is-leaving` and waits before removing the node; the reduced-motion
+     block in `@layer base` zeroes both halves. */
+  @keyframes om-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+  .toast.is-leaving {
+    opacity: 0;
+    transform: translateY(6px);
+    transition:
+      opacity 150ms var(--ease-out),
+      transform 150ms var(--ease-out);
+  }
+  /* The one thing a toast ever has to explain: an action too large for an
+     undo token to fit the response header (`undo_unavailable: "too_many"`,
+     mailosh/web/actions.py). Quieter than the message it follows, and
+     pointedly *not* in `--toast-link` — it is a sentence, not the button
+     that is missing. 72% of `--toast-fg` measures 9.51:1 on the light
+     theme's dark toast and 6.73:1 on the dark theme's light one, so the
+     12px it is set at still clears AA for body text. */
+  .toast-note {
+    color: var(--toast-fg);
+    opacity: .72;
+    font-size: 12px;
+  }
+  /* The toast is an inverted surface, so its link takes the *other*
+     theme's accent (polish v2 §1.2/§5.7). */
+  .toast a,
+  .toast button {
+    color: var(--toast-link);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* Bulk confirmation (spec §6.3: bulk actions confirm over 100
+     conversations). Built by static/js/actions.js and opened with
+     `showModal()`, so the focus trap, `Esc`, the inert background and the
+     restoration of focus on close are all the platform's — and no shared
+     template carries markup for a dialog that only ever appears in answer
+     to a 409 from an action route.
+
+     `margin: auto` is restored explicitly: Tailwind's preflight zeroes
+     margin on everything, and a modal `<dialog>` relies on the UA's own
+     `auto` to centre itself in the top layer. */
+  .confirm {
+    max-width: min(360px, calc(100vw - 32px));
+    margin: auto;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: var(--shadow-3);
+  }
+  .confirm::backdrop {
+    background: rgba(16, 24, 40, .32);
+  }
+  .confirm-text {
+    margin: 0 0 16px;
+    font-size: 14px;
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .confirm-cancel,
+  .confirm-go {
+    height: 32px;
+    padding: 0 14px;
+    border-radius: var(--radius-pill);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .confirm-cancel {
+    color: var(--fg-2);
+  }
+  .confirm-cancel:hover {
+    background: var(--ctl-hover);
+    color: var(--fg);
+  }
+  .confirm-go {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .confirm-go:hover {
+    background: var(--accent-hover);
+  }
+  .confirm-go:active {
+    background: var(--accent-press);
+  }
+
+  /* The selection toolbar's count ("3 selected", spec §6.1). It replaces
+     the range readout rather than sitting beside it — the two answer the
+     same question about the same list and only one of them is the reader's
+     current concern. */
+  .toolbar-count {
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+  }
+
+  /* The `?` overlay (spec §6.1: "grouped like Gmail's"). A native modal
+     `<dialog>` filled by static/js/keys.js from the registry, so the same
+     `margin: auto` note as `.confirm` applies: Tailwind's preflight zeroes
+     it and the UA's own `auto` is what centres a modal in the top layer.
+
+     Sized off the viewport rather than fixed: the grouped list is as long
+     as the registry is, so the panel takes the height it needs up to 80vh
+     and scrolls inside itself. */
+  .shortcuts {
+    width: min(720px, calc(100vw - 48px));
+    max-height: min(80vh, 720px);
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: var(--shadow-3);
+    overflow: hidden;
+  }
+  .shortcuts::backdrop {
+    background: rgba(16, 24, 40, .32);
+  }
+  .shortcuts-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 14px 14px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .shortcuts-title {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+  }
+  /* Two columns, one group per cell, in registry order — a grid rather
+     than CSS `columns`. `column-count: 2` was tried first and balances by
+     *height*, which it cannot do when every group is `break-inside:
+     avoid`: it put Navigation alone on the left and stacked the other
+     three on the right. A grid places them Navigation | Selection,
+     Actions | Application, which is both balanced and predictable, and
+     `align-items: start` keeps a short group from stretching. */
+  .shortcuts-body {
+    max-height: calc(min(80vh, 720px) - 61px);
+    padding: 6px 20px 20px;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    column-gap: 36px;
+    row-gap: 22px;
+  }
+  /* One column once a cell would be too narrow for a label and its chips
+     to share a line. */
+  @media (max-width: 560px) {
+    .shortcuts-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .shortcuts-group {
+    min-width: 0;
+  }
+  .shortcuts-group-title {
+    margin-bottom: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+  .shortcuts-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 28px;
+    font-size: 13px;
+  }
+  .shortcuts-label {
+    flex: 1;
+    min-width: 0;
+    color: var(--fg-2);
+  }
+  .shortcuts-keys {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex: none;
+  }
+  /* "o or Enter" — one command with two ways in, not two commands. */
+  .shortcuts-or {
+    margin: 0 2px;
+    font-size: 11px;
+    color: var(--fg-3);
+  }
+
+  /* ------------------------------------------------------------------
+     The ⌘K palette (spec §6.2, mockup key-moments.html §3)
+
+     600px at 84px from the top, radius 12 — spec §4.3's own numbers. A
+     native modal `<dialog>`, so the same `margin` note as `.confirm` and
+     `.shortcuts` applies: Tailwind's preflight zeroes margin and the UA's
+     `auto` is what would otherwise place it. Here the top margin is what
+     puts it near the top of the viewport instead of centred, and `auto`
+     on both sides still centres it horizontally.
+
+     A flex column with a scrolling middle, so the input row and the hint
+     footer stay put however long the result list is.
+     ------------------------------------------------------------------ */
+  /* `display` is deliberately NOT set here, only on `[open]` below. A
+     `<dialog>` is `display: none` until it is opened, and that comes from
+     the UA stylesheet -- so any author `display` on the bare class beats
+     it and leaves the closed dialog laid out. It did: the closed palette
+     took 182px of the document, pushed the page past the viewport, and
+     scrolled the top bar off screen on every conversation. `.quick` and
+     `.shortcuts` set no `display` at all, which is why neither had it. */
+  .palette {
+    flex-direction: column;
+    width: min(600px, calc(100vw - 32px));
+    max-height: min(70vh, 560px);
+    margin: 84px auto auto;
+    padding: 0;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-palette);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: var(--shadow-3);
+    overflow: hidden;
+  }
+  .palette::backdrop {
+    background: rgba(16, 24, 40, .32);
+  }
+  /* The one piece of motion a palette needs: it arrives from above, the
+     direction it is pinned to. `@layer base`'s reduced-motion block zeroes
+     this with `!important`, so it needs no guard of its own. */
+  .palette[open] {
+    display: flex;
+    animation: palette-in var(--dur-2) var(--ease-out);
+  }
+  .palette-field {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 12px;
+    height: 50px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .palette-field-icon {
+    flex: none;
+    color: var(--fg-3);
+  }
+  /* The third documented exception to `@layer base`'s "never remove
+     outlines" (after `.btn-icon` and `.nav-item`, both of which only
+     shrink the offset). This input is focused the instant the dialog
+     opens and can never *not* be focused while it is open — a text input
+     matches `:focus-visible` whenever it holds focus — so a ring here
+     would be permanent chrome rather than a cue. Focus is unambiguous
+     without it: there is a caret, the panel is modal, and everything
+     behind it is inert. */
+  .palette-input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font-size: 15px;
+  }
+  .palette-input:focus,
+  .palette-input:focus-visible {
+    outline: none;
+  }
+  .palette-input::placeholder {
+    color: var(--fg-3);
+  }
+  .palette-results {
+    flex: 1;
+    min-height: 0;
+    padding: 6px 0;
+    overflow-y: auto;
+  }
+  .palette-group {
+    padding: 10px 16px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+  .palette-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 36px;
+    margin: 0 6px;
+    padding: 0 12px;
+    border-radius: 7px;
+    color: var(--fg);
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  /* One cursor for pointer and keyboard alike — palette.js moves it on
+     `mousemove` as well as on the arrows, so what `Enter` runs is always
+     what is highlighted. */
+  .palette-option.is-active {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+  .palette-mark {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    color: var(--icon);
+  }
+  .palette-option.is-active .palette-mark {
+    color: inherit;
+  }
+  .palette-dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+  }
+  .palette-option-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 13px;
+  }
+  .palette-keys {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 3px;
+  }
+  /* On a highlighted row the chip's own surface would read as a second
+     card inside the accent wash — the mockup drops it too. */
+  .palette-keys .kbd {
+    background: transparent;
+  }
+  .palette-empty {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 18px 16px;
+    font-size: 13px;
+    color: var(--fg-2);
+  }
+  .palette-empty-note {
+    font-size: 12px;
+    color: var(--fg-3);
+  }
+  .palette-foot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 14px;
+    height: 34px;
+    padding: 0 16px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--fg-3);
+  }
+  .palette-foot span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .palette-foot-end {
+    margin-left: auto;
+  }
+
+  /* ------------------------------------------------------------------
+     Quick settings (spec §10): the gear's 280px popover.
+
+     A modal `<dialog>` with a transparent backdrop — it reads as a
+     popover but still traps focus, closes on `Esc`, and dismisses on a
+     click outside, none of which a plain absolutely-positioned panel
+     gets for free. The margins pin it under the gear (52px top bar, and
+     the bar's own 12px right padding) instead of the UA's centring.
+     ------------------------------------------------------------------ */
+  .quick {
+    width: min(280px, calc(100vw - 24px));
+    margin: 56px 8px auto auto;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: var(--shadow-3);
+  }
+  .quick::backdrop {
+    background: transparent;
+  }
+  .quick[open] {
+    animation: quick-in var(--dur-1) var(--ease-out);
+  }
+  .quick-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .quick-title {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .quick-field {
+    min-inline-size: 0;
+    margin: 0 0 14px;
+    padding: 0;
+    border: 0;
+  }
+  .quick-label {
+    display: block;
+    margin-bottom: 6px;
+    padding: 0;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+  .quick-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+  }
+  .quick-row-label {
+    font-size: 13px;
+    color: var(--fg);
+  }
+
+  /* A segmented control: one track, one chip per choice. The inputs are
+     real radios laid over their own faces at `opacity: 0` rather than
+     `display: none`, so the whole native contract survives — one tab stop
+     per group, arrows to move and choose, and a focus ring drawn on the
+     face through `:focus-visible +`. */
+  .segmented {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--radius-field);
+    background: var(--field);
+  }
+  .segment {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+  }
+  .segment input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    appearance: none;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .segment-face {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    height: 26px;
+    padding: 0 4px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-2);
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  /* `--accent-soft`/`--accent-ink`, the same pair the palette's active row
+     uses, rather than a raised `--surface` chip: `--surface` is *darker*
+     than `--field` in the dark theme, so a chip that reads as lifted in
+     light would read as recessed in dark. The accent pair means the same
+     thing in both. */
+  .segment input:checked + .segment-face {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+  .segment input:not(:checked):hover + .segment-face {
+    background: var(--ctl-hover);
+    color: var(--fg);
+  }
+  .segment input:focus-visible + .segment-face {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+
+  .switch {
+    position: relative;
+    flex: none;
+    width: 36px;
+    height: 20px;
+    appearance: none;
+    border-radius: var(--radius-pill);
+    background: var(--ctl-line);
+    cursor: pointer;
+    transition: background-color var(--dur-1) var(--ease);
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+    transition: transform var(--dur-1) var(--ease);
+  }
+  .switch:checked {
+    background: var(--accent);
+  }
+  .switch:checked::after {
+    transform: translateX(16px);
+  }
+}
+
+/* Both shell dialogs arrive from the edge they are pinned to. Declared
+   outside `@layer components` because a `@keyframes` is not a style rule
+   and does not belong to a cascade layer; the rules that use them are
+   inside it. */
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(.98);
+  }
+}
+@keyframes quick-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* Alpine's own documented fix (https://alpinejs.dev/directives/cloak) for a
+   flash of default-visible content between first paint and Alpine finishing
+   its init pass (`layouts/app.html` loads alpine.min.js with `defer`, so
+   there is a real gap). Nothing in this phase uses an Alpine directive at
+   all — the thread view's quoted runs are a native `<details>` — but any
+   element whose pre-Alpine default state is "hidden" has to carry
+   `x-cloak`, so the rule ships with the design system rather than being
+   rediscovered by the first task that needs it. Alpine strips the
+   attribute itself once an element is initialized. */
+[x-cloak] {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------------
+   Sign-in (auth/login.html)
+
+   This page shipped in Task 5 as a plain functional form and the polish
+   pass never came back to it -- that pass only ever touched the mail
+   shell. It is also the first screen anyone sees, including in every
+   screenshot of the project, so it is built here from the same tokens the
+   shell uses: a token change still moves both.
+
+   On motion: everything below animates because it removes a moment of
+   doubt, not because it can. The card settles once on arrival, the error
+   arrives rather than blinking into place, the Caps Lock hint fades so it
+   does not snap the layout, and the button says it is working. The base
+   layer's `prefers-reduced-motion` rule zeroes every one of them.
+   --------------------------------------------------------------------- */
+@layer components {
+  /* The ambient wash sits behind the card rather than on it: a flat
+     ground under a flat card is what made the original read as unfinished.
+     Kept far below the accent's own saturation so it registers as depth
+     rather than decoration. */
+  .auth-shell {
+    position: relative;
+    display: flex;
+    min-height: 100dvh;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    isolation: isolate;
+  }
+
+  .auth-shell::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    background:
+      radial-gradient(60% 42% at 50% 26%, var(--accent-wash), transparent 70%),
+      radial-gradient(38% 30% at 50% 100%, var(--accent-wash), transparent 72%);
+  }
+
+  .auth-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 34px 32px 30px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-3);
+    animation: auth-card-in 380ms var(--ease-out) both;
+  }
+
+  .auth-head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 26px;
+  }
+
+  /* The supplied mark, one step up from the top bar's: a returning user
+     should recognise the app before reading the word. It carries its own
+     blue field and rounded corners, so no background or radius here --
+     only the size and the lift that seats it on the card. */
+  .auth-mark {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 13px;
+    box-shadow: var(--shadow-accent);
+    border-radius: 10px;
+  }
+
+  .auth-title {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -.018em;
+    color: var(--fg);
+  }
+
+  .auth-tagline {
+    margin-top: 5px;
+    font-size: 13px;
+    color: var(--fg-3);
+  }
+
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .auth-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  /* Labels carry real weight, as in the reference: they are the fastest
+     way to scan a form, and a washed-out label makes a form feel
+     provisional. */
+  .auth-label {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -.005em;
+    color: var(--fg);
+  }
+
+  /* 42px tall with a definite border. This is the one form in the app
+     someone types a password into; it should not feel cramped, and the
+     edge should be unmistakable rather than implied. */
+  .auth-input {
+    height: 42px;
+    padding: 0 13px;
+    border: 1px solid var(--ctl-line);
+    border-radius: var(--radius-field);
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 14px;
+    transition:
+      border-color var(--dur-1) var(--ease),
+      box-shadow var(--dur-1) var(--ease),
+      background-color var(--dur-1) var(--ease);
+  }
+
+  .auth-input::placeholder {
+    color: var(--fg-disabled);
+  }
+
+  .auth-input:hover {
+    border-color: var(--fg-3);
+  }
+
+  .auth-input:focus,
+  .auth-input:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--surface);
+    box-shadow: 0 0 0 3px var(--accent-wash);
+  }
+
+  /* The password field shares its box with the reveal button. */
+  .auth-lockup {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .auth-input--lockup {
+    padding-right: 42px;
+  }
+
+  .auth-reveal {
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    transform: translateY(-50%);
+    border-radius: var(--radius-ctl);
+    color: var(--icon);
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+
+  .auth-reveal:hover {
+    background: var(--ctl-hover);
+    color: var(--icon-strong);
+  }
+
+  .auth-reveal:active {
+    background: var(--ctl-active);
+  }
+
+  /* One button, two glyphs, swapped by `aria-pressed` — the state the
+     button already has to carry for assistive tech drives the icon too,
+     so the two can never disagree. */
+  .auth-reveal .auth-reveal-off,
+  .auth-reveal[aria-pressed="true"] .auth-reveal-on {
+    display: none;
+  }
+
+  .auth-reveal[aria-pressed="true"] .auth-reveal-off {
+    display: flex;
+  }
+
+  .auth-caps,
+  .auth-error {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    animation: auth-notice-in var(--dur-2) var(--ease-out) both;
+  }
+
+  .auth-caps {
+    margin-top: 8px;
+    font-size: 12.5px;
+    color: var(--warn);
+  }
+
+  .auth-error {
+    margin-bottom: 18px;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in oklab, var(--danger) 34%, transparent);
+    border-radius: var(--radius-field);
+    background: color-mix(in oklab, var(--danger) 11%, transparent);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--danger);
+  }
+
+  .auth-check {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+
+  .auth-check input {
+    width: 16px;
+    height: 16px;
+    border-radius: var(--radius-ctl);
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  /* Same hover/press/elevation ladder `.compose-btn` uses, so the app's
+     two primary buttons behave identically. */
+  .auth-submit {
+    position: relative;
+    height: 42px;
+    margin-top: 4px;
+    border-radius: var(--radius-ctl);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -.005em;
+    cursor: pointer;
+    box-shadow: var(--shadow-accent);
+    transition:
+      background-color var(--dur-1) var(--ease),
+      box-shadow var(--dur-1) var(--ease);
+  }
+
+  .auth-submit:hover {
+    background: var(--accent-hover);
+    box-shadow: var(--shadow-accent-hover);
+  }
+
+  .auth-submit:active {
+    background: var(--accent-press);
+    box-shadow: var(--shadow-1);
+  }
+
+  /* Busy state. Both labels sit in the same box so the button never
+     changes width mid-submit -- a resizing primary button reads as a
+     glitch exactly when the reader is watching it hardest. */
+  .auth-submit-busy {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+  }
+
+  .is-busy .auth-submit {
+    cursor: default;
+    background: var(--accent-press);
+    box-shadow: var(--shadow-1);
+  }
+
+  .is-busy .auth-submit-label {
+    display: none;
+  }
+
+  .is-busy .auth-submit-busy {
+    display: flex;
+  }
+
+  .auth-spinner {
+    width: 15px;
+    height: 15px;
+    border: 2px solid color-mix(in oklab, var(--on-accent) 32%, transparent);
+    border-top-color: var(--on-accent);
+    border-radius: 50%;
+    animation: om-spin 620ms linear infinite;
+  }
+
+  .auth-foot {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg-3);
+  }
+}
+
+/* Outside `@layer` for the same reason the palette's keyframes are:
+   `@keyframes` is not a style rule and does not belong to a layer. */
+@keyframes auth-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(.985);
+  }
+}
+
+@keyframes auth-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Compose (spec §8, mockup key-moments.html §3)
+
+   Two surfaces, one component: the corner dock and the inline reply card
+   at the end of a conversation. `.compose` carries everything they share;
+   `.compose-inline` unpins it and gives it a card's shape. The dock's
+   metrics are spec §4.3's exactly — 560 × 520, minimum 280 × 44,
+   full-screen at inset 24px, 8px top corners (spec §4.2's "dock top
+   corners") — and `static/js/compose.js` repeats the four numbers it
+   needs for tiling, which is the one duplication here.
+
+   Two rules are load-bearing rather than decorative:
+
+   * `position: fixed` on the dock. It is what keeps the mount point in
+     `layouts/app.html` from occupying any layout at all, which is half of
+     why the inbox behind an open dock still scrolls and still takes
+     clicks (the other half is that nothing here is a dialog and nothing
+     paints a backdrop — there is no `::backdrop`, no scrim and no
+     full-viewport overlay anywhere in this block, deliberately).
+   * position written through `--dock-right` rather than as `right`.
+     `reflow()` sets that property inline, and an inline `right` would
+     have beaten the `max-width: 767px` block below — the dock would have
+     gone full-screen everywhere except horizontally.
+   --------------------------------------------------------------------- */
+@layer components {
+  /* The mount point contributes no box of its own. Every dock inside it
+     is fixed, so this is belt and braces — but it is the cheap kind: an
+     element with no box cannot acquire a hit area, a scrollbar or a
+     stacking context by accident later. */
+  #compose-dock {
+    display: contents;
+  }
+
+  .compose {
+    position: fixed;
+    right: var(--dock-right, 16px);
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    width: 560px;
+    height: 520px;
+    max-height: calc(100dvh - 24px);
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    border-radius: var(--radius-field) var(--radius-field) 0 0;
+    background: var(--surface);
+    box-shadow: var(--shadow-3);
+    overflow: hidden;
+    transition:
+      width var(--dur-2) var(--ease),
+      height var(--dur-2) var(--ease);
+  }
+
+  /* Spec §8's 280 × 44 bar. The form is `display: none` rather than
+     clipped so nothing inside it can still be tabbed into while the dock
+     is collapsed. */
+  .compose[data-state=minimized] {
+    height: 44px;
+    width: 280px;
+  }
+  .compose[data-state=minimized] .compose-form,
+  .compose[data-state=minimized] [data-file] {
+    display: none;
+  }
+
+  .compose[data-state=full] {
+    inset: 24px;
+    width: auto;
+    height: auto;
+    max-height: none;
+    border-bottom: 1px solid var(--line);
+    border-radius: var(--radius-card);
+  }
+
+  /* A send counting down its undo window. Hidden, never removed: Undo has
+     to put the message back exactly as it was, editor state included,
+     which a re-render could not do. */
+  .compose[data-state=sending] {
+    display: none;
+  }
+
+  .compose-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 8px 0 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--field);
+    cursor: pointer;
+    user-select: none;
+  }
+  .compose-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -.005em;
+    color: var(--fg);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .compose-head-tools {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+  }
+  .compose-head-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-ctl);
+    color: var(--icon);
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .compose-head-btn:hover {
+    background: var(--ctl-hover);
+    color: var(--icon-strong);
+  }
+  .compose-head-btn:active {
+    background: var(--ctl-active);
+  }
+  /* One button, two glyphs, swapped by the dock's own state — the same
+     trick `.auth-reveal` and the row's read/unread pair already use, so
+     the control never changes size as it changes meaning. */
+  .compose-glyph-shrink {
+    display: none;
+  }
+  .compose[data-state=full] .compose-glyph-grow {
+    display: none;
+  }
+  .compose[data-state=full] .compose-glyph-shrink {
+    display: inline;
+  }
+
+  .compose-form {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .compose-fields {
+    flex: none;
+    padding: 0 14px;
+  }
+  .compose-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 36px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  /* The one focus indicator in this component that is a border rather
+     than a ring — the fourth documented exception to `@layer base`'s
+     "never remove outlines". A 2px offset outline around a 36px row that
+     shares its bottom edge with the next one would collide with both
+     neighbours; the accent hairline reads as focus in exactly the place
+     the caret already is, and every *control* inside the row keeps its
+     real `:focus-visible` ring. */
+  .compose-row:focus-within {
+    border-bottom-color: var(--accent);
+  }
+  .compose-key {
+    flex: none;
+    width: 32px;
+    padding-top: 6px;
+    font-size: 12px;
+    color: var(--fg-3);
+  }
+  .compose-ccbcc {
+    display: flex;
+    flex: none;
+    gap: 8px;
+    padding-top: 6px;
+  }
+  .compose-link {
+    font-size: 12px;
+    color: var(--fg-3);
+    cursor: pointer;
+    transition: color var(--dur-1) var(--ease);
+  }
+  .compose-link:hover {
+    color: var(--accent-ink);
+  }
+  .compose-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+  }
+  .compose-subject {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 30px;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .compose-subject::placeholder {
+    color: var(--fg-3);
+    font-weight: 400;
+  }
+  .compose-subject:focus-visible {
+    outline: none;
+  }
+
+  /* Chips and the entry share one box, so the caret sits where the next
+     address goes and a click anywhere in the box lands in the field. */
+  .chipbox {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 2px 0;
+    cursor: text;
+  }
+  .chip-entry {
+    flex: 1 1 120px;
+    min-width: 90px;
+    height: 24px;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+  }
+  .chip-entry:focus-visible {
+    outline: none;
+  }
+
+  .recipient {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    height: 24px;
+    padding: 0 2px 0 3px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    font-size: 12px;
+    color: var(--fg);
+  }
+  .recipient-avatar {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    color: #FFFFFF;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .recipient-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .recipient-x {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    color: var(--icon-quiet);
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .recipient-x:hover {
+    background: var(--ctl-hover);
+    color: var(--icon-strong);
+  }
+  /* Spec §8's external-domain hint: one hairline in the warning colour
+     and a title that says why. Deliberately not a banner, a badge or a
+     confirmation — most mail goes outside your own domain, so anything
+     louder would be ignored within a day and gone from view by the time
+     it mattered. */
+  .recipient.is-external {
+    border-color: var(--warn);
+  }
+  /* The chip the server named in an `InvalidAddress`. Marked, never
+     removed: the address is nearly always one character wrong, and a
+     chip that vanished would make the reader retype the whole thing. */
+  .recipient.is-invalid {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .recipient.is-invalid .recipient-avatar {
+    background: var(--danger) !important;
+  }
+
+  .compose-body {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 12px 14px;
+    overflow-y: auto;
+  }
+  .compose-editor {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--fg);
+  }
+  .compose-editor:focus-visible {
+    outline: none;
+  }
+  /* Squire never leaves the root empty — an untouched editor holds
+     `<div><br></div>` — so the placeholder is matched on that shape
+     rather than on `:empty`, which would never fire.
+
+     Absolutely positioned, and that part is not cosmetic: an in-flow
+     `::before` is a text box *before* Squire's first block, so the caret
+     sat on the second line and the reader typed underneath the prompt.
+     Out of flow, the caret is where the text will be. */
+  .compose-editor:has(> div:only-child > br:only-child)::before {
+    content: "Write your message…";
+    position: absolute;
+    color: var(--fg-3);
+    pointer-events: none;
+  }
+  .compose-editor a {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .compose-editor img {
+    max-width: 100%;
+    height: auto;
+  }
+  /* The quoted original a reply carries, under its attribution line
+     (`mailosh.services.compose.build_reply` writes both). Same left rule
+     the conversation view gives quoted runs, so a quote looks the same
+     whether you are reading it or answering it. */
+  .compose-editor blockquote {
+    margin: 8px 0;
+    padding-left: 12px;
+    border-left: 2px solid var(--line-2);
+    color: var(--fg-2);
+  }
+
+  .compose-plain {
+    display: none;
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.55;
+    resize: none;
+  }
+  .compose-plain:focus-visible {
+    outline: none;
+  }
+  .compose[data-mode=plain] .compose-editor {
+    display: none;
+  }
+  .compose[data-mode=plain] .compose-plain {
+    display: block;
+  }
+
+  /* Drag a file anywhere over a compose window. The cue is inside the
+     body rather than around the whole dock so it cannot be mistaken for
+     the dock itself being dragged. */
+  .compose[data-drop=on] .compose-body {
+    outline: 2px dashed var(--accent);
+    outline-offset: -6px;
+    border-radius: var(--radius-field);
+  }
+
+  .compose-attachments {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 92px;
+    overflow-y: auto;
+  }
+  /* No border and no padding while there is nothing to show: an empty
+     attachment row that still drew a hairline would read as a section
+     the message has, and it does not. */
+  .compose-attachments:not(:empty) {
+    padding: 8px 14px;
+    border-top: 1px solid var(--line);
+  }
+  .attach-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 240px;
+    height: 26px;
+    padding: 0 3px 0 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-ctl);
+    background: var(--field);
+    font-size: 12px;
+    overflow: hidden;
+  }
+  .attach-glyph {
+    flex: none;
+    color: var(--icon-quiet);
+  }
+  .attach-name {
+    overflow: hidden;
+    color: var(--fg);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .attach-size {
+    flex: none;
+    color: var(--fg-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .attach-x {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--radius-ctl);
+    color: var(--icon-quiet);
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .attach-x:hover {
+    background: var(--ctl-hover);
+    color: var(--icon-strong);
+  }
+  /* Upload progress, written as `--pct` by the XHR's own progress events.
+     A hairline along the bottom edge of the chip rather than a separate
+     bar: the thing that is loading is the thing that reports on itself. */
+  .attach-bar {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: var(--pct, 0%);
+    height: 2px;
+    background: var(--accent);
+    transition: width var(--dur-1) linear;
+  }
+  .attach-chip.is-uploading {
+    color: var(--fg-2);
+  }
+
+  .compose-toolbar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    height: 52px;
+    padding: 0 12px;
+    border-top: 1px solid var(--line);
+  }
+  /* The same accent ladder `.compose-btn` and `.auth-submit` use — rest,
+     hover, press distinguished by fill and by how far the shadow reaches,
+     never by moving the button. */
+  .compose-send {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 7px;
+    height: 34px;
+    padding: 0 16px 0 13px;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 600;
+    letter-spacing: -.005em;
+    cursor: pointer;
+    box-shadow: var(--shadow-accent);
+    transition:
+      background-color var(--dur-2) var(--ease),
+      box-shadow var(--dur-2) var(--ease);
+  }
+  .compose-send:hover {
+    background: var(--accent-hover);
+    box-shadow: var(--shadow-accent-hover);
+  }
+  .compose-send:active {
+    background: var(--accent-press);
+    box-shadow: var(--shadow-1);
+  }
+  .compose-tools {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 4px;
+  }
+  .compose-discard {
+    flex: none;
+  }
+  .compose-discard:hover {
+    color: var(--danger);
+  }
+
+  /* Spec §8's "Saving…"/"Saved". Both words are in the markup and CSS
+     picks one: `.htmx-request` while the autosave is in flight, then
+     `data-state` on what came back. No listener, so nothing can leave it
+     stuck on "Saving…" because an event was missed. */
+  .compose-state {
+    margin-left: auto;
+    padding: 0 6px;
+    font-size: 12px;
+    color: var(--fg-3);
+  }
+  .compose-state-saving,
+  .compose-state-saved,
+  .compose-state-error {
+    display: none;
+  }
+  .compose-state[data-state=saved] .compose-state-saved {
+    display: inline;
+  }
+  /* A save the server refused — a mistyped address, most often, since
+     autosave fires every two seconds and a half-typed To field is the
+     normal state of one. It reads where "Saved" would, in the danger
+     colour, and it is the only thing in this component that ever turns
+     red without the reader having pressed anything. */
+  .compose-state[data-state=error] {
+    max-width: 260px;
+    overflow: hidden;
+    color: var(--danger);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .compose-state[data-state=error] .compose-state-error {
+    display: inline;
+  }
+  .compose-form.htmx-request .compose-state .compose-state-saved,
+  .compose-form.htmx-request .compose-state .compose-state-error {
+    display: none;
+  }
+  .compose-form.htmx-request .compose-state .compose-state-saving {
+    display: inline;
+  }
+
+  /* The formatting popover. A plain element, not a `<dialog>`: a modal
+     over the dock would take the keyboard away from the editor it
+     formats and freeze the inbox behind it — the exact failure this whole
+     component is arranged to avoid. */
+  .fmt-popover {
+    position: absolute;
+    left: 12px;
+    bottom: 56px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-2);
+  }
+  .fmt-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .fmt-sep {
+    width: 1px;
+    height: 18px;
+    margin: 0 4px;
+    background: var(--line);
+  }
+  .fmt-size {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-ctl);
+    color: var(--fg-2);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .fmt-size:hover {
+    background: var(--ctl-hover);
+    color: var(--fg);
+  }
+
+  /* The inline reply card (spec §8): the same component, unpinned and
+     given a card's shape at the end of the conversation it answers. */
+  .compose-inline {
+    position: static;
+    width: auto;
+    height: auto;
+    max-height: none;
+    margin: 12px 0 28px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-2);
+  }
+  .compose-inline .compose-head {
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    cursor: default;
+  }
+  .compose-inline .compose-body {
+    min-height: 180px;
+    max-height: 340px;
+  }
+
+  /* Spec §4.3/§8: full-screen automatically under 768px. Last in the
+     file on purpose — every rule above writes its position through
+     `--dock-right`, so this block's plain `inset`/`right` win outright
+     and a dock cannot end up full-screen in one axis only. Minimise still
+     works, as the bottom bar it becomes on a phone. */
+  @media (max-width: 767px) {
+    .compose[data-surface=dock] {
+      inset: 0;
+      right: 0;
+      bottom: 0;
+      width: auto;
+      height: 100dvh;
+      max-height: none;
+      border: 0;
+      border-radius: 0;
+    }
+    .compose[data-surface=dock][data-state=minimized] {
+      inset: auto 0 0 0;
+      height: 44px;
+      border-top: 1px solid var(--line);
+    }
+    .compose[data-surface=dock] .fmt-popover {
+      right: 12px;
+      overflow-x: auto;
+    }
+  }
+}

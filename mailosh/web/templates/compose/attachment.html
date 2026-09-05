@@ -1,0 +1,30 @@
+{# One attachment chip — `POST /attachments`'s whole answer, and also what
+   `compose/form.html` renders for each file a reopened draft or a forward
+   already carries. One template for both, so an attachment that arrived
+   an hour ago and one that finished uploading a second ago are the same
+   element.
+
+   The hidden input is the record. Its value is the JSON
+   `mailosh.web.compose._chip` writes and `_attachments` parses — blob id,
+   name, type, size — because the blob id alone is not enough for the form
+   to survive a reopen: a re-render has to be able to name the file
+   without asking Stalwart what a blob was called.
+
+   The progress bar is present from the start and driven by
+   `static/js/compose.js` writing `--pct` on the *optimistic* chip it
+   creates while the XHR is in flight. That chip is replaced by this one
+   the moment the upload lands, which is why this one is rendered at 100 %
+   and hides the bar: a finished attachment has nothing left to report.
+
+   Deliberately not a link. An attachment on a draft has no download URL
+   the reader could use — the blob is uploaded but the message has not
+   been written yet — and a chip that looks clickable and is not is the
+   kind of promise spec §3 forbids. #}
+<span class="attach-chip" data-attachment>
+  {{ icon("paperclip", class_="size-3.5 attach-glyph") }}
+  <span class="attach-name" title="{{ attachment.name }}">{{ attachment.name }}</span>
+  <span class="attach-size">{{ attachment.size_display }}</span>
+  <button type="button" class="attach-x" data-role="unattach"
+          aria-label="Remove {{ attachment.name }}">{{ icon("x", class_="size-3") }}</button>
+  <input type="hidden" name="attachment" value="{{ attachment.value }}">
+</span>

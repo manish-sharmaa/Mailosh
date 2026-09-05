@@ -1,0 +1,29 @@
+<!-- family: document-level elements and the "second src" attributes.
+     <base href> is the quiet one: it never executes anything, it just
+     re-parents every relative URL in the message onto the attacker's host,
+     so a link the reader believes is internal is not. <meta http-equiv
+     refresh> navigates the frame outright. srcset/poster/background/
+     data-src are second chances at loading a remote resource after src has
+     been policed -- none of them is in ALLOWED_ATTRIBUTES, and this file is
+     what proves that stays true. -->
+<base href="https://evil.test/">
+<base target="_blank">
+<meta http-equiv="refresh" content="0;url=https://evil.test/">
+<meta http-equiv="Content-Security-Policy" content="default-src *">
+<meta charset="utf-16">
+<link rel="stylesheet" href="https://evil.test/x.css">
+<link rel="preload" as="script" href="https://evil.test/x.js">
+<link rel="dns-prefetch" href="//evil.test">
+<a href="/looks-internal">a relative link that &lt;base&gt; would have re-pointed</a>
+<img src="/looks-internal.png" alt="a relative image">
+<img src="https://ok.test/x.png" srcset="https://evil.test/y.png 2x, https://evil.test/z.png 3x">
+<img src="https://ok.test/x.png" data-src="https://evil.test/lazy.gif" loading="lazy">
+<img src="https://ok.test/x.png" lowsrc="https://evil.test/low.gif" dynsrc="https://evil.test/dyn.avi">
+<table background="https://evil.test/bg.png"><tr><td background="https://evil.test/cell.png">c</td></tr></table>
+<body background="https://evil.test/body.png">
+<video poster="https://evil.test/poster.png" src="https://evil.test/v.mp4"></video>
+<audio src="https://evil.test/a.mp3"></audio>
+<picture><source srcset="https://evil.test/s.png"><img src="https://ok.test/x.png"></picture>
+<track src="https://evil.test/t.vtt">
+<canvas id="c"></canvas>
+<portal src="https://evil.test/p"></portal>

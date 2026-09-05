@@ -1,0 +1,64 @@
+{# The results toolbar — `list/toolbar.html` with search's own addresses.
+
+   It is a separate file for exactly one reason: every URL in the list's
+   toolbar is written into the markup as `/mail/{key}/…`, and a search has
+   no mailbox key. Everything else is deliberately identical — the same
+   44px bar, the same tri-state `data-role="select-all"`, the same
+   `data-role="refresh"` hook app.js's endless-scroll bookkeeping looks
+   for, the same `list/range.html` include, the same `aria-disabled`
+   pager ends, and the same selection bar (`list/toolbar_selected.html`)
+   swapped in by the same Alpine `x-show` reading the same store. A
+   selection made in a search behaves like a selection made in the Inbox
+   because it *is* the same one.
+
+   The bare `x-data` is load-bearing here for the same reason it is there:
+   Alpine only initializes trees rooted at `[x-data]`/`[x-init]`, so a
+   standalone `x-show` is never evaluated at all — silently, leaving the
+   cloaked selection bar invisible forever. #}
+<div class="list-toolbar" x-data x-show="$store.list.count === 0">
+  <button type="button" class="check-box" role="checkbox" aria-checked="false"
+          data-role="select-all" aria-label="Select all conversations">
+    {{ icon("check", class_="size-3 check-all") }}
+    {{ icon("minus", class_="size-3 check-some") }}
+  </button>
+
+  <button type="button" class="btn-icon size-7" data-role="refresh"
+          title="Refresh"
+          hx-get="/search/rows?q={{ q | urlencode }}&position={{ page.position }}&limit={{ page.limit }}"
+          hx-target="#list"
+          hx-swap="morph:innerHTML show:none"
+          hx-indicator="#list-skeleton">
+    {{ icon("refresh-cw", class_="size-4", label="Refresh") }}
+  </button>
+
+  {# Leaving a search is a first-class move, and there is no back arrow in
+     a top bar that never navigated. Gmail puts the same control here. #}
+  <a class="btn-icon size-7" href="/mail/inbox" title="Leave search"
+     hx-get="/mail/inbox" hx-target="#main" hx-swap="morph:innerHTML show:none"
+     hx-push-url="true" hx-indicator="#list-skeleton">
+    {{ icon("x", class_="size-4", label="Leave search") }}
+  </a>
+
+  {% include "list/range.html" %}
+
+  {% if prev_position is not none %}
+    <a class="btn-icon size-7" title="Newer" rel="prev"
+       href="/search?q={{ q | urlencode }}&position={{ prev_position }}"
+       hx-get="/search?q={{ q | urlencode }}&position={{ prev_position }}&limit={{ page.limit }}"
+       hx-target="#main" hx-swap="morph:innerHTML show:none" hx-push-url="true"
+       hx-indicator="#list-skeleton">{{ icon("chevron-left", class_="size-4", label="Newer") }}</a>
+  {% else %}
+    <span class="btn-icon size-7" aria-disabled="true" aria-hidden="true">{{ icon("chevron-left", class_="size-4") }}</span>
+  {% endif %}
+  {% if next_position is not none %}
+    <a class="btn-icon size-7" title="Older" rel="next"
+       href="/search?q={{ q | urlencode }}&position={{ next_position }}"
+       hx-get="/search?q={{ q | urlencode }}&position={{ next_position }}&limit={{ page.limit }}"
+       hx-target="#main" hx-swap="morph:innerHTML show:none" hx-push-url="true"
+       hx-indicator="#list-skeleton">{{ icon("chevron-right", class_="size-4", label="Older") }}</a>
+  {% else %}
+    <span class="btn-icon size-7" aria-disabled="true" aria-hidden="true">{{ icon("chevron-right", class_="size-4") }}</span>
+  {% endif %}
+</div>
+
+{% include "list/toolbar_selected.html" %}

@@ -1,0 +1,23 @@
+<!-- family: foreign content (SVG and MathML).
+     Inside <svg> and <math> the HTML parser switches to a foreign content
+     mode with different tokenisation rules -- CDATA sections work, <script>
+     is not the HTML <script>, and an element name can carry a namespace
+     prefix. That is enough to smuggle live markup past a sanitiser that
+     only knows HTML element names, so both roots are in CLEAN_CONTENT_TAGS
+     rather than merely stripped. -->
+<svg><script>alert(1)</script></svg>
+<svg><script>alert&#40;1&#41;</script></svg>
+<svg><script><![CDATA[alert(1)]]></script></svg>
+<svg><g onload="alert(1)"></g></svg>
+<svg onload=alert(1)></svg>
+<svg><animate onbegin=alert(1) attributeName=x dur=1s></svg>
+<svg><set attributeName=onmouseover to=alert(1)></svg>
+<svg><a xlink:href="javascript:alert(1)"><text x=10 y=10>click</text></a></svg>
+<svg><use href="data:image/svg+xml,&lt;svg id='x' xmlns='http://www.w3.org/2000/svg'&gt;&lt;script&gt;alert(1)&lt;/script&gt;&lt;/svg&gt;#x"></use></svg>
+<svg><foreignObject><iframe src="javascript:alert(1)"></iframe></foreignObject></svg>
+<svg><image href="javascript:alert(1)"></svg>
+<svg><style>@import url(http://evil.test/x.css)</style></svg>
+<math><mtext><table><mglyph><style><img src=x onerror=alert(1)></style></mglyph></table></mtext></math>
+<math><maction actiontype="statusline#javascript:alert(1)">click</maction></math>
+<math href="javascript:alert(1)"><mtext>click</mtext></math>
+<math><annotation-xml encoding="text/html"><img src=x onerror=alert(1)></annotation-xml></math>

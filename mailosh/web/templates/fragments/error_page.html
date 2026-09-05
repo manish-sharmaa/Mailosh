@@ -1,0 +1,50 @@
+{# The full-page answer to a `JmapError`/`TransportError` (design spec §9:
+   "a global exception handler returns an OOB toast fragment for HTMX
+   requests and a friendly page otherwise"). Rendered by
+   `mailosh.web.app._error_page`, which owns the status code — `502` when
+   the mail server never answered at all, `500` when it answered with a
+   failure — so nothing about the status is written here.
+
+   Two things it deliberately does NOT have, both because an exception
+   handler runs outside every route's dependencies and can reach neither
+   the session nor the database:
+
+   1. **No `prefs`, no `user`, no `csrf_token`.** So this extends nothing:
+      `layouts/bare.html` renders `data-theme`/`data-density` off `prefs`
+      and a CSRF meta tag, none of which exist here. Leaving `data-theme`
+      off entirely is the *right* answer rather than a compromise —
+      styles/input.css's dark block matches
+      `:root:not([data-theme=light])`, so an unset attribute is exactly
+      "follow the OS", which is what a page that cannot read the reader's
+      saved theme should do.
+   2. **No scripts.** The one affordance here is a link, and a page whose
+      job is to survive a broken backend should not depend on htmx,
+      Alpine or a store being alive to offer it.
+
+   `retry_url` is this same request's own address, so "Retry" is one click
+   rather than a manual reload. It reaches the attribute through Jinja's
+   autoescaping (this template's whole reason for existing over the
+   hand-built HTML string that used to live in `app.py`). #}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ message }} · Mailosh</title>
+    {# The unresolved-theme pair, same mechanism as layouts/app.html's
+       `prefs.theme == "system"` branch: with no saved theme to read, the
+       OS decides, and one hard-coded colour would be wrong half the time. #}
+    <meta name="theme-color" content="#EBEEF3" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0D1015" media="(prefers-color-scheme: dark)">
+    <link rel="stylesheet" href="{{ static('app.css') }}">
+  </head>
+  <body class="flex min-h-dvh items-center justify-center bg-bg text-fg">
+    <main class="w-full max-w-[360px] rounded-card border border-line bg-surface p-8 text-center">
+      <h1 class="text-[15px] font-semibold text-fg">Mailosh</h1>
+      <p class="mt-4 text-[13px] text-fg-2">{{ message }}</p>
+      <p class="mt-6">
+        <a href="{{ retry_url }}" class="inline-flex rounded-ctl bg-accent px-3 py-2 text-[13px] font-medium text-on-accent">Retry</a>
+      </p>
+    </main>
+  </body>
+</html>

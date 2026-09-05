@@ -1,0 +1,90 @@
+{# The toolbar with a selection (spec §6.1/§6.3). `list/toolbar.html`
+   renders both bars and Alpine's `x-show` picks one: this file is the
+   markup, not a second toolbar component, which is why it carries no
+   surrounding element of its own beyond the bar.
+
+   **Its controls act on the selection, and carry no ids of their own.**
+   Every other `data-action` surface in this app (a row, the conversation
+   view) sits on the thing it acts on and says which messages that is with
+   `data-email-ids`. This one is deliberately the other shape: it lives
+   outside every row, so actions.js's `targets()` falls through to
+   `defaultTargets()` and reads the selection off the rows' own
+   `aria-selected`. Copying ids into the toolbar would mean re-rendering it
+   on every checkbox click, and the ids would be stale for exactly as long
+   as it took to re-render.
+
+   Every `title` names the key from static/js/keys.js's registry, spec
+   §6.1's "Archive (e)". `tests/unit/test_mail_routes.py` checks the two
+   against each other, so a rebound key cannot leave a stale hint here.
+
+   Label as and Move to are live with 1D — `data-role` is the hook
+   `static/js/labels.js` listens for, and the same two popovers `l` and `v`
+   open, so the mouse and the keyboard cannot drift apart. More still
+   belongs to the command palette and still says so rather than pretending:
+   `aria-disabled`, no handler, no hook.
+
+   `!== 0` rather than `> 0` — the exact complement of the other bar's
+   `=== 0`, and no `>` inside an attribute value. Several tests scan these
+   templates for element start-tags with a plain `<[a-z]+[^>]*>`, which is
+   exact only for as long as that holds.
+
+   The bare `x-data` is what makes Alpine look at this element at all; see
+   `list/toolbar.html`'s header. Without it the `x-cloak` below is never
+   removed and this bar can never appear. #}
+<div class="list-toolbar" x-data x-show="$store.list.count !== 0" x-cloak>
+  {# The same tri-state box as the other bar, and the same `data-role` hook
+     — app.js sets `aria-checked` on every one of them, so the one behind
+     `x-show` is already right the moment it appears. It reads "mixed" here
+     by definition (this bar only exists with a selection), and clicking it
+     clears. #}
+  <button type="button" class="check-box" role="checkbox" aria-checked="mixed"
+          data-role="select-all" aria-label="Select all conversations">
+    {{ icon("check", class_="size-3 check-all") }}
+    {{ icon("minus", class_="size-3 check-some") }}
+  </button>
+
+  <span class="toolbar-sep"></span>
+
+  <button type="button" class="btn-icon size-7" data-action="archive" title="Archive (e)">
+    {{ icon("archive", class_="size-4", label="Archive") }}
+  </button>
+  <button type="button" class="btn-icon size-7" data-action="spam" title="Report spam (!)">
+    {{ icon("shield-alert", class_="size-4", label="Report spam") }}
+  </button>
+  <button type="button" class="btn-icon size-7" data-action="delete" title="Delete (#)">
+    {{ icon("trash-2", class_="size-4", label="Delete") }}
+  </button>
+
+  <span class="toolbar-sep"></span>
+
+  {# Both directions ship, as they do on a row: a selection can hold read
+     and unread conversations at once, so there is no single state to
+     toggle and each direction is its own control. #}
+  <button type="button" class="btn-icon size-7" data-action="read" title="Mark as read (Shift+I)">
+    {{ icon("mail-open", class_="size-4", label="Mark as read") }}
+  </button>
+  <button type="button" class="btn-icon size-7" data-action="unread" title="Mark as unread (Shift+U)">
+    {{ icon("mail", class_="size-4", label="Mark as unread") }}
+  </button>
+
+  <span class="toolbar-sep"></span>
+
+  <button type="button" class="btn-icon size-7" data-role="label-picker"
+          title="Label as (l)">
+    {{ icon("tag", class_="size-4", label="Label as") }}
+  </button>
+  <button type="button" class="btn-icon size-7" data-role="label-move"
+          title="Move to (v)">
+    {{ icon("archive-restore", class_="size-4", label="Move to") }}
+  </button>
+  <button type="button" class="btn-icon size-7" aria-disabled="true"
+          title="More actions arrive with the command palette (.)">
+    {{ icon("ellipsis-vertical", class_="size-4", label="More actions") }}
+  </button>
+
+  {# `x-text` on one element, not a count spliced into a sentence: template
+     literals are the one interpolation Alpine's CSP build genuinely cannot
+     evaluate, and a single text node is also one announcement rather than
+     two. app.js writes `countLabel` in `render()`. #}
+  <span class="toolbar-count ml-auto" x-text="$store.list.countLabel">0 selected</span>
+</div>

@@ -1,0 +1,113 @@
+{# Sign in (Task 5, design spec §9) — the first real user of
+   layouts/bare.html (that layout's own docstring names this as its first
+   caller). No session exists yet, so no CSRF hidden field/meta content: this
+   form is instead protected by a `Sec-Fetch-Site` check plus rate limiting,
+   both enforced server-side in mailosh.web.auth, not by anything in this
+   template.
+
+   Deliberately NOT here, though the visual reference this was designed
+   against has them: a password-rules checklist and a "create account"
+   affordance. Both belong to a sign-up form. Accounts live in Stalwart and
+   are made by whoever runs the server, and telling someone their existing
+   password "must contain a special character" while they are trying to use
+   it would be actively wrong.
+
+   Styling lives in styles/input.css's `.auth-*` block, behaviour in
+   static/js/auth.js — the page has real states (focus, reveal, caps lock,
+   submitting) and those read better as named rules than as a class
+   attribute repeating every token. #}
+{% extends "layouts/bare.html" %}
+
+{% block title %}Sign in · Mailosh{% endblock %}
+
+{% block content %}
+<main class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-head">
+      {# Decorative: the heading below already says the name, so an alt
+         here would make a screen reader announce it twice. #}
+      <img src="{{ static('brand/mark-64.png') }}" alt="" width="40" height="40" class="auth-mark">
+      <h1 class="auth-title">Sign in to Mailosh</h1>
+      <p class="auth-tagline">Your mail, on your own server.</p>
+    </div>
+
+    {% if error %}
+      <p role="alert" class="auth-error">
+        {{ icon("triangle-alert", class_="size-4 shrink-0") }}
+        <span>{{ error }}</span>
+      </p>
+    {% endif %}
+
+    <form method="post" action="/login" class="auth-form" novalidate data-auth-form>
+      <input type="hidden" name="next" value="{{ next }}">
+
+      <div class="auth-field">
+        <label for="username" class="auth-label">Email</label>
+        <input
+          id="username"
+          name="username"
+          type="text"
+          inputmode="email"
+          autocomplete="username"
+          autocapitalize="off"
+          spellcheck="false"
+          placeholder="you@example.com"
+          required
+          autofocus
+          value="{{ username }}"
+          class="auth-input"
+        >
+      </div>
+
+      <div class="auth-field">
+        <label for="password" class="auth-label">Password</label>
+        <div class="auth-lockup">
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            class="auth-input auth-input--lockup"
+          >
+          {# Ships hidden; static/js/auth.js reveals it. With JS off there
+             is no dead control rather than a button that does nothing. #}
+          <button
+            type="button"
+            class="auth-reveal"
+            data-auth-reveal
+            hidden
+            aria-pressed="false"
+            aria-label="Show password"
+          >
+            <span class="auth-reveal-on">{{ icon("eye", class_="size-4") }}</span>
+            <span class="auth-reveal-off">{{ icon("eye-off", class_="size-4") }}</span>
+          </button>
+        </div>
+        <p class="auth-caps" data-auth-caps hidden>
+          {{ icon("triangle-alert", class_="size-3.5 shrink-0") }}
+          Caps Lock is on
+        </p>
+      </div>
+
+      <label class="auth-check">
+        <input type="checkbox" name="remember" value="1">
+        Keep me signed in
+      </label>
+
+      <button type="submit" class="auth-submit">
+        <span class="auth-submit-label">Sign in</span>
+        <span class="auth-submit-busy" aria-hidden="true"><span class="auth-spinner"></span>Signing in…</span>
+      </button>
+    </form>
+
+    {# Self-hosted mail has no "forgot password" and no sign-up: saying so
+       beats leaving people hunting for links that will never exist. #}
+    <p class="auth-foot">Accounts are managed by your server administrator.</p>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ static('js/auth.js') }}" type="module"></script>
+{% endblock %}

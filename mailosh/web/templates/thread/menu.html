@@ -1,0 +1,61 @@
+{# The per-message ⋮ menu (spec §7), rendered per message.
+
+   **Three items, not six.** Reply, reply all and forward belong to Phase
+   1C, and print to the task that builds the print route; spec §3's rule is
+   that nothing in the UI exists that does not work, so they are absent
+   rather than present-and-dead. They arrive with the routes behind them.
+
+   A native `<details>` again — same reasoning as `thread/details.html`: the
+   CSP forbids the inline handler an Alpine or htmx-`hx-on:` menu would
+   need, and a disclosure is keyboard-operable without any of it.
+
+   **The two mutating items are real forms, not `data-action` hooks.** The
+   delegated listener in static/js/actions.js resolves an action taken off
+   the list to "the conversation being read" — the whole thread — which is
+   right for the toolbar above and wrong by an order of magnitude here:
+   "delete message" would have deleted every message in the conversation.
+   A form carries the exact ids in hidden fields instead, so what the button
+   says is what the server is asked for. htmx posts it (the `X-CSRF-Token`
+   header comes from `hx-headers` on `<body>`, inherited); the delete
+   swaps its own card away on success and, on a JMAP failure, does not —
+   the error response answers `HX-Reswap: none`, and the `om:error` trigger
+   it carries reaches actions.js's toast listener. #}
+<details class="msg-menu">
+  <summary class="btn-icon size-7 msg-menu-toggle" title="More actions" aria-label="More actions">
+    {{ icon("ellipsis-vertical", class_="size-4") }}
+  </summary>
+  <div class="menu-panel">
+    {# Mark this message and everything after it unread, which is what
+       "from here" means: the reader is putting the tail of a conversation
+       back on their pile, not just this one card. #}
+    <form class="menu-form" hx-post="/a/read" hx-swap="none">
+      <input type="hidden" name="on" value="0">
+      {% for later_id in later_ids %}<input type="hidden" name="ids" value="{{ later_id }}">{% endfor %}
+      <button type="submit" class="menu-item">
+        {{ icon("mail", class_="size-4") }}Mark unread from here
+      </button>
+    </form>
+
+    {# The raw RFC 5322 source, served as `text/plain` by
+       `GET /m/{id}/source` (`mailosh/web/frames.py`, alongside the other
+       per-message blob routes). A plain link, opened in a new tab: it is a
+       different document, not a swap of this one.
+
+       **"View source", not spec §7's "Show original".** The dark-restyle
+       strip above the body is the other control that name was given, and
+       it does something else entirely — undo an inversion, not open the
+       message's source. One name for two effects in one card is an
+       accessibility failure, so each says what it does; §7 carries a note
+       recording the amendment. #}
+    <a class="menu-item" href="/m/{{ message.id }}/source" target="_blank" rel="noopener noreferrer">
+      {{ icon("file-text", class_="size-4") }}View source
+    </a>
+
+    <form class="menu-form" hx-post="/a/delete" hx-target="#msg-{{ message.id }}" hx-swap="delete">
+      <input type="hidden" name="ids" value="{{ message.id }}">
+      <button type="submit" class="menu-item menu-item-danger">
+        {{ icon("trash-2", class_="size-4") }}Delete message
+      </button>
+    </form>
+  </div>
+</details>

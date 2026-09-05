@@ -1,0 +1,203 @@
+{# Quick settings (spec §10): the gear's 280px popover — Appearance (Theme,
+   Density, keyboard shortcuts) and Reading (mark-as-read delay, what to do
+   after archiving), applied live and persisted through `POST /prefs`
+   (`mailosh/web/prefs.py`).
+
+   Reading pane and conversation view are §10's other two quick toggles and
+   are deliberately absent: neither has anything to apply to in this phase
+   (there is no reading pane, and the list is always conversation-grouped),
+   and a control that persists a preference nothing reads is a promise the
+   UI cannot keep — spec §3. Remote images and dark mail are §10's two
+   reading controls whose consumers are the frame routes; they belong beside
+   those, not here.
+
+   ---------------------------------------------------------------------
+   Two ways a control reaches the server, and why
+
+   The three Appearance fields change what is already on screen, so they go
+   through `app.js`'s `ui` store (`data-pref`): it writes `<html>`'s dataset
+   first and POSTs second, so the theme changes on the click rather than on
+   the round trip, and reverts if the write did not land.
+
+   The Reading fields change nothing on the current page — `mark_read_delay`
+   and `auto_advance` are read by `mailosh/web/mail.py` on the *next*
+   conversation it renders — so there is nothing to paint optimistically and
+   no store entry to keep in sync. Those post themselves: `hx-post="/prefs"`
+   on the input, `hx-trigger="change"`, `hx-swap="none"` against a route that
+   answers `204` with no body. htmx sends a named input's own value, so one
+   radio is one partial update, and the CSRF header comes from `hx-headers`
+   on `<body>` (`layouts/app.html`), inherited like every other htmx request
+   in this app. No `hx-on:`, no `hx-vals='js:…'`, no `hx-trigger` filter —
+   none of the three attribute forms the CSP's missing `'unsafe-eval'` would
+   silently break.
+
+   ---------------------------------------------------------------------
+   Native controls, on purpose
+
+   Each segmented group is a real `<fieldset>` of `<input type="radio">`,
+   and the toggle is a real `<input type="checkbox" role="switch">`. That
+   buys the entire radiogroup keyboard contract — one tab stop per group,
+   arrows to move and choose, Space on the switch — plus correct screen
+   reader semantics, from the platform rather than from JavaScript that
+   would have to reimplement all of it. The inputs are visually replaced
+   (`.segment`/`.switch` in styles/input.css), never hidden with
+   `display: none`, so they stay focusable.
+
+   `static/js/app.js` listens for `change` on `[data-pref]` and calls the
+   `ui` store's `setPref()`, which writes `<html>`'s dataset first and
+   POSTs second — the theme changes on the click, not on the round trip.
+   The same store method is what the palette's "Theme: dark" result calls,
+   so both surfaces are one write.
+
+   ---------------------------------------------------------------------
+   A native `<dialog>`, opened modally and pinned to the top right
+
+   `showModal()` gives the focus trap, `Esc`, and a backdrop whose click is
+   the only close-on-click-out a `<dialog>` offers — `.quick::backdrop` is
+   transparent, so it reads as a popover rather than a modal while still
+   dismissing like one. `.quick`'s own `margin` is what puts it under the
+   gear (see styles/input.css: a modal `<dialog>` is centred by the UA's
+   `margin: auto`, which Tailwind's preflight zeroes).
+
+   No Alpine directive anywhere on this subtree, so there is no lone
+   `x-show` for Alpine to skip for want of an `[x-data]` root, and no
+   `x-show` losing to the `hidden` attribute — the two silent failures
+   `fragments/offline.html` documents. Served-HTML state comes from
+   `prefs`; after that the store owns it and re-syncs these controls
+   whenever it changes, so a theme switched from the palette shows up here
+   too.
+
+   Rendered once by layouts/app.html, outside `#main`, for the same reason
+   as the `?` overlay: every swap in this app replaces `#main` or `#list`,
+   and the listeners bound to this dialog have to outlive them. #}
+<dialog id="quick-settings" class="quick" aria-labelledby="quick-settings-title">
+  <div class="quick-head">
+    <h2 id="quick-settings-title" class="quick-title">Quick settings</h2>
+    <button type="button" class="btn-icon size-7" data-role="quick-close" title="Close (Esc)">
+      {{ icon("x", class_="size-4", label="Close") }}
+    </button>
+  </div>
+
+  <fieldset class="quick-field">
+    <legend class="quick-label">Theme</legend>
+    <div class="segmented">
+      {% for value, label in [("system", "System"), ("light", "Light"), ("dark", "Dark")] %}
+        <label class="segment">
+          <input type="radio" name="theme" value="{{ value }}" data-pref="theme"
+                 {% if prefs.theme == value %}checked{% endif %}>
+          <span class="segment-face">{{ label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset class="quick-field">
+    <legend class="quick-label">Density</legend>
+    {# Labelled exactly as spec §4.3 names the three row heights (36 / 44 /
+       52), so the control and the rows it changes use one vocabulary. #}
+    <div class="segmented">
+      {% for value, label in [("compact", "Compact"), ("standard", "Standard"),
+                              ("comfortable", "Comfortable")] %}
+        <label class="segment">
+          <input type="radio" name="density" value="{{ value }}" data-pref="density"
+                 {% if prefs.density == value %}checked{% endif %}>
+          <span class="segment-face">{{ label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <label class="quick-row">
+    <span class="quick-row-label">Keyboard shortcuts</span>
+    <input type="checkbox" class="switch" role="switch" data-pref="shortcuts"
+           {% if prefs.shortcuts %}checked{% endif %}>
+  </label>
+
+  <fieldset class="quick-field">
+    {# Spec §10's "Mark as read: immediately / after 1s / after 3s / never".
+       The value is seconds, and `-1` is the one that means never:
+       `mailosh/web/mail.py` hands the number straight to the conversation
+       page and `static/js/actions.js` arms one timer from it, so "never"
+       is a number too rather than a fourth spelling the client would have
+       to special-case. #}
+    <legend class="quick-label">Mark as read</legend>
+    <div class="segmented">
+      {% for value, option in [("0", "Now"), ("1", "1s"), ("3", "3s"), ("-1", "Never")] %}
+        <label class="segment">
+          <input type="radio" name="mark_read_delay" value="{{ value }}"
+                 hx-post="/prefs" hx-trigger="change" hx-swap="none"
+                 {% if prefs.mark_read_delay|string == value %}checked{% endif %}>
+          <span class="segment-face">{{ option }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset class="quick-field">
+    {# Spec §10's `auto_advance`: where the reader lands after archiving,
+       deleting or reporting the conversation they are reading. "Older" and
+       "Newer" name the same direction `j`/`k` and the header's own arrows
+       do, so one vocabulary covers the keyboard, the arrows and this. #}
+    <legend class="quick-label">After archiving</legend>
+    <div class="segmented">
+      {% for value, option in [("older", "Older"), ("newer", "Newer"), ("list", "List")] %}
+        <label class="segment">
+          <input type="radio" name="auto_advance" value="{{ value }}"
+                 hx-post="/prefs" hx-trigger="change" hx-swap="none"
+                 {% if prefs.auto_advance == value %}checked{% endif %}>
+          <span class="segment-face">{{ option }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset class="quick-field">
+    {# Spec §10's `remote_images` — the policy `mailosh/render/image_policy.
+       decide` resolves for every framed message. "Contacts" is the middle
+       setting: load them for senders this account has actually written to.
+
+       The call site in `mailosh/web/frames.py` is still owed (`decide` is
+       built and tested; nothing calls it yet), so this control records a
+       choice the frames do not read *this* commit. Kept here rather than
+       held back because it is one call site away, and because splitting a
+       preference from its own control across two waves is how the pair
+       drift. #}
+    <legend class="quick-label">Remote images</legend>
+    <div class="segmented">
+      {% for value, option in [("ask", "Ask"), ("contacts", "Contacts"), ("always", "Always")] %}
+        <label class="segment">
+          <input type="radio" name="remote_images" value="{{ value }}"
+                 hx-post="/prefs" hx-trigger="change" hx-swap="none"
+                 {% if prefs.remote_images == value %}checked{% endif %}>
+          <span class="segment-face">{{ option }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset class="quick-field">
+    {# Spec §10's `dark_restyle`, folded into `mailosh/render/dark.py`'s one
+       `enabled` flag by `mailosh/web/frames.py`. Off means "show me what
+       the sender sent", which is what the per-message "Show original"
+       already writes for one sender.
+
+       A two-value segmented pair rather than the switch `shortcuts` uses,
+       even though both are booleans: htmx posts a *checkbox* only while it
+       is checked, so switching this one off would send an empty body and a
+       partial update would keep the old value — the control would work in
+       one direction only. A radio pair always has exactly one checked
+       member, so both directions post. `shortcuts` is exempt because it
+       goes through `app.js`'s store, which sends the boolean itself. #}
+    <legend class="quick-label">Dark mail</legend>
+    <div class="segmented">
+      {% for value, option in [("true", "On"), ("false", "Off")] %}
+        <label class="segment">
+          <input type="radio" name="dark_restyle" value="{{ value }}"
+                 hx-post="/prefs" hx-trigger="change" hx-swap="none"
+                 {% if prefs.dark_restyle == (value == "true") %}checked{% endif %}>
+          <span class="segment-face">{{ option }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+</dialog>

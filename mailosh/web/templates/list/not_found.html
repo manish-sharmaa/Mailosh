@@ -1,0 +1,23 @@
+{% extends layout %}
+
+{# 404 as a page, not a JSON body: a mistyped or stale mailbox/conversation
+   URL still renders the whole shell, with the real nav, so getting back is
+   one click rather than a browser back button. Task 13 owns the generic
+   error page; this is the one shape mailosh.web.mail can produce on its
+   own, and it deliberately reuses the empty state's calm register instead
+   of shouting. #}
+
+{% block title %}Not found — Mailosh{% endblock %}
+{% block topbar %}{% include "shell/topbar.html" %}{% endblock %}
+{% block nav %}{% include "shell/nav.html" %}{% endblock %}
+
+{% block main %}
+  <div class="empty-state">
+    <p class="empty-title">{{ message }}</p>
+    <p class="empty-body">
+      <a class="text-accent underline underline-offset-2" href="/mail/inbox"
+         hx-get="/mail/inbox" hx-target="#main" hx-swap="morph:innerHTML show:none"
+         hx-push-url="true">Go to the inbox</a>
+    </p>
+  </div>
+{% endblock %}

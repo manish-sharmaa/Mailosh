@@ -1,0 +1,44 @@
+{# The parser's hints, above the results (spec §10: "unknown operators
+   produce an inline hint, never a 500").
+
+   **This strip is the reason the parser returns hints at all**, so it
+   renders every one of them rather than the first, and it renders them
+   where the result count is — not in a toast that fades, not in a console.
+   A results page that quietly returned fewer messages than the reader
+   asked for, because `filename:` was approximated or because `label:`
+   named a label this account does not have, is the failure the whole
+   design avoids; the hint is what turns that from a mystery into a
+   sentence.
+
+   The token is echoed beside the message when the parser supplies one, so
+   "no label called that" points at *which* term. Both are escaped by
+   Jinja like every other string in this app — a hint carries the reader's
+   own text back to them, which is the same untrusted string the query bar
+   holds.
+
+   **Nothing here switches on `hint.kind`**, and that is deliberate. The
+   parser owns the vocabulary (`unknown-operator`, `bad-date`, `bad-size`,
+   `unknown-label`, `unbalanced`, `approximated`, `scope-uncertain` at the
+   time of writing) and is free to grow it; a template that matched on the
+   list it knew would render *nothing* for the next kind added — silently,
+   which is the one failure this strip exists to prevent. The kind travels
+   as a `data-kind` hook instead, so `styles/search.css` can weight one
+   differently without any of them being able to disappear.
+
+   `role="status"`: the strip appears as the result of the reader's own
+   submit, and a screen reader should hear why the results look the way
+   they do without having to go looking for it. Polite, not assertive —
+   it is an explanation, not an alarm. #}
+{% if hints %}
+  <div class="search-hints" role="status">
+    {% for hint in hints %}
+      <p class="search-hint" data-kind="{{ hint.kind }}">
+        {{ icon("triangle-alert", class_="size-4 shrink-0 search-hint-icon") }}
+        <span>
+          {%- if hint.token %}<code>{{ hint.token }}</code> {% endif -%}
+          {{ hint.message }}
+        </span>
+      </p>
+    {% endfor %}
+  </div>
+{% endif %}

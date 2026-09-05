@@ -1,0 +1,552 @@
+/* Search (design spec §10) — the pill input, the suggestion popover, the
+   results chips row and the advanced panel.
+
+   A separate file only so that search and labels can be built at the same
+   time without two authors rewriting `input.css` from under each other. It
+   is `@import`ed into `input.css` and compiled by the same `make css`, so
+   every theme token, density variable and utility defined there is in scope
+   here — this is one stylesheet split across files, not a second one. */
+
+@layer components {
+  /* ------------------------------------------------------------------
+     The pill (spec §5.1: centred, max 640px, 36px, `/` hint, filter icon).
+
+     Three children in a fixed order, and the order is load-bearing:
+     `.search-pop` is revealed by an adjacent-sibling rule off the form, so
+     it must follow the form immediately, and `.search-adv` comes last so
+     that opening the advanced panel does not also open the suggestions.
+     `shell/topbar.html`'s own comment says the same thing from the markup
+     side.
+
+     `margin-inline: auto` inside the 52px flex header is what centres it
+     between the wordmark and the right-hand controls, exactly as the
+     disabled placeholder it replaced did.
+     ------------------------------------------------------------------ */
+  .search-shell {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    max-width: 640px;
+    margin-inline: auto;
+  }
+
+  .search-pill {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+    /* Room for the advanced `<details>`, which is positioned over this
+       edge rather than laid out inside the form — it holds a form of its
+       own, and a form inside a form does not survive the parser. */
+    padding: 0 40px 0 12px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-field);
+    background: var(--field);
+    color: var(--fg);
+    transition:
+      background-color var(--dur-1) var(--ease),
+      border-color var(--dur-1) var(--ease),
+      box-shadow var(--dur-1) var(--ease);
+  }
+  /* Focus lifts the field off the top bar rather than ringing it: the
+     popover below is attached to this element, and the two read as one
+     surface only if the field itself becomes that surface. The `1px`
+     border was always there (transparent), so nothing shifts by a pixel
+     when it gains a colour. */
+  .search-pill:focus-within {
+    border-color: var(--line-2);
+    background: var(--surface);
+    box-shadow: var(--shadow-2);
+  }
+
+  /* The documented exception `@layer base`'s "never remove outlines" rule
+     allows for a field whose focus is unmistakable by other means — the
+     same one `.palette-input` and `.lp-input` take. This input carries the
+     caret, the pill around it changes surface, and the popover opens
+     beneath it; a ring on top would be a fourth signal for one event. */
+  .search-input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font-size: 13px;
+  }
+  .search-input:focus,
+  .search-input:focus-visible {
+    outline: none;
+  }
+  .search-input::placeholder {
+    color: var(--fg-3);
+  }
+  /* The platform's own clear button on `type="search"`, which Chrome
+     paints as a dark glyph that disappears on the dark theme. The pill
+     already has `Esc` and a full selection on `/`; this is one control
+     too many, in the one place a theme cannot reach. */
+  .search-input::-webkit-search-cancel-button {
+    display: none;
+  }
+
+  /* Hidden the moment there is anything to read, so the hint never sits
+     beside the reader's own words. */
+  .search-kbd {
+    flex: none;
+    display: flex;
+    align-items: center;
+  }
+  .search-pill:focus-within .search-kbd {
+    display: none;
+  }
+
+  /* ------------------------------------------------------------------
+     The focus popover: recent searches and the operator card.
+
+     Opened by CSS alone. `:focus-within` on the pill is the primary rule;
+     `:hover` on the panel itself is the second, and it is not decoration
+     — a mousedown on a recent search blurs the input *before* the click
+     lands, and without this the panel would be pulled out from under the
+     pointer mid-gesture (Safari does not focus a link on mousedown at
+     all, so `:focus-within` alone loses the click there entirely). A
+     display:none element cannot be hovered, so this can never open the
+     panel on its own.
+
+     `:has()` closes it while the advanced panel is up: two popovers
+     stacked over the same 640px is a layout, not a decision.
+     ------------------------------------------------------------------ */
+  .search-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    left: 0;
+    z-index: 30;
+    display: none;
+    max-height: min(70vh, 520px);
+    padding: 8px 0 4px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface-2);
+    box-shadow: var(--shadow-2);
+    overflow-y: auto;
+  }
+  .search-pill:focus-within + .search-pop,
+  .search-pop:hover {
+    display: block;
+  }
+  .search-shell:has(.search-adv[open]) .search-pop {
+    display: none;
+  }
+
+  .search-pop-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+  .search-pop-clear {
+    margin-left: auto;
+    color: var(--accent-ink);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    cursor: pointer;
+  }
+  .search-pop-item {
+    display: block;
+    margin: 0 6px;
+    padding: 7px 10px;
+    border-radius: var(--radius-ctl);
+    color: var(--fg);
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: background-color var(--dur-1) var(--ease);
+  }
+  .search-pop-item:hover,
+  .search-pop-item:focus-visible {
+    background: var(--hover);
+  }
+
+  /* ------------------------------------------------------------------
+     The operator card, in both places it appears (the popover and the
+     results page's empty state). Two columns of `min-content auto` so the
+     operators line up as a column of code and the explanations as a
+     column of prose — a reference table, which is what it is.
+     ------------------------------------------------------------------ */
+  .search-tips {
+    display: grid;
+    grid-template-columns: max-content auto;
+    gap: 3px 14px;
+    padding: 4px 14px 8px;
+    font-size: 12px;
+  }
+  .search-tips li {
+    display: contents;
+  }
+  .search-tips code,
+  .search-hint code {
+    padding: 1px 5px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-kbd);
+    background: var(--field);
+    color: var(--fg-2);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .search-tips span {
+    color: var(--fg-2);
+    align-self: center;
+  }
+
+  /* ------------------------------------------------------------------
+     The advanced panel's trigger and drop-down. The `<summary>` is the
+     filter icon spec §5.1 puts at the right end of the pill; it is
+     positioned over the field rather than inside the form for the reason
+     given at `.search-pill`.
+     ------------------------------------------------------------------ */
+  .search-adv {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+  }
+  /* A `<summary>` is a `display: list-item` by default, which paints a
+     disclosure triangle beside the icon in every engine. */
+  .search-adv-toggle {
+    list-style: none;
+  }
+  .search-adv-toggle::-webkit-details-marker {
+    display: none;
+  }
+  .search-adv[open] .search-adv-toggle {
+    background: var(--ctl-active);
+    color: var(--icon-strong);
+  }
+  .search-adv-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: -4px;
+    z-index: 30;
+    width: min(560px, calc(100vw - 32px));
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface-2);
+    box-shadow: var(--shadow-2);
+  }
+  .search-adv-loading {
+    padding: 6px 2px;
+    color: var(--fg-3);
+    font-size: 12px;
+  }
+
+  .adv-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+  }
+  .adv-wide {
+    grid-column: 1 / -1;
+  }
+  .adv-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .adv-label {
+    color: var(--fg-2);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .adv-input {
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+    padding: 0 9px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-ctl);
+    background: var(--surface);
+    color: var(--fg);
+    font-size: 13px;
+  }
+  /* `appearance: none` would take the disclosure arrow with it, and a
+     select with no arrow reads as a text field. Only the padding is
+     adjusted so the native arrow has room. */
+  .adv-select {
+    padding-right: 4px;
+  }
+  /* The size row is three controls in one column: a comparison, a number
+     and a unit. The two selects get whatever the number does not, so
+     "greater than" is not clipped to "greater t" at 260px — measured, not
+     assumed. */
+  .adv-row {
+    display: flex;
+    gap: 6px;
+  }
+  .adv-row .adv-select {
+    flex: 1;
+    min-width: 0;
+  }
+  /* "greater than" is the longest option in the row and the one that
+     decides its width; the unit select holds "MB". Measured in the
+     browser at 560px — an even split clipped it to "greater th". */
+  .adv-row .adv-select:first-of-type {
+    flex: 1.7;
+  }
+  .adv-size {
+    width: 4.5em;
+    flex: none;
+    text-align: right;
+  }
+  .adv-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    align-self: end;
+    padding-bottom: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .adv-checkbox {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .adv-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .adv-reset {
+    color: var(--accent-ink);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .adv-reset:hover {
+    text-decoration: underline;
+  }
+  /* The one accent button outside the nav's Compose. Deliberately not
+     named `.btn-*`: it is this surface's submit, and a generic primary
+     button in a search partial is a component two files would then own. */
+  .search-submit {
+    height: 32px;
+    margin-left: auto;
+    padding: 0 16px;
+    border-radius: var(--radius-ctl);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color var(--dur-1) var(--ease);
+  }
+  .search-submit:hover {
+    background: var(--accent-hover);
+  }
+  .search-submit:active {
+    background: var(--accent-press);
+  }
+
+  /* ------------------------------------------------------------------
+     The results header: the chips row and the hints strip, above the
+     list's own 44px toolbar.
+     ------------------------------------------------------------------ */
+  .search-head {
+    flex: none;
+  }
+
+  .chips-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* A chip is a link or a `<summary>`, never a button that looks like
+     one: every chip navigates to `/search?q=<this query, edited>`, and
+     the address bar is the point. 99px radius per spec §4.2's "99
+     chips/pills". */
+  .schip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-pill);
+    color: var(--fg-2);
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+    list-style: none;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      border-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .schip::-webkit-details-marker {
+    display: none;
+  }
+  .schip:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .schip.is-on {
+    border-color: transparent;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-weight: 500;
+  }
+  .schip-caret {
+    margin-right: -3px;
+    color: currentcolor;
+    opacity: .7;
+  }
+  .schip-quiet {
+    border-style: dashed;
+    color: var(--fg-3);
+  }
+
+  .schip-menu {
+    position: relative;
+  }
+  /* Left-aligned under its own chip rather than right-aligned like the
+     message menu: these open from the left edge of a row of chips, and a
+     right-aligned panel would hang off the wrong side of the first one. */
+  .schip-panel {
+    right: auto;
+    left: 0;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .schip-panel .menu-item.is-current {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+  .schip-form-panel {
+    width: 260px;
+    padding: 12px;
+  }
+  .schip-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--fg-2);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .schip-input {
+    width: 100%;
+    height: 32px;
+    padding: 0 9px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-ctl);
+    background: var(--surface);
+    color: var(--fg);
+    font-size: 13px;
+  }
+  .schip-actions {
+    display: flex;
+    margin-top: 10px;
+  }
+  .schip-actions .search-submit {
+    margin-left: auto;
+  }
+
+  /* ------------------------------------------------------------------
+     Hints (spec §10: "unknown operators produce an inline hint, never a
+     500"). Warn-toned rather than danger-toned on purpose: nothing has
+     failed, the search ran — it just did not do one of the things it was
+     asked, and the strip says which.
+     ------------------------------------------------------------------ */
+  .search-hints {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--warn) 8%, transparent);
+  }
+  .search-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--fg-2);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .search-hint-icon {
+    margin-top: 1px;
+    color: var(--warn);
+  }
+  /* One kind is weighted differently, and only one. `scope-uncertain` does
+     not say a term was approximated — it says the *results are wider than
+     the reader asked for*: Spam and Trash could not be identified, so
+     deleted mail may be mixed in below. Every other hint is about a term;
+     this one is about the promise the default scope makes. It is styled
+     through the `data-kind` hook rather than by the template branching, so
+     a kind added later still renders (`search/hints.html`). */
+  .search-hint[data-kind=scope-uncertain] {
+    color: var(--fg);
+  }
+  .search-hint[data-kind=scope-uncertain] .search-hint-icon {
+    color: var(--danger);
+  }
+
+  /* ------------------------------------------------------------------
+     Results.
+     ------------------------------------------------------------------ */
+
+  /* The empty state's own operator card is a two-column table centred in
+     a column that is centring its children — so it is pulled back to the
+     left of its own box, where a reference table belongs. */
+  .search-empty {
+    padding: 48px 24px;
+  }
+  .search-empty .search-tips {
+    margin-top: 18px;
+    padding: 0;
+    text-align: left;
+  }
+  .search-empty .empty-body code {
+    padding: 1px 5px;
+    border-radius: var(--radius-kbd);
+    background: var(--field);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+  }
+
+  /* `SearchSnippet/get`'s highlights, inside the reused list row
+     (`mailosh.web.search._highlight` is what puts the `<mark>` there, and
+     it is the only thing in this app allowed to). A wash and a weight,
+     not the browser's default yellow block: a row already carries an
+     unread weight, a hover and a selection, and a fourth full-strength
+     background would win over all three. */
+  .row mark {
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: inherit;
+    font-weight: 600;
+  }
+  .row.is-unread mark {
+    background: color-mix(in srgb, var(--accent) 24%, transparent);
+  }
+}

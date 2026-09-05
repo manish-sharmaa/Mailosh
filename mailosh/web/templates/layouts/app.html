@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en" data-theme="{{ prefs.theme }}" data-density="{{ prefs.density }}"
+      data-shortcuts="{{ 'on' if prefs.shortcuts else 'off' }}">
+  <head>
+    <meta charset="utf-8">
+    {# `viewport-fit=cover` is what makes `env(safe-area-inset-*)` report
+       anything but zero: without it a notched phone letterboxes the page
+       inside the safe area and every inset resolves to 0px, so spec §11's
+       "bottom action bar with safe-area padding" would be dead code. With
+       it the page owns the whole screen and `styles/responsive.css` pays
+       the insets back — the grid takes top/left/right, the drawer, the
+       bottom action bar and the full-screen compose dock take their own.
+       On a device with no cutout every one of those resolves to 0px, so
+       this adds no dead space anywhere. #}
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>{% block title %}Mailosh{% endblock %}</title>
+    {# A resolved theme has one right answer for theme-color; "system"
+       doesn't -- the OS could be either, and this server-rendered page
+       has no client hint to resolve it with (same limit `data-theme`
+       itself accepts: spec §4.1 lets `[data-theme]` go unset/"system" and
+       leans on the `prefers-color-scheme` media query in styles/input.css
+       instead). The media-conditional pair mirrors that exact mechanism
+       for this meta tag instead of guessing a single colour. #}
+    {% if prefs.theme == "system" %}
+      <meta name="theme-color" content="#EBEEF3" media="(prefers-color-scheme: light)">
+      <meta name="theme-color" content="#0D1015" media="(prefers-color-scheme: dark)">
+    {% else %}
+      <meta name="theme-color" content="{{ '#0D1015' if prefs.theme == 'dark' else '#EBEEF3' }}">
+    {% endif %}
+    {# Preloaded + linked before any other request-blocking asset, so the
+       browser starts the font fetch in parallel with CSS parsing instead
+       of discovering it only once app.css's own @font-face is parsed
+       (design spec §4.2: "preloaded"). Both go through static() for
+       content-versioned, cache-forever URLs -- see mailosh.ui.static's
+       docstring. #}
+    {# Brand marks. 32px is what a browser tab actually renders; 192
+       covers Android/PWA install and 180 is Apple's touch-icon size. All
+       three are the same square art with a transparent surround, so none
+       of them shows a white tile in dark browser chrome. #}
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ static('brand/mark-32.png') }}">
+    <link rel="icon" type="image/png" sizes="192x192" href="{{ static('brand/mark-192.png') }}">
+    <link rel="apple-touch-icon" href="{{ static('brand/mark-180.png') }}">
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="{{ static('fonts/inter-latin.woff2') }}">
+    <link rel="stylesheet" href="{{ static('app.css') }}">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+  </head>
+  <body class="h-dvh overflow-hidden bg-bg text-fg" hx-ext="morph, preload" hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'
+      data-compose-purify="{{ static('vendor/purify.min.js') }}"
+      data-compose-squire="{{ static('vendor/squire.js') }}">
+    {# Skip link (spec §11). Three things have to be true at once and the
+       old `sr-only focus:not-sr-only` pair delivered none of them:
+
+       * **It has to be seen.** `not-sr-only` returns the element to
+         `position: static`, so a focused skip link joined the flow and
+         shoved the whole 52px frame down the page. This one is always
+         positioned and always painted — it is parked above the viewport
+         with a transform and slides back on focus, which moves nothing.
+       * **It has to move focus, not just scroll.** `#main` carries
+         `tabindex="-1"` below; fragment navigation focuses the target only
+         if the target is focusable, and a bare `<main>` is not. Without
+         it the browser scrolled (a no-op in a frame that does not scroll)
+         and left focus on the link, so the next Tab went to the top bar —
+         i.e. the link skipped nothing at all.
+       * **It has to stay in the accessibility tree.** No `display: none`,
+         no `visibility: hidden`, no `sr-only` swap: the element is one
+         element in one state throughout, and only its transform changes.
+
+       Styled with utilities rather than a class so it needs no rule in
+       any stylesheet — `styles/a11y.css` belongs to the accessibility
+       pass and a skip link defined in two files is one that will
+       disagree with itself. #}
+    <a href="#main"
+       class="skip-link absolute left-3 top-3 z-[60] -translate-y-[200%] rounded-btn border border-line bg-surface px-3 py-2 text-[13px] font-semibold text-fg shadow-2 transition-transform focus:translate-y-0">Skip to inbox</a>
+
+    {# Permanent live regions: never (re)created by an HTMX swap, so a
+       screen reader's aria-live announcement queue and the toast stack
+       both survive every fragment swap instead of restarting. Later
+       tasks' fragments target these ids directly (an hx-swap-oob, or the
+       small JS helpers keys.js/actions.js/sse.js add) rather than this
+       shell re-rendering them. #}
+    <div id="status" role="status" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+    {# No `aria-live` on the stack, deliberately: `#status` above is the
+       live region and the same words already go there once. With both, a
+       screen reader announced every action twice -- and the toast's copy
+       is the worse of the two, because it is not `aria-atomic` and it
+       includes the Undo button ("ArchivedUndo" against `#status`'s
+       "Archived"). Measured in the accessibility pass; `static/js/app.js`
+       has said which of the two is the live region since it was written. #}
+    <div
+      id="toasts"
+      class="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2"
+    ></div>
+
+    {# The frame (design spec §4.3/§5): a 52px top bar spanning both
+       columns, a 224px nav rail, and the main surface. Those are the
+       >=1100px metrics and they are written here, as utilities, because
+       that is the layout this app is designed at; the two narrower shapes
+       spec §4.3 asks for are `styles/responsive.css`'s and are keyed off
+       the four `app-*` class hooks below rather than off these utilities:
+
+       * **< 1100px** the nav becomes a 64px icon rail (`grid-cols` alone
+         changes; every item keeps its accessible name, visually hidden).
+       * **< 768px** the nav leaves the grid entirely and becomes a fixed
+         drawer over the list, the grid drops to one column, and
+         `static/js/nav.js` owns opening it.
+
+       The hooks exist so that one file describes the whole responsive
+       story. A breakpoint written as `md:grid-cols-[64px_1fr]` here would
+       put half of it in the markup and half in the stylesheet, and the
+       drawer's `position: fixed` has no utility at all. #}
+    <div class="app-grid grid h-full grid-cols-[224px_1fr] grid-rows-[52px_auto_1fr]">
+      <header class="app-header col-span-2 row-start-1 flex h-[52px] items-center gap-3 border-b border-line bg-bg px-3">
+        {# The drawer's own control, and the only one: under 768px this is
+           the sole way to the navigation, so it is rendered by the layout
+           that owns the drawer rather than by `shell/topbar.html` (whose
+           menu button is a dead `aria-disabled` placeholder for spec
+           §5.1's *desktop* rail toggle -- a different feature, a different
+           file, and not this pass's).
+
+           `display: none` until 768px, where `styles/responsive.css`
+           reveals it and hides that placeholder, so the frame never shows
+           two hamburgers. `aria-expanded` is written by nav.js. #}
+        <button type="button" class="btn-icon shrink-0 nav-drawer-toggle"
+                data-role="nav-toggle" aria-expanded="false" aria-controls="app-nav">
+          {{ icon("menu", class_="size-5", label="Open navigation") }}
+        </button>
+        {% block topbar %}{% endblock %}
+      </header>
+
+      {# Spec §5.4's connection-lost banner, in a grid row of its own
+         between the top bar and the two columns -- "under the top bar",
+         spanning both, pushing rather than overlaying. The row is `auto`,
+         so while the banner carries `hidden` (`display: none`) it holds no
+         height at all and this grid is exactly the two-row one it was;
+         nav/main sit in row 3 for that reason alone. #}
+      <div class="app-banner col-span-2 row-start-2">{% include "fragments/offline.html" %}</div>
+
+      {# **Not a `<dialog>`, on purpose.** Under 768px this element is a
+         modal drawer, and the reflex is `showModal()` -- but
+         `static/js/keys.js` stops dispatching *entirely* while
+         `dialog[open]` matches anywhere in the document (it is how the
+         palette and the `?` overlay take the keyboard). A nav drawer built
+         that way would silently kill every shortcut in the app for as long
+         as it was open, on every screen size that has a keyboard attached.
+
+         It is also the same element at every width, so it must not change
+         its role at a breakpoint: `role="dialog"` would take `navigation`
+         away from the 224px sidebar. Modality is therefore done the way
+         the platform actually offers it to a non-dialog -- nav.js marks
+         the header, the banner, `#main` and the compose mount `inert`,
+         which removes them from hit-testing, from the tab order and from
+         the accessibility tree at once. That is what `aria-modal` only
+         claims. #}
+      <nav id="app-nav" aria-label="Primary"
+           tabindex="-1"
+           class="app-nav row-start-3 flex flex-col gap-0.5 overflow-y-auto px-2 py-2">
+        {# Outside `{% block nav %}` deliberately: `shell/nav.html` renders
+           `#nav`, which a mailbox switch replaces out of band, and a close
+           button inside it would be destroyed and rebuilt mid-swap.
+           Hidden above 768px. #}
+        <div class="nav-drawer-head">
+          <button type="button" class="btn-icon nav-drawer-close" data-role="nav-close">
+            {{ icon("x", class_="size-5", label="Close navigation") }}
+          </button>
+        </div>
+        {% block nav %}{% endblock %}
+      </nav>
+      {# `tabindex="-1"` is what makes the skip link above work: fragment
+         navigation focuses its target only when the target is focusable,
+         and `<main>` is not one by default. It takes no visible ring --
+         `styles/a11y.css` rings `:focus-visible`, which a programmatic
+         focus does not match. #}
+      <main
+        id="main"
+        tabindex="-1"
+        class="app-main row-start-3 flex min-w-0 flex-col overflow-hidden rounded-tl-card border-t border-l border-line bg-surface"
+      >
+        {% block main %}{% endblock %}
+      </main>
+    </div>
+
+    {# The drawer's scrim. A plain `<div>`, never focusable and never in
+       the tab order: it is the pointer's way out, and the keyboard's are
+       `Esc` and the close button above. It is a sibling of the grid so
+       that marking the grid's own children `inert` cannot reach it -- an
+       inert scrim would be a scrim you cannot click. #}
+    <div class="nav-scrim" data-role="nav-scrim" aria-hidden="true"></div>
+
+    {# Compose dock (design spec §8): a fixed-position overlay outside the
+       grid above, not part of the document flow. hx-history="false" keeps
+       HTMX from recording its swaps in browser history -- a draft in
+       progress must never become a back-button stop.
+
+       **Its position in this document is the whole design.** It is a
+       sibling of the grid, outside `#main`, outside `#list`, and outside
+       every target any route in this app swaps into -- so an open dock is
+       not part of anything that gets replaced, and (every dock being
+       `position: fixed`) this element itself holds no height and no hit
+       area at all. That is what leaves the inbox behind a compose window
+       scrolling, clickable, live over SSE and answering `j`/`k`/`e`.
+       Moving this div inside the grid, or making a dock anything other
+       than fixed, breaks all of it at once.
+
+       Docks are appended (`hx-swap="beforeend"` at the call site), never
+       swapped in place: spec §8 allows three at a time. #}
+    <div id="compose-dock" hx-history="false">{% block dock %}{% endblock %}</div>
+
+    {# The `?` overlay (spec §6.1). Here rather than in a page template for
+       the same reason as `#status` and `#toasts` above: it must outlive
+       every swap, since `static/js/keys.js` binds its close/click-out
+       listeners once and fills it from the registry once. Deliberately not
+       in layouts/fragment.html — a swapped-in second `<dialog
+       id="shortcuts">` would leave two in the document. #}
+    {% include "shell/shortcuts_dialog.html" %}
+
+    {# The ⌘K palette and the gear's quick-settings popover (spec §6.2/§10),
+       here for exactly the reasons the `?` overlay is: both are native
+       `<dialog>`s whose listeners are bound once, and both have to outlive
+       every `#main`/`#list` swap. layouts/fragment.html includes neither —
+       a swapped-in second `<dialog id="palette">` would leave two in the
+       document and `querySelector` would find whichever came first. #}
+    {% include "shell/palette.html" %}
+    {% include "shell/quick_settings.html" %}
+
+    {# Local assets only -- no CDN URLs (Global Constraints), every one
+       content-versioned via static(). Vendor scripts first, in dependency
+       order: idiomorph and preload both register themselves onto the
+       global `htmx`, so htmx.min.js must finish executing first --
+       guaranteed here since none of the four are deferred/module scripts,
+       and classic synchronous scripts always run in document order.
+       command-score is the one vendor file that's a real ES module
+       (controller decision, Task 2 brief: its upstream CommonJS
+       `module.exports` line is rewritten to `export default` at vendor
+       time, rather than shimmed onto `window` -- see NOTICE), and it has
+       no tag of its own: `static/js/palette.js` imports it by relative
+       URL. It used to be loaded here with nothing importing it, which was
+       inert but not free -- a `<script>`'s versioned `?v=` URL and an
+       `import`'s unversioned one are two different module records, so
+       keeping both would have fetched and evaluated the matcher twice.
+
+       Our own four modules load next; a `type="module"` script is
+       parse-deferred automatically and the four run in relative order, so
+       none of them need an explicit `defer`. They import each other
+       (app.js, actions.js, palette.js, compose.js and labels.js all ->
+       keys.js),
+       which the module loader resolves on its own; the tags only fix the
+       order in which the *entry points* run.
+
+       `keys.js` has no tag of its own, for exactly the reason spelled out
+       for command-score above: all three of its consumers import it by
+       relative URL, and a `<script>`'s versioned `?v=` URL is a different
+       module record from an unversioned `import`. It used to carry one,
+       and the two records were genuinely live at once -- the tagged
+       instance's `registry` sat empty at 0 entries while the imported
+       one held 43, so the shortcuts dialog bound its listeners twice and
+       ~30 KB (9.2 KiB gzipped) was fetched and evaluated for nothing on
+       every cold load. Importing it is what runs it.
+
+       **Alpine loads LAST, after our own modules, and the order is
+       load-bearing.** A `defer` script and a non-async module script go
+       into the same in-order execution list, so document position decides
+       who runs first — and Alpine's bundle queues `Alpine.start()` in a
+       microtask that drains the moment its own script finishes, before
+       the next one in the list runs. With Alpine placed ahead of app.js,
+       `start()` dispatched `alpine:init` with nobody listening and then
+       walked the DOM while `$store.list` did not exist yet: every
+       directive reading it threw once, invisibly (Alpine reports an
+       evaluation failure by rethrowing asynchronously, and this one had
+       no message anyone saw), and an effect that throws before it touches
+       a reactive property never subscribes to one. The store appeared a
+       moment later and nothing was listening. The toolbar's `x-show`
+       simply never ran again — no console error, correct-looking markup,
+       a selection bar that could never appear.
+
+       Alpine's own recommendation is to start after everything else has
+       set up the DOM it scans; putting it after our modules is what
+       actually does that, and it makes `app.js`'s `alpine:init` path the
+       one that runs rather than its already-started fallback. #}
+    {# Squire, DOMPurify and `js/compose.js` are NOT here, deliberately.
+       Together they are 36 KB gz -- 40% of spec §11's whole 90 KB shell
+       budget -- and none of it does anything until a reader opens a dock.
+       `js/compose-boot.js` below owns the compose entry points and loads
+       all three on the first one, in the order they need.
+
+       Their URLs travel on `<body>` (`data-compose-purify` /
+       `data-compose-squire`) because the boot module cannot call `static()`
+       and the CSP is `script-src 'self'` with no inline scripts to put them
+       in. The pairing they encode is not optional: Squire's default config
+       calls a *global* `DOMPurify`, so a Squire instance built without it
+       throws the first time anything is parsed -- a paste, or seeding a
+       reply with its quoted body. #}
+    <script src="{{ static('vendor/htmx.min.js') }}"></script>
+    <script src="{{ static('vendor/idiomorph-ext.min.js') }}"></script>
+    <script src="{{ static('vendor/preload.js') }}"></script>
+    <script src="{{ static('js/actions.js') }}" type="module"></script>
+    <script src="{{ static('js/compose-boot.js') }}" type="module"></script>
+    <script src="{{ static('js/palette.js') }}" type="module"></script>
+    {# Labels (spec §10): the picker, the Move chooser and the label menu.
+       Tagged rather than imported by another module for the same reason
+       app.js and actions.js are — it is an entry point, not a library, and
+       nothing else in this app has a reason to reach into it. Like the
+       other entry points it *imports* keys.js, which is safe precisely
+       because keys.js has no tag of its own: every consumer reaches it by
+       the same relative URL, so there is one module record. The danger the
+       comment above describes is tagging *and* importing the same file. #}
+    <script src="{{ static('js/labels.js') }}" type="module"></script>
+    <script src="{{ static('js/sse.js') }}" type="module"></script>
+    {# The drawer's focus, `Esc`, scrim and inert bookkeeping (spec §4.3's
+       < 768px shape). An entry point like `labels.js`, tagged here rather
+       than imported by anything, and it imports nothing itself -- it
+       deliberately does not touch `keys.js`: while the drawer is open it
+       swallows keystrokes rather than registering a binding, which is the
+       same modality `dialog[open]` gets from keys.js's own dispatch guard
+       without becoming a dialog. #}
+    <script src="{{ static('js/nav.js') }}" type="module"></script>
+    {# The parent half of the message-frame resize handshake. Without this
+       tag nothing listens for the frame's postMessage and every message
+       renders at its placeholder height -- the frame is sandboxed with no
+       `allow-same-origin`, so the parent cannot read its content height
+       any other way. #}
+    <script src="{{ static('js/frame.js') }}" type="module"></script>
+    <script src="{{ static('js/app.js') }}" type="module"></script>
+    <script src="{{ static('vendor/alpine.min.js') }}" defer></script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

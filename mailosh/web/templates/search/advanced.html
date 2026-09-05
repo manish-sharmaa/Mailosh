@@ -1,0 +1,119 @@
+{# The advanced panel (spec §10: From, To, Subject, Has the words, Doesn't
+   have, Size, Date within, Search in, Has attachment).
+
+   **It writes a query, it does not build a filter.** Every field here
+   becomes operator text — `from:x`, `subject:"y"`, `-z`, `larger:5m`,
+   `newer_than:1m` — which `GET /search/build` composes and hands to the
+   same parser a typed query goes through
+   (`mailosh.web.search._build_query`). Two consequences worth stating:
+   the panel can offer "Doesn't have" without this app learning a second
+   way to say NOT, and the results it lands on are a real, shareable
+   `/search?q=…` URL that the reader could have typed themselves. A panel
+   that assembled JMAP conditions directly would have neither.
+
+   A plain GET `<form>` with a real `action`, so it works with no
+   JavaScript; htmx upgrades the same submit to a `#main` swap.
+   `static/js/search.js` closes the surrounding `<details>` afterwards —
+   the one thing a disclosure cannot do for itself.
+
+   Prefilled from the query being viewed, best-effort: a query the nine
+   boxes cannot round-trip (an `OR`, a parenthesised group, two `from:`
+   terms) still searches exactly as typed — the panel shows the part of it
+   that fits, and submitting replaces the query with what the boxes say.
+   That is the same bargain Gmail's panel makes, and the reason the pill
+   above it never stops being the authoritative way to write one. #}
+<form class="search-adv-form" action="/search/build" method="get"
+      hx-get="/search/build" hx-target="#main" hx-swap="morph:innerHTML show:none"
+      hx-push-url="true" hx-indicator="#list-skeleton">
+  <div class="adv-grid">
+    <label class="adv-field">
+      <span class="adv-label">From</span>
+      <input class="adv-input" type="text" name="from" value="{{ advanced.sender }}"
+             autocomplete="off" spellcheck="false">
+    </label>
+
+    <label class="adv-field">
+      <span class="adv-label">To</span>
+      <input class="adv-input" type="text" name="to" value="{{ advanced.recipient }}"
+             autocomplete="off" spellcheck="false">
+    </label>
+
+    <label class="adv-field adv-wide">
+      <span class="adv-label">Subject</span>
+      <input class="adv-input" type="text" name="subject" value="{{ advanced.subject }}"
+             autocomplete="off" spellcheck="false">
+    </label>
+
+    <label class="adv-field adv-wide">
+      <span class="adv-label">Has the words</span>
+      <input class="adv-input" type="text" name="words" value="{{ advanced.words }}"
+             autocomplete="off" spellcheck="false">
+    </label>
+
+    <label class="adv-field adv-wide">
+      <span class="adv-label">Doesn't have</span>
+      <input class="adv-input" type="text" name="without" value="{{ advanced.without }}"
+             autocomplete="off" spellcheck="false">
+    </label>
+
+    <div class="adv-field">
+      <span class="adv-label">Size</span>
+      <div class="adv-row">
+        <select class="adv-input adv-select" name="size_op" aria-label="Size comparison">
+          <option value="larger" {% if advanced.size_op != "smaller" %}selected{% endif %}>greater than</option>
+          <option value="smaller" {% if advanced.size_op == "smaller" %}selected{% endif %}>less than</option>
+        </select>
+        <input class="adv-input adv-size" type="text" inputmode="numeric" name="size"
+               value="{{ advanced.size }}" aria-label="Size" autocomplete="off">
+        <select class="adv-input adv-select" name="size_unit" aria-label="Size unit">
+          {% for value, label in size_units %}
+            <option value="{{ value }}" {% if advanced.size_unit == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <label class="adv-field">
+      <span class="adv-label">Date within</span>
+      <select class="adv-input adv-select" name="within">
+        {% for value, label in within_choices %}
+          <option value="{{ value }}" {% if advanced.within == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    {# One select for both scopes and labels: `in:` and `label:` are two
+       operators but one question ("where do I look"), and the route tells
+       them apart by whether the value is one of the seven scope words. #}
+    <label class="adv-field">
+      <span class="adv-label">Search in</span>
+      <select class="adv-input adv-select" name="scope">
+        {% for value, label in scopes %}
+          <option value="{{ value }}" {% if advanced.scope == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+        {% if labels_flat %}
+          <optgroup label="Labels">
+            {% for path in labels_flat %}
+              <option value="{{ path }}" {% if advanced.scope == path %}selected{% endif %}>{{ path }}</option>
+            {% endfor %}
+          </optgroup>
+        {% endif %}
+      </select>
+    </label>
+
+    <label class="adv-check">
+      <input type="checkbox" name="attachment" value="1" class="adv-checkbox"
+             {% if advanced.attachment %}checked{% endif %}>
+      <span>Has attachment</span>
+    </label>
+  </div>
+
+  <div class="adv-actions">
+    {# A link, not a button: "start over" is a URL — the advanced panel
+       with nothing in it — and a reset button would clear the boxes
+       without clearing the search behind them. #}
+    <a class="adv-reset" href="/search" hx-get="/search" hx-target="#main"
+       hx-swap="morph:innerHTML show:none" hx-push-url="true">Clear search</a>
+    <button type="submit" class="search-submit">Search</button>
+  </div>
+</form>

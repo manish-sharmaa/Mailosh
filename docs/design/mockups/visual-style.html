@@ -1,0 +1,165 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  .pal{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  .pal *{box-sizing:border-box;margin:0;padding:0}
+  .pal .cards{grid-template-columns:repeat(3,minmax(300px,1fr));gap:1rem}
+  .pal .card{padding:0}
+  .pal .card-body{padding:.9rem 1rem 1rem}
+  .pal .card-body h3{font-size:.95rem}
+  .pal .card-body p{font-size:.8rem;line-height:1.45}
+  .pal svg.i{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  /* mini screenshot */
+  .ms{font-size:11px;line-height:1.35;color:var(--fg);background:var(--bg);display:grid;grid-template-rows:34px 1fr;height:228px;overflow:hidden;position:relative}
+  .ms + .ms{border-top:1px solid rgba(127,127,127,.25)}
+  .ms-top{display:flex;align-items:center;gap:8px;padding:0 10px}
+  .ms-mark{width:16px;height:16px;border-radius:4px;background:var(--accent);flex:none}
+  .ms-brand{font-weight:600;font-size:12px;letter-spacing:-.01em}
+  .ms-search{flex:1;max-width:220px;height:22px;border-radius:6px;background:var(--field);color:var(--fg-3);display:flex;align-items:center;gap:6px;padding:0 8px;margin:0 auto}
+  .ms-av{width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff;font-weight:600;font-size:9px;display:flex;align-items:center;justify-content:center;margin-left:auto}
+  .ms-body{display:grid;grid-template-columns:132px 1fr}
+  .ms-nav{padding:4px 6px 0 8px;display:flex;flex-direction:column;gap:1px}
+  .ms-compose{height:24px;border-radius:6px;background:var(--accent);color:#fff;font-weight:600;display:flex;align-items:center;gap:6px;padding:0 8px;margin:0 6px 7px 0}
+  .ms-ni{height:21px;border-radius:5px;display:flex;align-items:center;gap:7px;padding:0 7px;color:var(--fg-2);font-weight:500}
+  .ms-ni b{margin-left:auto;font-weight:600;font-size:10px}
+  .ms-ni.on{background:var(--accent-soft);color:var(--accent-ink)}
+  .ms-h{font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--fg-3);font-weight:600;padding:8px 7px 3px}
+  .ms-dot{width:7px;height:7px;border-radius:50%;flex:none;margin:0 2px}
+  .ms-list{background:var(--surface);border-left:1px solid var(--line);border-top:1px solid var(--line);border-radius:8px 0 0 0;overflow:hidden}
+  .ms-row{height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--line);background:var(--read);color:var(--fg-2);position:relative}
+  .ms-row.u{background:var(--surface)}
+  .ms-row.open{background:var(--accent-soft)}
+  .ms-row.open::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--accent)}
+  .ms-ck{width:10px;height:10px;border:1.2px solid var(--line-2);border-radius:2.5px;flex:none;background:var(--surface)}
+  .ms-star{color:var(--fg-3);display:flex}
+  .ms-star.on{color:#F59E0B}.ms-star.on svg{fill:#F59E0B;stroke:#F59E0B}
+  .ms-from{width:92px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ms-row.u .ms-from{font-weight:600;color:var(--fg)}
+  .ms-txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ms-txt .s{color:var(--fg)}
+  .ms-row.u .ms-txt .s{font-weight:600}
+  .ms-chip{font-size:9px;font-weight:500;padding:0 5px;border-radius:99px;line-height:14px;flex:none}
+  .ms-date{width:46px;text-align:right;font-size:10px;color:var(--fg-3);font-variant-numeric:tabular-nums;flex:none}
+  .ms-row.u .ms-date{color:var(--fg);font-weight:600}
+  .ms-toast{position:absolute;right:10px;bottom:8px;background:var(--toast);color:var(--toast-fg);border-radius:6px;padding:5px 8px 5px 10px;font-size:10px;display:flex;gap:8px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+  .ms-toast a{color:var(--accent-link);font-weight:600}
+  .ms-tag{position:absolute;left:10px;bottom:8px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);font-weight:600}
+  .sw{display:flex;gap:4px;margin:.5rem 0 .25rem}
+  .sw i{display:block;width:18px;height:18px;border-radius:5px;border:1px solid rgba(127,127,127,.35)}
+  .note{font-size:.85rem;color:var(--text-secondary);margin:.25rem 0 1.25rem}
+</style>
+
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="p-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="p-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="p-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="p-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+  <symbol id="p-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="p-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+</svg>
+
+<h2>Colour and dark mode</h2>
+<p class="subtitle">Same layout (your pick: list-first), same Inter, same amber stars and label colours — only the neutrals and the one accent change. Every dark variant follows Superhuman's Carbon rules: no pure black, greys as depth, text at 90 % / 65 %. Click the direction that feels like Mailosh.</p>
+
+<div class="pal"><div class="cards">
+
+  <!-- A: Slate & Indigo -->
+  <div class="card" data-choice="slate-indigo" onclick="toggleSelect(this)">
+    <div class="ms" style="--bg:#F6F7F9;--surface:#FFFFFF;--line:#E6E9EF;--line-2:#CBD2DC;--fg:#0F172A;--fg-2:#5B6577;--fg-3:#8B95A5;--field:#EDF0F5;--accent:#4F46E5;--accent-ink:#3730A3;--accent-soft:#EEF2FF;--read:#F7F8FA;--toast:#1B2130;--toast-fg:#fff;--accent-link:#A5B4FC">
+      <div class="ms-top"><div class="ms-mark"></div><div class="ms-brand">Mailosh</div><div class="ms-search"><svg class="i"><use href="#p-search"/></svg>Search mail</div><div class="ms-av">M</div></div>
+      <div class="ms-body">
+        <div class="ms-nav"><div class="ms-compose"><svg class="i"><use href="#p-pen"/></svg>Compose</div><div class="ms-ni on"><svg class="i"><use href="#p-inbox"/></svg>Inbox<b>12</b></div><div class="ms-ni"><svg class="i"><use href="#p-star"/></svg>Starred</div><div class="ms-ni"><svg class="i"><use href="#p-send"/></svg>Sent</div><div class="ms-ni"><svg class="i"><use href="#p-file"/></svg>Drafts<b>2</b></div><div class="ms-h">Labels</div><div class="ms-ni"><span class="ms-dot" style="background:#6366F1"></span>Work<b>3</b></div><div class="ms-ni"><span class="ms-dot" style="background:#10B981"></span>Receipts</div></div>
+        <div class="ms-list">
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star on"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Priya Natarajan</span><span class="ms-txt"><span class="s">Q3 roadmap review</span> – Attaching the deck we walked through</span><span class="ms-chip" style="background:#EEF2FF;color:#3730A3">Work</span><span class="ms-date">10:42 AM</span></div>
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">GitHub</span><span class="ms-txt"><span class="s">Run #482 passed: main</span> – All checks have passed</span><span class="ms-date">9:58 AM</span></div>
+          <div class="ms-row open"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Daniel Okafor</span><span class="ms-txt"><span class="s">Re: Dinner on Saturday?</span> – Sounds great — 7pm works</span><span class="ms-chip" style="background:#FFF1F2;color:#BE123C">Family</span><span class="ms-date">Yesterday</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Hetzner Cloud</span><span class="ms-txt"><span class="s">Your invoice for August</span> – Invoice #2026-08-14421</span><span class="ms-chip" style="background:#ECFDF5;color:#047857">Receipts</span><span class="ms-date">Aug 30</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Fastmail Blog</span><span class="ms-txt"><span class="s">How JMAP makes push cheap</span> – State strings and EventSource</span><span class="ms-date">Aug 30</span></div>
+        </div>
+      </div>
+      <div class="ms-toast">Archived <a>Undo</a></div>
+    </div>
+    <div class="ms" style="--bg:#0E1116;--surface:#151A21;--line:#242B35;--line-2:#3A4351;--fg:rgba(255,255,255,.9);--fg-2:rgba(255,255,255,.65);--fg-3:rgba(255,255,255,.42);--field:#1B222B;--accent:#7C7CF0;--accent-ink:#C7D2FE;--accent-soft:rgba(124,124,240,.16);--read:#12171E;--toast:#F3F4F6;--toast-fg:#111827;--accent-link:#4F46E5">
+      <div class="ms-top"><div class="ms-mark"></div><div class="ms-brand">Mailosh</div><div class="ms-search"><svg class="i"><use href="#p-search"/></svg>Search mail</div><div class="ms-av">M</div></div>
+      <div class="ms-body">
+        <div class="ms-nav"><div class="ms-compose" style="color:#0E1116"><svg class="i"><use href="#p-pen"/></svg>Compose</div><div class="ms-ni on"><svg class="i"><use href="#p-inbox"/></svg>Inbox<b>12</b></div><div class="ms-ni"><svg class="i"><use href="#p-star"/></svg>Starred</div><div class="ms-ni"><svg class="i"><use href="#p-send"/></svg>Sent</div><div class="ms-ni"><svg class="i"><use href="#p-file"/></svg>Drafts<b>2</b></div><div class="ms-h">Labels</div><div class="ms-ni"><span class="ms-dot" style="background:#818CF8"></span>Work<b>3</b></div><div class="ms-ni"><span class="ms-dot" style="background:#34D399"></span>Receipts</div></div>
+        <div class="ms-list">
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star on"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Priya Natarajan</span><span class="ms-txt"><span class="s">Q3 roadmap review</span> – Attaching the deck we walked through</span><span class="ms-chip" style="background:rgba(129,140,248,.18);color:#C7D2FE">Work</span><span class="ms-date">10:42 AM</span></div>
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">GitHub</span><span class="ms-txt"><span class="s">Run #482 passed: main</span> – All checks have passed</span><span class="ms-date">9:58 AM</span></div>
+          <div class="ms-row open"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Daniel Okafor</span><span class="ms-txt"><span class="s">Re: Dinner on Saturday?</span> – Sounds great — 7pm works</span><span class="ms-chip" style="background:rgba(244,63,94,.18);color:#FDA4AF">Family</span><span class="ms-date">Yesterday</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Hetzner Cloud</span><span class="ms-txt"><span class="s">Your invoice for August</span> – Invoice #2026-08-14421</span><span class="ms-chip" style="background:rgba(16,185,129,.16);color:#6EE7B7">Receipts</span><span class="ms-date">Aug 30</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Fastmail Blog</span><span class="ms-txt"><span class="s">How JMAP makes push cheap</span> – State strings and EventSource</span><span class="ms-date">Aug 30</span></div>
+        </div>
+      </div>
+      <div class="ms-tag">Carbon</div><div class="ms-toast">Archived <a>Undo</a></div>
+    </div>
+    <div class="card-body"><h3>A · Slate &amp; Indigo <span style="font-weight:400;color:var(--text-secondary)">(Recommended)</span></h3><div class="sw"><i style="background:#F6F7F9"></i><i style="background:#E6E9EF"></i><i style="background:#0F172A"></i><i style="background:#4F46E5"></i><i style="background:#EEF2FF"></i><i style="background:#0E1116"></i><i style="background:#7C7CF0"></i></div><p>Cool blue-grey neutrals with a deep indigo accent. Reads as calm, modern software — clearly not Gmail's blue, not a startup purple. Indigo carries well on both grounds.</p></div>
+  </div>
+
+  <!-- B: Paper & Teal -->
+  <div class="card" data-choice="paper-teal" onclick="toggleSelect(this)">
+    <div class="ms" style="--bg:#F8F7F4;--surface:#FFFFFF;--line:#E9E6DF;--line-2:#D2CEC5;--fg:#1C1917;--fg-2:#5F5B55;--fg-3:#8F8A82;--field:#EFEDE7;--accent:#0F766E;--accent-ink:#0B5750;--accent-soft:#E3F2EF;--read:#F8F7F4;--toast:#1F2422;--toast-fg:#fff;--accent-link:#5EEAD4">
+      <div class="ms-top"><div class="ms-mark"></div><div class="ms-brand">Mailosh</div><div class="ms-search"><svg class="i"><use href="#p-search"/></svg>Search mail</div><div class="ms-av">M</div></div>
+      <div class="ms-body">
+        <div class="ms-nav"><div class="ms-compose"><svg class="i"><use href="#p-pen"/></svg>Compose</div><div class="ms-ni on"><svg class="i"><use href="#p-inbox"/></svg>Inbox<b>12</b></div><div class="ms-ni"><svg class="i"><use href="#p-star"/></svg>Starred</div><div class="ms-ni"><svg class="i"><use href="#p-send"/></svg>Sent</div><div class="ms-ni"><svg class="i"><use href="#p-file"/></svg>Drafts<b>2</b></div><div class="ms-h">Labels</div><div class="ms-ni"><span class="ms-dot" style="background:#6366F1"></span>Work<b>3</b></div><div class="ms-ni"><span class="ms-dot" style="background:#10B981"></span>Receipts</div></div>
+        <div class="ms-list">
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star on"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Priya Natarajan</span><span class="ms-txt"><span class="s">Q3 roadmap review</span> – Attaching the deck we walked through</span><span class="ms-chip" style="background:#EEF2FF;color:#3730A3">Work</span><span class="ms-date">10:42 AM</span></div>
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">GitHub</span><span class="ms-txt"><span class="s">Run #482 passed: main</span> – All checks have passed</span><span class="ms-date">9:58 AM</span></div>
+          <div class="ms-row open"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Daniel Okafor</span><span class="ms-txt"><span class="s">Re: Dinner on Saturday?</span> – Sounds great — 7pm works</span><span class="ms-chip" style="background:#FFF1F2;color:#BE123C">Family</span><span class="ms-date">Yesterday</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Hetzner Cloud</span><span class="ms-txt"><span class="s">Your invoice for August</span> – Invoice #2026-08-14421</span><span class="ms-chip" style="background:#ECFDF5;color:#047857">Receipts</span><span class="ms-date">Aug 30</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Fastmail Blog</span><span class="ms-txt"><span class="s">How JMAP makes push cheap</span> – State strings and EventSource</span><span class="ms-date">Aug 30</span></div>
+        </div>
+      </div>
+      <div class="ms-toast">Archived <a>Undo</a></div>
+    </div>
+    <div class="ms" style="--bg:#101413;--surface:#171C1B;--line:#262E2C;--line-2:#3B4644;--fg:rgba(255,255,255,.9);--fg-2:rgba(255,255,255,.65);--fg-3:rgba(255,255,255,.42);--field:#1D2422;--accent:#2DD4BF;--accent-ink:#99F6E4;--accent-soft:rgba(45,212,191,.14);--read:#131817;--toast:#F3F4F1;--toast-fg:#111827;--accent-link:#0F766E">
+      <div class="ms-top"><div class="ms-mark"></div><div class="ms-brand">Mailosh</div><div class="ms-search"><svg class="i"><use href="#p-search"/></svg>Search mail</div><div class="ms-av" style="color:#101413">M</div></div>
+      <div class="ms-body">
+        <div class="ms-nav"><div class="ms-compose" style="color:#101413"><svg class="i"><use href="#p-pen"/></svg>Compose</div><div class="ms-ni on"><svg class="i"><use href="#p-inbox"/></svg>Inbox<b>12</b></div><div class="ms-ni"><svg class="i"><use href="#p-star"/></svg>Starred</div><div class="ms-ni"><svg class="i"><use href="#p-send"/></svg>Sent</div><div class="ms-ni"><svg class="i"><use href="#p-file"/></svg>Drafts<b>2</b></div><div class="ms-h">Labels</div><div class="ms-ni"><span class="ms-dot" style="background:#818CF8"></span>Work<b>3</b></div><div class="ms-ni"><span class="ms-dot" style="background:#34D399"></span>Receipts</div></div>
+        <div class="ms-list">
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star on"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Priya Natarajan</span><span class="ms-txt"><span class="s">Q3 roadmap review</span> – Attaching the deck we walked through</span><span class="ms-chip" style="background:rgba(129,140,248,.18);color:#C7D2FE">Work</span><span class="ms-date">10:42 AM</span></div>
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">GitHub</span><span class="ms-txt"><span class="s">Run #482 passed: main</span> – All checks have passed</span><span class="ms-date">9:58 AM</span></div>
+          <div class="ms-row open"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Daniel Okafor</span><span class="ms-txt"><span class="s">Re: Dinner on Saturday?</span> – Sounds great — 7pm works</span><span class="ms-chip" style="background:rgba(244,63,94,.18);color:#FDA4AF">Family</span><span class="ms-date">Yesterday</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Hetzner Cloud</span><span class="ms-txt"><span class="s">Your invoice for August</span> – Invoice #2026-08-14421</span><span class="ms-chip" style="background:rgba(16,185,129,.16);color:#6EE7B7">Receipts</span><span class="ms-date">Aug 30</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Fastmail Blog</span><span class="ms-txt"><span class="s">How JMAP makes push cheap</span> – State strings and EventSource</span><span class="ms-date">Aug 30</span></div>
+        </div>
+      </div>
+      <div class="ms-tag">Carbon</div><div class="ms-toast">Archived <a>Undo</a></div>
+    </div>
+    <div class="card-body"><h3>B · Paper &amp; Teal</h3><div class="sw"><i style="background:#F8F7F4"></i><i style="background:#E9E6DF"></i><i style="background:#1C1917"></i><i style="background:#0F766E"></i><i style="background:#E3F2EF"></i><i style="background:#101413"></i><i style="background:#2DD4BF"></i></div><p>Warm stone neutrals with a deep teal accent (ihasmail's family, warmed up). Friendlier and more "paper"; teal says calm and trustworthy without echoing any big-tech mail brand.</p></div>
+  </div>
+
+  <!-- C: Graphite & Blue -->
+  <div class="card" data-choice="graphite-blue" onclick="toggleSelect(this)">
+    <div class="ms" style="--bg:#F4F6F8;--surface:#FFFFFF;--line:#E3E8EE;--line-2:#C9D2DC;--fg:#111827;--fg-2:#5A6472;--fg-3:#8A94A3;--field:#E9EEF4;--accent:#1D6AE5;--accent-ink:#174EA6;--accent-soft:#E8F0FE;--read:#F5F7FA;--toast:#1F2937;--toast-fg:#fff;--accent-link:#8AB4F8">
+      <div class="ms-top"><div class="ms-mark"></div><div class="ms-brand">Mailosh</div><div class="ms-search"><svg class="i"><use href="#p-search"/></svg>Search mail</div><div class="ms-av">M</div></div>
+      <div class="ms-body">
+        <div class="ms-nav"><div class="ms-compose"><svg class="i"><use href="#p-pen"/></svg>Compose</div><div class="ms-ni on"><svg class="i"><use href="#p-inbox"/></svg>Inbox<b>12</b></div><div class="ms-ni"><svg class="i"><use href="#p-star"/></svg>Starred</div><div class="ms-ni"><svg class="i"><use href="#p-send"/></svg>Sent</div><div class="ms-ni"><svg class="i"><use href="#p-file"/></svg>Drafts<b>2</b></div><div class="ms-h">Labels</div><div class="ms-ni"><span class="ms-dot" style="background:#6366F1"></span>Work<b>3</b></div><div class="ms-ni"><span class="ms-dot" style="background:#10B981"></span>Receipts</div></div>
+        <div class="ms-list">
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star on"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Priya Natarajan</span><span class="ms-txt"><span class="s">Q3 roadmap review</span> – Attaching the deck we walked through</span><span class="ms-chip" style="background:#EEF2FF;color:#3730A3">Work</span><span class="ms-date">10:42 AM</span></div>
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">GitHub</span><span class="ms-txt"><span class="s">Run #482 passed: main</span> – All checks have passed</span><span class="ms-date">9:58 AM</span></div>
+          <div class="ms-row open"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Daniel Okafor</span><span class="ms-txt"><span class="s">Re: Dinner on Saturday?</span> – Sounds great — 7pm works</span><span class="ms-chip" style="background:#FFF1F2;color:#BE123C">Family</span><span class="ms-date">Yesterday</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Hetzner Cloud</span><span class="ms-txt"><span class="s">Your invoice for August</span> – Invoice #2026-08-14421</span><span class="ms-chip" style="background:#ECFDF5;color:#047857">Receipts</span><span class="ms-date">Aug 30</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Fastmail Blog</span><span class="ms-txt"><span class="s">How JMAP makes push cheap</span> – State strings and EventSource</span><span class="ms-date">Aug 30</span></div>
+        </div>
+      </div>
+      <div class="ms-toast">Archived <a>Undo</a></div>
+    </div>
+    <div class="ms" style="--bg:#111318;--surface:#191C22;--line:#282C35;--line-2:#3D4350;--fg:rgba(255,255,255,.9);--fg-2:rgba(255,255,255,.65);--fg-3:rgba(255,255,255,.42);--field:#1F232B;--accent:#8AB4F8;--accent-ink:#C2D7FE;--accent-soft:rgba(138,180,248,.16);--read:#14171D;--toast:#F3F4F6;--toast-fg:#111827;--accent-link:#1D6AE5">
+      <div class="ms-top"><div class="ms-mark"></div><div class="ms-brand">Mailosh</div><div class="ms-search"><svg class="i"><use href="#p-search"/></svg>Search mail</div><div class="ms-av" style="color:#111318">M</div></div>
+      <div class="ms-body">
+        <div class="ms-nav"><div class="ms-compose" style="color:#111318"><svg class="i"><use href="#p-pen"/></svg>Compose</div><div class="ms-ni on"><svg class="i"><use href="#p-inbox"/></svg>Inbox<b>12</b></div><div class="ms-ni"><svg class="i"><use href="#p-star"/></svg>Starred</div><div class="ms-ni"><svg class="i"><use href="#p-send"/></svg>Sent</div><div class="ms-ni"><svg class="i"><use href="#p-file"/></svg>Drafts<b>2</b></div><div class="ms-h">Labels</div><div class="ms-ni"><span class="ms-dot" style="background:#818CF8"></span>Work<b>3</b></div><div class="ms-ni"><span class="ms-dot" style="background:#34D399"></span>Receipts</div></div>
+        <div class="ms-list">
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star on"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Priya Natarajan</span><span class="ms-txt"><span class="s">Q3 roadmap review</span> – Attaching the deck we walked through</span><span class="ms-chip" style="background:rgba(129,140,248,.18);color:#C7D2FE">Work</span><span class="ms-date">10:42 AM</span></div>
+          <div class="ms-row u"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">GitHub</span><span class="ms-txt"><span class="s">Run #482 passed: main</span> – All checks have passed</span><span class="ms-date">9:58 AM</span></div>
+          <div class="ms-row open"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Daniel Okafor</span><span class="ms-txt"><span class="s">Re: Dinner on Saturday?</span> – Sounds great — 7pm works</span><span class="ms-chip" style="background:rgba(244,63,94,.18);color:#FDA4AF">Family</span><span class="ms-date">Yesterday</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Hetzner Cloud</span><span class="ms-txt"><span class="s">Your invoice for August</span> – Invoice #2026-08-14421</span><span class="ms-chip" style="background:rgba(16,185,129,.16);color:#6EE7B7">Receipts</span><span class="ms-date">Aug 30</span></div>
+          <div class="ms-row"><span class="ms-ck"></span><span class="ms-star"><svg class="i"><use href="#p-star"/></svg></span><span class="ms-from">Fastmail Blog</span><span class="ms-txt"><span class="s">How JMAP makes push cheap</span> – State strings and EventSource</span><span class="ms-date">Aug 30</span></div>
+        </div>
+      </div>
+      <div class="ms-tag">Carbon</div><div class="ms-toast">Archived <a>Undo</a></div>
+    </div>
+    <div class="card-body"><h3>C · Graphite &amp; Blue</h3><div class="sw"><i style="background:#F4F6F8"></i><i style="background:#E3E8EE"></i><i style="background:#111827"></i><i style="background:#1D6AE5"></i><i style="background:#E8F0FE"></i><i style="background:#111318"></i><i style="background:#8AB4F8"></i></div><p>Neutral graphite with a classic mail-app blue. The most familiar to Gmail and Outlook refugees; the least distinctive — it borrows their trust and a little of their sameness.</p></div>
+  </div>
+
+</div></div>
+<p class="note">Whichever you choose becomes the shipped default theme; the token system makes additional accents cheap later (Superhuman has twelve). Light follows the OS unless overridden in Quick settings.</p>

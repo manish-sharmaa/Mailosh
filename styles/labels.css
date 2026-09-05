@@ -1,0 +1,529 @@
+/* Labels (design spec §10) — the label picker and move popovers, the nav's
+   colour swatches and the label management rows.
+
+   A separate file only so that search and labels can be built at the same
+   time without two authors rewriting `input.css` from under each other. It
+   is `@import`ed into `input.css` and compiled by the same `make css`, so
+   every theme token, density variable and utility defined there is in scope
+   here — this is one stylesheet split across files, not a second one. */
+
+@layer components {
+  /* ------------------------------------------------------------------
+     The sidebar's label row (spec §5.2: "hover ⋮ → colour / show / hide /
+     show if unread / edit / remove", and the "+ create" beside the
+     heading).
+
+     The ⋮ is positioned *over* the row's right edge rather than beside the
+     link, so `.nav-item` keeps the full 224 px it has always had and the
+     unread badge keeps its place. The two share that corner: while the row
+     is hovered or focused within, the count steps aside and the button
+     takes it — which is how Gmail reads, and how a 224 px rail fits a
+     name, a count and a menu without any of the three being cramped.
+
+     `:focus-within` is not decoration here. The button is `tabindex`-able
+     and every icon control in this app has to be reachable without a mouse
+     (spec §11: "keyboard-operable everything (checkboxes and hover actions
+     are real buttons, not hover-only)"), so it must be visible the moment
+     it is focused, not only while a pointer is over it.
+     ------------------------------------------------------------------ */
+  .nav-row {
+    position: relative;
+  }
+  .nav-menu {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-ctl);
+    color: var(--fg-3);
+    opacity: 0;
+    transform: translateY(-50%);
+    pointer-events: none;
+    transition:
+      opacity var(--dur-1) var(--ease),
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .nav-row:hover .nav-menu,
+  .nav-row:focus-within .nav-menu {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .nav-menu:hover {
+    background: var(--ctl-hover);
+    color: var(--fg);
+  }
+  .nav-menu:focus-visible {
+    opacity: 1;
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+    pointer-events: auto;
+  }
+  /* The count and the menu occupy the same corner, so exactly one of them
+     is ever visible. Neither `display` nor `visibility`: the badge has to
+     keep its box, so the label name does not reflow a pixel when the
+     pointer arrives, *and* it has to stay in the accessibility tree. The
+     count sits inside the `<a class="nav-item">`, so `visibility: hidden`
+     (what shipped) took it out of that link's accessible name — a keyboard
+     reader focusing the row heard "Inbox" where a pointer user saw
+     "Inbox 33". `opacity` hides the same pixels and keeps the name. */
+  .nav-row:hover .nav-count,
+  .nav-row:focus-within .nav-count {
+    opacity: 0;
+  }
+
+  .nav-heading-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .nav-heading-row .nav-heading {
+    flex: 1;
+    min-width: 0;
+  }
+  .nav-add {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-ctl);
+    color: var(--fg-3);
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .nav-add:hover {
+    background: var(--ctl-hover);
+    color: var(--fg);
+  }
+  .nav-add:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+
+  /* ------------------------------------------------------------------
+     The popover itself — one `<dialog>`, created once by
+     `static/js/labels.js`, holding whichever of the three fragments was
+     fetched (picker, menu, new).
+
+     Modal, like the palette and the quick-settings panel: `showModal()`
+     buys the focus trap, `Esc`, the inert background and a backdrop whose
+     click is the only close-on-click-out a `<dialog>` has. Pinned near the
+     top rather than centred, because it is a chooser you type into and a
+     centred one jumps under the caret as it filters.
+     ------------------------------------------------------------------ */
+  .lp-dialog {
+    width: min(340px, calc(100vw - 32px));
+    max-height: min(72vh, 520px);
+    margin: 96px auto auto;
+    padding: 0;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: var(--shadow-3);
+    overflow: hidden;
+  }
+  .lp-dialog::backdrop {
+    background: rgba(16, 24, 40, .32);
+  }
+  .lp-dialog[open] {
+    display: flex;
+    flex-direction: column;
+    animation: lp-in var(--dur-2) var(--ease-out);
+  }
+  /* `@layer base`'s reduced-motion block zeroes every animation with
+     `!important`, so this needs no guard of its own. */
+  @keyframes lp-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(.99);
+    }
+  }
+
+  .lp {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .lp-field {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 10px;
+    height: 42px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .lp-field[hidden] {
+    display: none;
+  }
+  .lp-field-icon {
+    flex: none;
+    color: var(--fg-3);
+  }
+  /* Same documented exception the palette's own input takes: this field is
+     focused the instant the dialog opens and can never *not* be focused
+     while it is open, so a ring here would be permanent chrome rather than
+     a cue — and the panel is modal, with a caret in it, so focus is never
+     in doubt. */
+  .lp-input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font-size: 14px;
+  }
+  .lp-input:focus,
+  .lp-input:focus-visible {
+    outline: none;
+  }
+  .lp-input::placeholder {
+    color: var(--fg-3);
+  }
+
+  .lp-list {
+    flex: 1;
+    min-height: 0;
+    padding: 6px 0;
+    overflow-y: auto;
+  }
+  .lp-group {
+    padding: 8px 14px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+  .lp-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: calc(100% - 12px);
+    min-height: 32px;
+    margin: 0 6px;
+    padding: 4px 12px;
+    border-radius: var(--radius-ctl);
+    color: var(--fg);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .lp-option[hidden] {
+    display: none;
+  }
+  /* One cursor for pointer and keyboard alike, exactly as the palette does
+     it — what `Enter` picks is always what is highlighted. */
+  .lp-option.is-active {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+  /* A `show_if_unread` label with nothing unread has no sidebar row right
+     now but is still a label you can file under, so the picker keeps it
+     and says quietly that it is not on screen. */
+  .lp-option.is-muted .lp-name {
+    color: var(--fg-2);
+  }
+  /* The real inputs stay in the layout at zero opacity rather than
+     `display: none`, so the whole native contract survives: a checkbox is
+     still focusable, still toggles on Space, still announces its state,
+     and a radio group still moves with the arrow keys. */
+  .lp-check,
+  .lp-radio {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .lp-box {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border: 1.5px solid var(--line-2);
+    border-radius: 4px;
+    color: var(--on-accent);
+    transition:
+      background-color var(--dur-1) var(--ease),
+      border-color var(--dur-1) var(--ease);
+  }
+  .lp-box svg {
+    opacity: 0;
+  }
+  .lp-check:checked + .lp-box,
+  .lp-check:indeterminate + .lp-box {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+  .lp-check:checked + .lp-box .lp-box-on,
+  .lp-check:indeterminate + .lp-box .lp-box-some {
+    opacity: 1;
+  }
+  .lp-check:indeterminate + .lp-box .lp-box-on {
+    opacity: 0;
+  }
+  .lp-check:focus-visible + .lp-box {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .lp-radio:checked ~ .lp-name {
+    font-weight: 600;
+  }
+  .lp-radio:checked ~ .lp-mark {
+    color: var(--accent);
+  }
+  .lp-radio:focus-visible ~ .lp-name {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .lp-mark {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    color: var(--icon);
+  }
+  .lp-dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+  }
+  .lp-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .lp-create[hidden],
+  .lp-empty[hidden] {
+    display: none;
+  }
+  .lp-create {
+    color: var(--accent-ink);
+  }
+  .lp-empty {
+    padding: 14px;
+    font-size: 13px;
+    color: var(--fg-3);
+  }
+
+  .lp-foot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--line);
+  }
+  .lp-hint {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    color: var(--fg-3);
+  }
+  .lp-btn {
+    flex: none;
+    height: 30px;
+    padding: 0 14px;
+    border-radius: var(--radius-pill);
+    color: var(--fg-2);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .lp-btn:hover {
+    background: var(--ctl-hover);
+    color: var(--fg);
+  }
+  .lp-btn:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .lp-btn.is-accent {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .lp-btn.is-accent:hover {
+    background: var(--accent-hover);
+    color: var(--on-accent);
+  }
+  .lp-btn.is-danger {
+    background: transparent;
+    color: var(--danger);
+  }
+  .lp-btn.is-danger:hover {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger);
+  }
+  .lp-btn:disabled,
+  .lp-btn[aria-disabled=true] {
+    opacity: .45;
+    cursor: default;
+  }
+
+  /* ------------------------------------------------------------------
+     The label menu / new-label form, in the same popover shell.
+     ------------------------------------------------------------------ */
+  .lm {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 14px;
+    overflow-y: auto;
+  }
+  .lm-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .lm-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .lm-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-inline-size: 0;
+  }
+  .lm-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+  .lm-label-spaced {
+    margin-top: 8px;
+  }
+  .lm-inline {
+    display: flex;
+    gap: 6px;
+  }
+  .lm-input,
+  .lm-select {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-ctl);
+    background: var(--surface);
+    color: var(--fg);
+    font-size: 13px;
+  }
+  .lm-input:focus-visible,
+  .lm-select:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -1px;
+  }
+  .lm-swatches {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+  }
+  .lm-swatch {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    transition:
+      box-shadow var(--dur-1) var(--ease),
+      transform var(--dur-1) var(--ease);
+  }
+  .lm-swatch:hover {
+    transform: scale(1.12);
+  }
+  /* The chosen swatch is marked with a ring drawn *outside* it rather than
+     a tick inside: a check glyph has to clear twelve different background colours
+     and would fail the contrast check on at least the light ones. */
+  .lm-swatch.is-on {
+    box-shadow:
+      0 0 0 2px var(--surface),
+      0 0 0 4px var(--accent);
+  }
+  .lm-swatch:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 3px;
+  }
+  .lm-swatch-none {
+    border: 1.5px dashed var(--line-2);
+    background: transparent;
+  }
+  .lm-note {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg-2);
+  }
+  .lm-danger {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .lm-danger .lp-btn {
+    align-self: flex-start;
+  }
+  .lm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .lm-gone {
+    gap: 10px;
+  }
+
+  /* The delete confirmation reuses `.confirm` (styles/input.css, built for
+     the bulk-action dialog) and adds the two things a label delete needs
+     that a bulk archive did not: a heading, and a destructive verb on the
+     go button. */
+  .confirm-title {
+    margin: 0 0 6px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .confirm-go.is-danger {
+    background: var(--danger);
+    color: var(--on-accent);
+  }
+  .confirm-go.is-danger:hover,
+  .confirm-go.is-danger:active {
+    background: color-mix(in srgb, var(--danger) 84%, black);
+  }
+}

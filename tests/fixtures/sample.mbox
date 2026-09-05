@@ -1,0 +1,77 @@
+From alice@example.org Thu Aug 20 09:00:00 2026
+Return-Path: <alice@example.org>
+Received: from mail.example.org (mail.example.org [192.0.2.10])
+	by mail.mailosh.test (Mailosh Spike) with ESMTP id spk0001t1
+	for <demo@mailosh.test>; Thu, 20 Aug 2026 09:00:00 +0000
+Message-ID: <t1@example.org>
+Date: Thu, 20 Aug 2026 09:00:00 +0000
+From: Alice Example <alice@example.org>
+To: Demo User <demo@mailosh.test>
+Subject: Spike thread kickoff
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hi Demo,
+
+This is the first message in the spike thread. It has no In-Reply-To or
+References of its own -- it is the root that the next two messages chain
+back to via Message-ID <t1@example.org>.
+
+Task 5 imports this whole mbox through Email/import to check whether
+Stalwart folds all three messages into a single collapsed thread and
+carries them into more than one mailbox at once.
+
+-- Alice
+
+From bob@example.org Thu Aug 20 09:05:00 2026
+Return-Path: <bob@example.org>
+Received: from mail.example.org (mail.example.org [192.0.2.11])
+	by mail.mailosh.test (Mailosh Spike) with ESMTP id spk0002t2
+	for <alice@example.org>; Thu, 20 Aug 2026 09:05:00 +0000
+Message-ID: <t2@example.org>
+Date: Thu, 20 Aug 2026 09:05:00 +0000
+From: Bob Example <bob@example.org>
+To: Alice Example <alice@example.org>
+Cc: Demo User <demo@mailosh.test>
+Subject: Re: Spike thread kickoff
+In-Reply-To: <t1@example.org>
+References: <t1@example.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hi Alice,
+
+Replying to keep the spike thread going. This is the second message; its
+In-Reply-To and References headers both point back at your first message
+(Message-ID <t1@example.org>), which is the chain a JMAP server is
+expected to use to compute threading -- not subject-line matching alone.
+
+-- Bob
+
+From alice@example.org Thu Aug 20 09:10:00 2026
+Return-Path: <alice@example.org>
+Received: from mail.example.org (mail.example.org [192.0.2.10])
+	by mail.mailosh.test (Mailosh Spike) with ESMTP id spk0003t3
+	for <bob@example.org>; Thu, 20 Aug 2026 09:10:00 +0000
+Message-ID: <t3@example.org>
+Date: Thu, 20 Aug 2026 09:10:00 +0000
+From: Alice Example <alice@example.org>
+To: Bob Example <bob@example.org>
+Cc: Demo User <demo@mailosh.test>
+Subject: Re: Spike thread kickoff
+In-Reply-To: <t2@example.org>
+References: <t1@example.org> <t2@example.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Thanks Bob,
+
+Third and final message in the spike thread. References now names both
+prior Message-IDs (<t1@example.org> and <t2@example.org>), completing the
+chain back to the root. If Stalwart's threading is References-based, all
+three messages should collapse into one thread of three.
+
+-- Alice

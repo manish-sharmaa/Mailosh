@@ -1,0 +1,36 @@
+{# Two empty states, one file (spec §5.4: "search → 'No results for …' with
+   operator tips").
+
+   The first is not really empty — `/search` with no query yet is the
+   reader arriving, and the reference card is the whole content of that
+   page rather than a consolation prize under a shrug. The second is the
+   real miss, and it says *what* found nothing: quoting the query back is
+   the difference between "nothing matched" and "nothing matched **this**",
+   which is what a reader needs in order to edit it.
+
+   Both end in the same operator card the pill's focus popover shows
+   (`search/tips.html`), because the answer to both is the same: here is
+   what you can say. #}
+<div class="empty-state search-empty">
+  <svg viewBox="0 0 120 84" class="empty-art" aria-hidden="true" fill="none">
+    <circle cx="52" cy="38" r="24" stroke="var(--line-2)" stroke-width="2"/>
+    <path d="M70 56 96 74" stroke="var(--line-2)" stroke-width="2" stroke-linecap="round"/>
+    <path d="M40 34h24M40 44h14" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"
+          opacity=".5"/>
+  </svg>
+
+  {% if q %}
+    <p class="empty-title">No results for “{{ q }}”</p>
+    <p class="empty-body">
+      Try fewer words, or a different operator. Search covers everything
+      except Spam and Trash unless you say <code>in:anywhere</code>.
+    </p>
+  {% else %}
+    <p class="empty-title">Search your mail</p>
+    <p class="empty-body">
+      Type anything, or narrow it down with the operators below.
+    </p>
+  {% endif %}
+
+  {% include "search/tips.html" %}
+</div>

@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mailosh — polish v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* ============================================================================
+   Mailosh — polish v2 mockup.  Self-contained; Inter comes from Google Fonts
+   for preview only (the product self-hosts it).  Every value below is the
+   value the implementation spec asks for, so this file doubles as the
+   reference implementation: docs/design/polish-v2-spec.md.
+   ========================================================================= */
+
+/* ---------- page chrome (this document, not the product) ---------------- */
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:13px;line-height:1.5;color:#141922;background:#F1F2F5;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  padding:36px 28px 96px;
+}
+.wrap{max-width:1160px;margin:0 auto}
+.doc-head{margin-bottom:34px}
+.doc-head h1{font-size:26px;font-weight:600;letter-spacing:-.02em;margin-bottom:6px}
+.doc-head p{color:#5A6373;max-width:78ch;font-size:14px}
+.eyebrow{
+  font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:#8A93A2;margin-bottom:5px;
+}
+section{margin-bottom:40px}
+section > h2{font-size:17px;font-weight:600;letter-spacing:-.012em;margin-bottom:4px}
+section > .lede{color:#5A6373;max-width:84ch;margin-bottom:16px}
+.panel{background:#fff;border:1px solid #E1E4EA;border-radius:12px;padding:20px;
+  box-shadow:0 1px 2px rgba(16,24,40,.05)}
+.panel.dark{background:#15181E;border-color:#272C36;color:rgba(255,255,255,.9)}
+.panel.dark .cap,.panel.dark .capn{color:rgba(255,255,255,.55)}
+.cap{font-size:11.5px;color:#6B7382;margin-top:8px}
+.capn{font-size:11px;color:#8A93A2;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.num{font-variant-numeric:tabular-nums}
+.pass{color:#0E7C4A;font-weight:600}
+.fail{color:#C2320F;font-weight:600}
+.panel.dark .pass{color:#4ADE80}.panel.dark .fail{color:#F87171}
+table.t{border-collapse:collapse;width:100%;font-size:12.5px}
+table.t th{text-align:left;font-weight:600;color:#6B7382;font-size:10.5px;letter-spacing:.07em;
+  text-transform:uppercase;padding:0 12px 7px 0;border-bottom:1px solid #E1E4EA}
+table.t td{padding:7px 12px 7px 0;border-bottom:1px solid #EDEFF3;vertical-align:top}
+table.t tr:last-child td{border-bottom:0}
+table.t code{font:500 11.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+  background:#F2F4F7;border-radius:4px;padding:1px 5px;color:#334}
+.sw{display:flex;align-items:center;gap:9px}
+.sw i{width:16px;height:16px;border-radius:4px;border:1px solid rgba(0,0,0,.12);flex:none}
+
+/* ---------- the product's own tokens ------------------------------------ */
+.om{
+  /* surfaces */
+  --bg:#EBEEF3; --surface:#FFFFFF; --surface-2:#FFFFFF;
+  --read:#F6F8FB; --hover:#E4EAF3; --field:#E4E9F0;
+  /* lines */
+  --line:#DDE3EB; --line-2:#C3CBD6; --ctl-line:#7D8797;
+  /* text */
+  --fg:#111827; --fg-2:#4E5867; --fg-3:#616A79; --fg-disabled:#9AA2AF;
+  /* interactive glyphs + control washes */
+  --icon:#4E5867; --icon-strong:#111827; --icon-quiet:#616A79;
+  --ctl-hover:rgba(17,24,39,.07); --ctl-active:rgba(17,24,39,.13);
+  /* accent */
+  --accent:#1A73E8; --accent-hover:#1667D2; --accent-press:#1259B8;
+  --accent-ink:#1258C4; --accent-soft:#DCE9FC; --accent-wash:rgba(26,115,232,.08);
+  --on-accent:#FFFFFF;
+  /* status */
+  --star:#F59E0B; --star-ink:#B45309;
+  --toast:#111827; --toast-fg:#FFFFFF; --toast-link:#1E6FD6;
+  /* elevation */
+  --shadow-1:0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10);
+  --shadow-2:0 2px 4px -2px rgba(16,24,40,.06), 0 6px 14px -4px rgba(16,24,40,.12);
+  --shadow-3:0 4px 10px -4px rgba(16,24,40,.10), 0 18px 44px -12px rgba(16,24,40,.24);
+  --shadow-accent:0 1px 2px rgba(23,78,166,.24), 0 4px 10px -3px rgba(29,106,229,.32);
+  --shadow-accent-hover:0 2px 4px rgba(23,78,166,.26), 0 8px 18px -4px rgba(29,106,229,.42);
+  /* shape */
+  --r-kbd:4px; --r-ctl:6px; --r-field:8px; --r-card:10px; --r-pill:999px;
+  /* motion */
+  --dur-1:120ms; --dur-2:160ms; --dur-3:200ms;
+  --ease:cubic-bezier(.2,0,0,1); --ease-out:cubic-bezier(.16,1,.3,1);
+  /* density — Comfortable, the shipped default */
+  --row-h:52px;
+
+  font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:13px;line-height:1.4;color:var(--fg);
+}
+.om.dark{
+  --bg:#0D1015; --surface:#1C2029; --surface-2:#22262F;
+  --read:#15191F; --hover:#272D39; --field:#22262F;
+  --line:#2C313C; --line-2:#3D4350; --ctl-line:rgba(255,255,255,.38);
+  --fg:rgba(255,255,255,.92); --fg-2:rgba(255,255,255,.72);
+  --fg-3:rgba(255,255,255,.56); --fg-disabled:rgba(255,255,255,.38);
+  --icon:rgba(255,255,255,.74); --icon-strong:rgba(255,255,255,.95);
+  --icon-quiet:rgba(255,255,255,.60);
+  --ctl-hover:rgba(255,255,255,.09); --ctl-active:rgba(255,255,255,.15);
+  --accent:#1E6FD6; --accent-hover:#1A73E8; --accent-press:#195FBB;
+  --accent-ink:#A9C9F8; --accent-soft:#1B2942; --accent-wash:rgba(42,128,234,.16);
+  --on-accent:#0D1015;
+  --star:#FBBF24; --star-ink:#FBBF24;
+  --toast:#F3F4F6; --toast-fg:#111827; --toast-link:#1667D2;
+  --shadow-1:0 1px 2px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.40);
+  --shadow-2:0 2px 6px rgba(0,0,0,.55), 0 8px 20px -6px rgba(0,0,0,.55);
+  --shadow-3:0 6px 14px -6px rgba(0,0,0,.50), 0 24px 56px -12px rgba(0,0,0,.72);
+  --shadow-accent:0 1px 2px rgba(0,0,0,.60), 0 4px 12px -4px rgba(0,0,0,.50);
+  --shadow-accent-hover:0 2px 4px rgba(0,0,0,.62), 0 8px 20px -6px rgba(0,0,0,.55);
+}
+/* The shipped values, for the honest before/after strips only. */
+.om.before{
+  --surface:#FFFFFF; --read:#F5F7FA; --hover:#EEF2F7; --bg:#F4F6F8;
+  --line:#E3E8EE; --line-2:#C9D2DC; --ctl-line:#C9D2DC;
+  --fg:#111827; --fg-2:#5A6472; --fg-3:#8A94A3;
+  --icon:#5A6472; --icon-strong:#111827; --icon-quiet:#8A94A3;
+  --accent:#1A73E8; --accent-soft:#E8F0FE; --on-accent:#FFFFFF; --star:#F59E0B;
+}
+.om.before.dark{
+  --surface:#191C22; --read:#14171D; --hover:#1C2028; --bg:#111318;
+  --line:#282C35; --line-2:#3D4350; --ctl-line:#3D4350;
+  --fg:rgba(255,255,255,.9); --fg-2:rgba(255,255,255,.65); --fg-3:rgba(255,255,255,.42);
+  --icon:rgba(255,255,255,.65); --icon-strong:rgba(255,255,255,.9);
+  --icon-quiet:rgba(255,255,255,.42);
+  --accent:#1E6FD6; --accent-soft:#2B3444; --on-accent:#111318; --star:#FBBF24;
+}
+
+.om *{box-sizing:border-box}
+.om svg.i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;
+  stroke-linecap:round;stroke-linejoin:round;flex:none}
+.om svg.i20{width:20px;height:20px}
+.om kbd{font:500 10.5px/1 Inter,system-ui,sans-serif;color:var(--fg-3);
+  background:var(--surface);border:1px solid var(--line-2);border-bottom-width:2px;
+  border-radius:var(--r-kbd);padding:2px 5px;display:inline-flex;align-items:center;
+  justify-content:center;min-width:1.4em}
+
+/* ---------- icon button — the headline fix ------------------------------ */
+.om .btn{
+  width:32px;height:32px;flex:none;display:flex;align-items:center;justify-content:center;
+  border:0;background:transparent;color:var(--icon);
+  border-radius:var(--r-pill);cursor:pointer;
+  transition:background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
+             box-shadow var(--dur-1) var(--ease);
+}
+.om .btn:hover,.om .btn.hov{background:var(--ctl-hover);color:var(--icon-strong)}
+.om .btn:active,.om .btn.act{background:var(--ctl-active);color:var(--icon-strong)}
+.om .btn.sm{width:28px;height:28px}
+.om .btn.off{color:var(--fg-disabled);cursor:default}
+.om .btn.off:hover{background:transparent;color:var(--fg-disabled)}
+.om .btn.foc{outline:2px solid var(--accent);outline-offset:1px;
+  background:var(--ctl-hover);color:var(--icon-strong)}
+/* the shipped treatment, reproduced verbatim for the before strip */
+.om.before .btn{border-radius:var(--r-ctl);color:var(--fg-2);transition:none}
+.om.before .btn:hover,.om.before .btn.hov{background:var(--hover);color:var(--fg)}
+.om.before .btn:active,.om.before .btn.act{background:var(--hover);color:var(--fg)}
+
+/* ---------- the frame --------------------------------------------------- */
+.om .shot{
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--r-card);
+  overflow:hidden;display:grid;grid-template-rows:52px 1fr;grid-template-columns:224px 1fr;
+  box-shadow:var(--shadow-2);position:relative;
+}
+.om.dark .shot{border-color:#2C313C}
+
+/* top bar */
+.om .top{grid-column:1/3;display:flex;align-items:center;gap:12px;
+  padding:0 12px;background:var(--bg);border-bottom:1px solid var(--line)}
+.om .brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;
+  letter-spacing:-.01em;margin-right:6px;color:var(--fg)}
+.om .mark{width:22px;height:22px;border-radius:6px;background:var(--accent);
+  display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-accent)}
+.om .mark svg{width:13px;height:13px;stroke:var(--on-accent);fill:none;stroke-width:2.2;
+  stroke-linecap:round;stroke-linejoin:round}
+.om .search{flex:1;max-width:640px;height:36px;margin:0 auto;padding:0 12px;
+  border-radius:var(--r-field);background:var(--field);border:1px solid var(--line);
+  display:flex;align-items:center;gap:10px;color:var(--fg-3);
+  transition:background-color var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease),
+             box-shadow var(--dur-1) var(--ease)}
+.om .search span{flex:1}
+.om .search:hover{border-color:var(--line-2)}
+.om .topr{display:flex;align-items:center;gap:2px;margin-left:auto}
+.om .avatar{width:28px;height:28px;margin-left:8px;border-radius:50%;background:var(--accent);
+  color:var(--on-accent);font-weight:600;font-size:12px;display:flex;align-items:center;
+  justify-content:center;flex:none;box-shadow:var(--shadow-accent)}
+
+/* nav */
+.om .nav{padding:8px;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.om .compose{
+  height:38px;margin:2px 0 12px;padding:0 14px;border:0;
+  border-radius:var(--r-pill);background:var(--accent);color:var(--on-accent);
+  font:600 13px/1 Inter,system-ui,sans-serif;letter-spacing:-.005em;
+  display:flex;align-items:center;gap:9px;cursor:pointer;
+  box-shadow:var(--shadow-accent);
+  transition:background-color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
+}
+.om .compose:hover,.om .compose.hov{background:var(--accent-hover);box-shadow:var(--shadow-accent-hover)}
+.om .compose:active,.om .compose.act{background:var(--accent-press);box-shadow:var(--shadow-1)}
+.om .compose.foc{outline:2px solid var(--accent);outline-offset:2px}
+.om .compose kbd{margin-left:auto;background:rgba(255,255,255,.16);
+  border-color:rgba(255,255,255,.32);color:var(--on-accent);border-bottom-width:1px}
+.om.dark .compose kbd{background:rgba(0,0,0,.14);border-color:rgba(0,0,0,.28)}
+.om .ni{
+  height:32px;padding:0 12px;border-radius:var(--r-pill);
+  display:flex;align-items:center;gap:11px;color:var(--fg-2);font-weight:500;
+  cursor:pointer;
+  transition:background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.om .ni svg{color:var(--icon)}
+.om .ni b{margin-left:auto;font-weight:600;font-size:12px;font-variant-numeric:tabular-nums}
+.om .ni:hover,.om .ni.hov{background:var(--ctl-hover);color:var(--fg)}
+.om .ni:hover svg,.om .ni.hov svg{color:var(--icon-strong)}
+.om .ni.on{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+.om .ni.on svg{color:var(--accent)}
+.om .ni.on:hover,.om .ni.on.hov{background:var(--accent-soft);
+  box-shadow:inset 0 0 0 999px var(--ctl-hover)}
+.om .ni.foc{outline:2px solid var(--accent);outline-offset:-2px}
+.om .nh{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);
+  font-weight:700;padding:16px 12px 6px;display:flex;align-items:center}
+.om .dot{width:9px;height:9px;border-radius:50%;flex:none;margin:0 3px}
+
+/* main surface */
+.om .main{background:var(--surface);border-left:1px solid var(--line);
+  border-radius:var(--r-card) 0 0 0;display:flex;flex-direction:column;overflow:hidden;
+  position:relative}
+
+/* toolbar */
+.om .bar{height:44px;display:flex;align-items:center;gap:2px;padding:0 8px 0 14px;
+  border-bottom:1px solid var(--line);color:var(--fg-2);flex:none}
+.om .sep{width:1px;height:18px;background:var(--line);margin:0 7px;flex:none}
+.om .range{margin-left:auto;margin-right:4px;font-size:12px;color:var(--fg-2);
+  font-variant-numeric:tabular-nums}
+
+/* checkbox */
+.om .cb{
+  width:16px;height:16px;flex:none;display:flex;align-items:center;justify-content:center;
+  border:1.5px solid var(--ctl-line);border-radius:4px;background:var(--surface);
+  color:transparent;cursor:pointer;
+  transition:background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease),
+             color var(--dur-1) var(--ease);
+}
+.om .cb svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:3;
+  stroke-linecap:round;stroke-linejoin:round}
+.om .cb:hover,.om .cb.hov{border-color:var(--icon-strong)}
+.om .cb.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.om .cb.mixed{border-color:var(--accent);color:var(--accent)}
+.om .cb.foc{outline:2px solid var(--accent);outline-offset:2px}
+.om.before .cb{width:15px;height:15px;border-width:1.5px;border-radius:3.5px;
+  border-color:var(--line-2);opacity:.6;transition:none}
+.om.before .cb:hover{border-color:var(--line-2)}
+
+/* rows */
+.om .row{
+  height:var(--row-h);display:flex;align-items:center;gap:12px;padding:0 12px 0 14px;
+  background:var(--read);border-bottom:1px solid var(--line);position:relative;cursor:pointer;
+  transition:background-color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease),
+             border-color var(--dur-2) var(--ease);
+}
+.om .row.u{background:var(--surface)}
+.om .row:hover,.om .row.hov{
+  background:var(--hover);border-bottom-color:transparent;box-shadow:var(--shadow-1);z-index:1;
+}
+.om .row:has(+ .row:hover),.om .row:has(+ .row.hov){border-bottom-color:transparent}
+.om .row.sel{background:var(--accent-soft)}
+.om .row.foc{background-image:linear-gradient(var(--accent-wash),var(--accent-wash));
+  box-shadow:inset 3px 0 0 var(--accent)}
+.om .row.open{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.om .rc{display:flex;align-items:center;gap:11px;flex:none}
+.om .star{color:var(--icon-quiet);background:none;border:0;padding:0;cursor:pointer;
+  display:flex;transition:color var(--dur-1) var(--ease)}
+.om .star:hover,.om .star.hov{color:var(--icon-strong)}
+.om .star.on{color:var(--star-ink)}
+.om .star.on svg{fill:var(--star);stroke:var(--star-ink);stroke-width:1.5}
+.om .from{width:170px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  color:var(--fg-2)}
+.om .row.u .from{font-weight:600;color:var(--fg)}
+.om .txt{flex:1;min-width:0;line-height:1.35}
+.om .subj,.om .prev{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.om .subj{color:var(--fg)}
+.om .row.u .subj{font-weight:600}
+.om .prev{font-size:12px;color:var(--fg-3);margin-top:1px}
+.om .meta{display:flex;align-items:center;gap:8px;flex:none}
+.om .chip{display:inline-flex;align-items:center;height:18px;padding:0 8px;border-radius:999px;
+  font-size:11px;font-weight:500;line-height:1;white-space:nowrap;
+  background:color-mix(in srgb, var(--chip) 14%, transparent);
+  color:color-mix(in srgb, var(--chip) 58%, var(--fg))}
+.om.dark .chip{background:color-mix(in srgb, var(--chip) 18%, transparent);color:var(--chip)}
+.om .end{width:88px;flex:none;display:flex;align-items:center;justify-content:flex-end}
+.om .date{font-size:12px;font-variant-numeric:tabular-nums;color:var(--fg-3)}
+.om .row.u .date{color:var(--fg);font-weight:600}
+.om .acts{display:none;align-items:center;gap:2px}
+.om .row:hover .date,.om .row.hov .date{display:none}
+.om .row:hover .acts,.om .row.hov .acts{display:flex}
+.om .clip{color:var(--icon-quiet)}
+
+/* toast */
+.om .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;
+  display:inline-flex;align-items:center;gap:14px;padding:10px 12px 10px 15px;
+  background:var(--toast);color:var(--toast-fg);border-radius:var(--r-card);
+  font-size:13px;box-shadow:var(--shadow-3);z-index:5}
+.om .toast a{color:var(--toast-link);font-weight:600;text-decoration:none}
+.om .toast kbd{background:transparent;border-color:rgba(255,255,255,.3);
+  color:rgba(255,255,255,.8);border-bottom-width:1px}
+.om.dark .toast kbd{border-color:rgba(0,0,0,.25);color:rgba(0,0,0,.55)}
+
+/* ---------- callout gutter --------------------------------------------- */
+.figure{display:flex;align-items:stretch}
+.gutter{width:30px;flex:none;display:flex;flex-direction:column;padding-top:2px}
+.gutter .g52{height:52px;flex:none}
+.gutter .g44{height:44px;flex:none}
+.gutter .grow{height:52px;flex:none;display:flex;align-items:center;justify-content:center}
+.pin{width:19px;height:19px;border-radius:50%;background:#1A73E8;color:#fff;
+  font:700 10.5px/19px Inter,system-ui,sans-serif;text-align:center;flex:none}
+.panel.dark .pin{background:#1E6FD6;color:#0D1015}
+.legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 22px;margin-top:16px}
+.legend div{display:flex;gap:9px;align-items:baseline;font-size:12.5px;color:#4E5867}
+.panel.dark .legend div{color:rgba(255,255,255,.72)}
+.legend .pin{position:relative;top:2px}
+.legend b{font-weight:600;color:#111827}
+.panel.dark .legend b{color:rgba(255,255,255,.92)}
+
+/* ---------- component-detail strips ------------------------------------- */
+.strip{display:flex;gap:10px;flex-wrap:wrap}
+.cell{border:1px dashed rgba(120,132,150,.35);border-radius:8px;padding:11px 12px 9px;
+  min-width:0}
+.cell .lbl{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:#8A93A2;margin-bottom:9px}
+.panel.dark .cell{border-color:rgba(255,255,255,.16)}
+.panel.dark .cell .lbl{color:rgba(255,255,255,.5)}
+.rowdemo{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.elev{display:flex;gap:12px}
+.elev .e{flex:1;min-width:0;height:78px;text-align:center;padding:0 8px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;font-size:11.5px;font-weight:600;letter-spacing:.02em}
+</style>
+</head>
+<body>
+
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+  <symbol id="i-mailopen" viewBox="0 0 24 24"><path d="M21.2 8.4c.5.38.8.97.8 1.6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10a2 2 0 0 1 .8-1.6l8-6a2 2 0 0 1 2.4 0l8 6Z"/><path d="m22 10-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 10"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+</svg>
+
+<div class="wrap">
+
+<div class="doc-head">
+  <div class="eyebrow">Mailosh · Phase 1A · visual polish</div>
+  <h1>Polish v2 — depth, contrast, motion</h1>
+  <p>Same frame, same Graphite&nbsp;&amp;&nbsp;Blue identity, same Comfortable 52&nbsp;px rows. What changes:
+  a real surface ladder, interactive glyphs that all clear WCAG&nbsp;2.2&nbsp;AA non-text contrast (3:1) in
+  both themes, circular hover washes on every icon button, a primary action with genuine elevation,
+  and 120–200&nbsp;ms transitions on colour, background and shadow. Every number on this page is measured,
+  not estimated. Implementation contract: <code>docs/design/polish-v2-spec.md</code>.</p>
+</div>
+
+<!-- ==================================================================== -->
+<section>
+  <div class="eyebrow">1 · the headline fix</div>
+  <h2>Icon buttons — before and after</h2>
+  <p class="lede">Today <code>.btn-icon:hover</code> paints <code>background: var(--hover)</code> — the exact
+  colour the hovered row is already painted. The hover state is therefore a <b>0&nbsp;px, 1.000:1 no-op</b>: rest
+  and hover are pixel-identical. And <code>transition-property</code> is declared with no
+  <code>transition-duration</code>, whose CSS initial value is <code>0s</code>, so nothing animates either.
+  The fix: an alpha wash (<code>--ctl-hover</code>) that lifts off <em>whatever</em> is underneath, a circular
+  target, and a glyph that steps from <code>--icon</code> to <code>--icon-strong</code>.</p>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="eyebrow">Light · row hover actions</div>
+      <div class="om before" style="margin-bottom:14px">
+        <div class="cell" style="border-color:#E1E4EA">
+          <div class="lbl">Before — shipped today</div>
+          <div class="strip">
+            <div style="background:var(--hover);border-radius:8px;padding:6px 8px;display:flex;gap:2px">
+              <span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span>
+            </div>
+            <div style="background:var(--hover);border-radius:8px;padding:6px 8px;display:flex;gap:2px">
+              <span class="btn sm hov"><svg class="i"><use href="#i-archive"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span>
+            </div>
+          </div>
+          <div class="cap">Rest · archive hovered — <b>identical</b>. Wash <span class="num">#EEF2F7</span> on
+          row <span class="num">#EEF2F7</span> = <span class="fail">1.000:1</span>.</div>
+        </div>
+      </div>
+      <div class="om">
+        <div class="cell" style="border-color:#C8DCF8;background:#F7FAFE">
+          <div class="lbl" style="color:#1A73E8">After</div>
+          <div class="strip">
+            <div style="background:var(--hover);border-radius:8px;padding:6px 8px;display:flex;gap:2px">
+              <span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span>
+            </div>
+            <div style="background:var(--hover);border-radius:8px;padding:6px 8px;display:flex;gap:2px">
+              <span class="btn sm hov"><svg class="i"><use href="#i-archive"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span>
+            </div>
+            <div style="background:var(--hover);border-radius:8px;padding:6px 8px;display:flex;gap:2px">
+              <span class="btn sm act"><svg class="i"><use href="#i-archive"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span>
+            </div>
+          </div>
+          <div class="cap">Rest · hover · press. Hover wash <span class="num">#D5DBE5</span> on
+          <span class="num">#E4EAF3</span> = <span class="pass">1.150:1</span>; press
+          <span class="num">#C9CFD8</span> = <span class="pass">1.296:1</span>. Glyph
+          <span class="num">#4E5867</span> → <span class="num">#111827</span>
+          (<span class="pass">5.95:1</span> → <span class="pass">14.7:1</span>).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel dark">
+      <div class="eyebrow" style="color:rgba(255,255,255,.5)">Dark · row hover actions</div>
+      <div class="om before dark" style="margin-bottom:14px">
+        <div class="cell">
+          <div class="lbl">Before — shipped today</div>
+          <div class="strip">
+            <div style="background:var(--hover);border-radius:8px;padding:6px 8px;display:flex;gap:2px">
+              <span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span>
+            </div>
+            <div style="background:var(--hover);border-radius:8px;padding:6px 8px;display:flex;gap:2px">
+              <span class="btn sm hov"><svg class="i"><use href="#i-archive"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span>
+            </div>
+          </div>
+          <div class="cap">Rest · archive hovered — <b>identical</b>. Wash <span class="num">#1C2028</span> on
+          row <span class="num">#1C2028</span> = <span class="fail">1.000:1</span>.</div>
+        </div>
+      </div>
+      <div class="om dark">
+        <div class="cell" style="border-color:#31405A;background:#171C25">
+          <div class="lbl" style="color:#1E6FD6">After</div>
+          <div class="strip">
+            <div style="background:var(--hover);border-radius:8px;padding:6px 8px;display:flex;gap:2px">
+              <span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span>
+            </div>
+            <div style="background:var(--hover);border-radius:8px;padding:6px 8px;display:flex;gap:2px">
+              <span class="btn sm hov"><svg class="i"><use href="#i-archive"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span>
+            </div>
+            <div style="background:var(--hover);border-radius:8px;padding:6px 8px;display:flex;gap:2px">
+              <span class="btn sm act"><svg class="i"><use href="#i-archive"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span>
+            </div>
+          </div>
+          <div class="cap">Rest · hover · press. Hover wash <span class="num">#3A404B</span> on
+          <span class="num">#272D39</span> = <span class="pass">1.325:1</span>; press
+          <span class="num">#474C57</span> = <span class="pass">1.604:1</span>. Glyph
+          <span class="num">.74w</span> → <span class="num">.95w</span>
+          (<span class="pass">8.26:1</span> → <span class="pass">12.61:1</span>).</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section>
+  <div class="eyebrow">2 · light</div>
+  <h2>The polished inbox — light, Comfortable</h2>
+  <p class="lede">Every row state on one screen. The page ground drops to <code>#EBEEF3</code> so the white
+  list card actually reads as a card (1.083:1 → <b>1.163:1</b>), the hovered row gains a colour step
+  <em>and</em> a shadow, and the hairline under it drops out so the lift is clean.</p>
+
+  <div class="panel">
+    <div class="figure">
+      <div class="gutter">
+        <div class="g52"></div><div class="g44"></div>
+        <div class="grow"><span class="pin">1</span></div>
+        <div class="grow"></div>
+        <div class="grow"><span class="pin">2</span></div>
+        <div class="grow"><span class="pin">3</span></div>
+        <div class="grow"><span class="pin">4</span></div>
+        <div class="grow"><span class="pin">5</span></div>
+      </div>
+      <div class="om" style="flex:1;min-width:0">
+        <div class="shot">
+          <div class="top">
+            <span class="btn"><svg class="i i20"><use href="#i-menu"/></svg></span>
+            <div class="brand"><span class="mark"><svg><use href="#i-mail"/></svg></span>Mailosh</div>
+            <div class="search"><svg class="i"><use href="#i-search"/></svg><span>Search mail</span><kbd>/</kbd><svg class="i"><use href="#i-sliders"/></svg></div>
+            <div class="topr">
+              <span class="btn"><svg class="i i20"><use href="#i-help"/></svg></span>
+              <span class="btn hov"><svg class="i i20"><use href="#i-settings"/></svg></span>
+              <span class="avatar">M</span>
+            </div>
+          </div>
+
+          <div class="nav">
+            <button class="compose"><svg class="i"><use href="#i-pen"/></svg>Compose<kbd>c</kbd></button>
+            <div class="ni on"><svg class="i"><use href="#i-inbox"/></svg>Inbox<b>12</b></div>
+            <div class="ni"><svg class="i"><use href="#i-star"/></svg>Starred</div>
+            <div class="ni"><svg class="i"><use href="#i-send"/></svg>Sent</div>
+            <div class="ni hov"><svg class="i"><use href="#i-file"/></svg>Drafts<b>2</b></div>
+            <div class="ni"><svg class="i"><use href="#i-chev"/></svg>More</div>
+            <div class="nh">Labels</div>
+            <div class="ni"><span class="dot" style="background:#6366F1"></span>Work<b>3</b></div>
+            <div class="ni"><span class="dot" style="background:#10B981"></span>Receipts</div>
+            <div class="ni"><span class="dot" style="background:#F43F5E"></span>Family</div>
+            <div class="ni"><span class="dot" style="background:#F59E0B"></span>Newsletters<b>8</b></div>
+          </div>
+
+          <div class="main">
+            <div class="bar">
+              <span class="cb mixed"><svg><use href="#i-minus"/></svg></span>
+              <span class="sep"></span>
+              <span class="btn sm"><svg class="i"><use href="#i-refresh"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-dots"/></svg></span>
+              <span class="range">1–50 of 1,284</span>
+              <span class="btn sm off"><svg class="i"><use href="#i-left"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-right"/></svg></span>
+            </div>
+
+            <div class="row u">
+              <span class="rc"><span class="cb"></span><span class="star on"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Priya Natarajan</span>
+              <span class="txt"><span class="subj">Q3 roadmap review — notes and next steps</span><span class="prev">Attaching the deck we walked through; owners are tagged inline and the two open questions are on slide 9</span></span>
+              <span class="meta"><span class="chip" style="--chip:#6366F1">Work</span><svg class="i clip"><use href="#i-clip"/></svg><span class="end"><span class="date">10:42 AM</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row u">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">GitHub</span>
+              <span class="txt"><span class="subj">[mailosh/mailosh] Run #482 passed on main</span><span class="prev">All checks have passed — 115 unit, 1 integration, 0 flakes. Deploy is queued behind two approvals</span></span>
+              <span class="meta"><span class="end"><span class="date">9:58 AM</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row hov">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Hetzner Cloud</span>
+              <span class="txt"><span class="subj">Your invoice for August 2026</span><span class="prev">Invoice #2026-08-14421 is available in the console — €41.18 including VAT, charged to the card ending 4417</span></span>
+              <span class="meta"><span class="chip" style="--chip:#10B981">Receipts</span><span class="end"><span class="date">8:12 AM</span><span class="acts"><span class="btn sm hov"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row sel">
+              <span class="rc"><span class="cb on"><svg><use href="#i-check"/></svg></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Daniel Okafor</span>
+              <span class="txt"><span class="subj">Re: Dinner on Saturday?</span><span class="prev">Sounds great — 7pm works. I'll book the table at Ottolenghi; they had a spot when I checked last night</span></span>
+              <span class="meta"><span class="chip" style="--chip:#F43F5E">Family</span><span class="end"><span class="date">Yesterday</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row foc">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Stalwart Labs</span>
+              <span class="txt"><span class="subj">Stalwart 1.0.0-rc.1 is out</span><span class="prev">Schema freeze, a large performance pass on the FTS index, and the new management API</span></span>
+              <span class="meta"><span class="end"><span class="date">Yesterday</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Fastmail Blog</span>
+              <span class="txt"><span class="subj">How JMAP makes push cheap</span><span class="prev">State strings, EventSource, and why polling was never the answer for a mailbox that changes twice a day</span></span>
+              <span class="meta"><span class="chip" style="--chip:#F59E0B">Newsletters</span><span class="end"><span class="date">Aug 30</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Aisha, Tom, me (3)</span>
+              <span class="txt"><span class="subj">Re: Offsite agenda</span><span class="prev">Let's lock the Thursday slot and send the invite today — the room is only held until Friday noon</span></span>
+              <span class="meta"><span class="chip" style="--chip:#6366F1">Work</span><span class="end"><span class="date">Aug 30</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row" style="border-bottom:0">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Backblaze</span>
+              <span class="txt"><span class="subj">Your B2 usage report</span><span class="prev">41.2 GB stored, 3.1 GB egress, $0.29 this month. Nothing to do — this is your monthly summary</span></span>
+              <span class="meta"><span class="end"><span class="date">Aug 29</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div><span class="pin">1</span><span><b>Unread</b> — <code>--surface</code> #FFFFFF, sender/subject/date at 600. Star on: <code>--star</code> fill, <code>--star-ink</code> stroke (5.02:1).</span></div>
+      <div><span class="pin">2</span><span><b>Hovered</b> — <code>--hover</code> #E4EAF3 (1.137:1 over a read row, was 1.048:1), <code>--shadow-1</code>, hairline dropped, date swapped for the action cluster.</span></div>
+      <div><span class="pin">3</span><span><b>Selected</b> — <code>--accent-soft</code> #DCE9FC (1.208:1 over a read row), checkbox filled <code>--accent</code>.</span></div>
+      <div><span class="pin">4</span><span><b>Focused</b> (keyboard cursor) — 3&nbsp;px inset <code>--accent</code> bar plus a 7&nbsp;% <code>--accent-wash</code> gradient that keeps the read/unread background underneath.</span></div>
+      <div><span class="pin">5</span><span><b>Read, at rest</b> — <code>--read</code> #F6F8FB, sender at <code>--fg-2</code> (7.20:1), preview at <code>--fg-3</code> (5.13:1, was 2.86:1).</span></div>
+      <div><span class="pin" style="background:#8A93A2">·</span><span><b>Nav</b> — Inbox active (full pill, <code>--accent-soft</code>, icon at <code>--accent</code>), Drafts hovered (<code>--ctl-hover</code>). Top bar: Settings hovered, pager Newer disabled.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section>
+  <div class="eyebrow">3 · dark</div>
+  <h2>The polished inbox — dark, Comfortable</h2>
+  <p class="lede">Carbon rules: no pure black, lighter&nbsp;=&nbsp;nearer. Shadows alone are invisible on a
+  <code>#0D1015</code> ground — today's Compose shadow uses <code>rgba(15,23,42,.18)</code>, whose colour is
+  <em>lighter</em> in luminance (0.0088) than the page it sits on (0.0065), so it renders as a faint halo, not a
+  shadow. Here every dark elevation is a black shadow <em>plus</em> a lighter surface value.</p>
+
+  <div class="panel dark">
+    <div class="figure">
+      <div class="gutter">
+        <div class="g52"></div><div class="g44"></div>
+        <div class="grow"><span class="pin">1</span></div>
+        <div class="grow"></div>
+        <div class="grow"><span class="pin">2</span></div>
+        <div class="grow"><span class="pin">3</span></div>
+        <div class="grow"><span class="pin">4</span></div>
+        <div class="grow"><span class="pin">5</span></div>
+      </div>
+      <div class="om dark" style="flex:1;min-width:0">
+        <div class="shot">
+          <div class="top">
+            <span class="btn"><svg class="i i20"><use href="#i-menu"/></svg></span>
+            <div class="brand"><span class="mark"><svg><use href="#i-mail"/></svg></span>Mailosh</div>
+            <div class="search"><svg class="i"><use href="#i-search"/></svg><span>Search mail</span><kbd>/</kbd><svg class="i"><use href="#i-sliders"/></svg></div>
+            <div class="topr">
+              <span class="btn"><svg class="i i20"><use href="#i-help"/></svg></span>
+              <span class="btn hov"><svg class="i i20"><use href="#i-settings"/></svg></span>
+              <span class="avatar">M</span>
+            </div>
+          </div>
+
+          <div class="nav">
+            <button class="compose"><svg class="i"><use href="#i-pen"/></svg>Compose<kbd>c</kbd></button>
+            <div class="ni on"><svg class="i"><use href="#i-inbox"/></svg>Inbox<b>12</b></div>
+            <div class="ni"><svg class="i"><use href="#i-star"/></svg>Starred</div>
+            <div class="ni"><svg class="i"><use href="#i-send"/></svg>Sent</div>
+            <div class="ni hov"><svg class="i"><use href="#i-file"/></svg>Drafts<b>2</b></div>
+            <div class="ni"><svg class="i"><use href="#i-chev"/></svg>More</div>
+            <div class="nh">Labels</div>
+            <div class="ni"><span class="dot" style="background:#818CF8"></span>Work<b>3</b></div>
+            <div class="ni"><span class="dot" style="background:#34D399"></span>Receipts</div>
+            <div class="ni"><span class="dot" style="background:#FB7185"></span>Family</div>
+            <div class="ni"><span class="dot" style="background:#FBBF24"></span>Newsletters<b>8</b></div>
+          </div>
+
+          <div class="main">
+            <div class="bar">
+              <span class="cb mixed"><svg><use href="#i-minus"/></svg></span>
+              <span class="sep"></span>
+              <span class="btn sm"><svg class="i"><use href="#i-refresh"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-dots"/></svg></span>
+              <span class="range">1–50 of 1,284</span>
+              <span class="btn sm off"><svg class="i"><use href="#i-left"/></svg></span>
+              <span class="btn sm"><svg class="i"><use href="#i-right"/></svg></span>
+            </div>
+
+            <div class="row u">
+              <span class="rc"><span class="cb"></span><span class="star on"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Priya Natarajan</span>
+              <span class="txt"><span class="subj">Q3 roadmap review — notes and next steps</span><span class="prev">Attaching the deck we walked through; owners are tagged inline and the two open questions are on slide 9</span></span>
+              <span class="meta"><span class="chip" style="--chip:#818CF8">Work</span><svg class="i clip"><use href="#i-clip"/></svg><span class="end"><span class="date">10:42 AM</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row u">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">GitHub</span>
+              <span class="txt"><span class="subj">[mailosh/mailosh] Run #482 passed on main</span><span class="prev">All checks have passed — 115 unit, 1 integration, 0 flakes. Deploy is queued behind two approvals</span></span>
+              <span class="meta"><span class="end"><span class="date">9:58 AM</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row hov">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Hetzner Cloud</span>
+              <span class="txt"><span class="subj">Your invoice for August 2026</span><span class="prev">Invoice #2026-08-14421 is available in the console — €41.18 including VAT, charged to the card ending 4417</span></span>
+              <span class="meta"><span class="chip" style="--chip:#34D399">Receipts</span><span class="end"><span class="date">8:12 AM</span><span class="acts"><span class="btn sm hov"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row sel">
+              <span class="rc"><span class="cb on"><svg><use href="#i-check"/></svg></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Daniel Okafor</span>
+              <span class="txt"><span class="subj">Re: Dinner on Saturday?</span><span class="prev">Sounds great — 7pm works. I'll book the table at Ottolenghi; they had a spot when I checked last night</span></span>
+              <span class="meta"><span class="chip" style="--chip:#FB7185">Family</span><span class="end"><span class="date">Yesterday</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row foc">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Stalwart Labs</span>
+              <span class="txt"><span class="subj">Stalwart 1.0.0-rc.1 is out</span><span class="prev">Schema freeze, a large performance pass on the FTS index, and the new management API</span></span>
+              <span class="meta"><span class="end"><span class="date">Yesterday</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Fastmail Blog</span>
+              <span class="txt"><span class="subj">How JMAP makes push cheap</span><span class="prev">State strings, EventSource, and why polling was never the answer for a mailbox that changes twice a day</span></span>
+              <span class="meta"><span class="chip" style="--chip:#FBBF24">Newsletters</span><span class="end"><span class="date">Aug 30</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Aisha, Tom, me (3)</span>
+              <span class="txt"><span class="subj">Re: Offsite agenda</span><span class="prev">Let's lock the Thursday slot and send the invite today — the room is only held until Friday noon</span></span>
+              <span class="meta"><span class="chip" style="--chip:#818CF8">Work</span><span class="end"><span class="date">Aug 30</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+            <div class="row" style="border-bottom:0">
+              <span class="rc"><span class="cb"></span><span class="star"><svg class="i"><use href="#i-star"/></svg></span></span>
+              <span class="from">Backblaze</span>
+              <span class="txt"><span class="subj">Your B2 usage report</span><span class="prev">41.2 GB stored, 3.1 GB egress, $0.29 this month. Nothing to do — this is your monthly summary</span></span>
+              <span class="meta"><span class="end"><span class="date">Aug 29</span><span class="acts"><span class="btn sm"><svg class="i"><use href="#i-archive"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-trash"/></svg></span><span class="btn sm"><svg class="i"><use href="#i-mailopen"/></svg></span></span></span></span>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div><span class="pin">1</span><span><b>Unread</b> — <code>--surface</code> #1C2029 against read rows at #15191F.</span></div>
+      <div><span class="pin">2</span><span><b>Hovered</b> — <code>--hover</code> #272D39: <b>1.277:1</b> over a read row (was 1.100:1), plus <code>--shadow-1</code>. Lighter&nbsp;=&nbsp;nearer.</span></div>
+      <div><span class="pin">3</span><span><b>Selected</b> — <code>--accent-soft</code> #1B2942 (1.409:1 over a read row); this is the same colour today's <code>rgba(138,180,248,.16)</code> already resolves to, made opaque so it is identical on the nav and on rows.</span></div>
+      <div><span class="pin">4</span><span><b>Focused</b> — 3&nbsp;px <code>--accent</code> bar plus a 10&nbsp;% accent wash (1.192:1).</span></div>
+      <div><span class="pin">5</span><span><b>Read, at rest</b> — preview at <code>--fg-3</code> rgba(255,255,255,.56) = 6.25:1 (was .42 → 4.07:1, under AA for 12&nbsp;px text).</span></div>
+      <div><span class="pin" style="background:rgba(255,255,255,.35);color:#0D1015">·</span><span><b>Card</b> — <code>--surface</code> over <code>--bg</code> #0D1015 = 1.169:1 (was 1.089:1). The list finally sits on something.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section>
+  <div class="eyebrow">4 · components</div>
+  <h2>State ladders</h2>
+  <p class="lede">Each control's rest → hover → press → focus → on, side by side. Nothing here is hover-only:
+  the checkbox and the star are always visible, they just get stronger.</p>
+
+  <div class="grid2">
+    <!-- LIGHT -->
+    <div class="panel">
+      <div class="eyebrow">Light</div>
+      <div class="om">
+        <div class="strip" style="margin-bottom:14px">
+          <div class="cell"><div class="lbl">Primary — Compose</div>
+            <div style="display:flex;gap:10px;align-items:center;background:var(--bg);padding:10px;border-radius:8px">
+              <button class="compose" style="margin:0">Compose</button>
+              <button class="compose hov" style="margin:0">Hover</button>
+              <button class="compose act" style="margin:0">Press</button>
+              <button class="compose foc" style="margin:0">Focus</button>
+            </div>
+            <div class="cap">Label on fill <span class="pass">4.95:1</span> → hover
+              <span class="pass">6.16:1</span> → press <span class="pass">7.81:1</span>.
+              Shadow grows on hover, collapses to <code>--shadow-1</code> on press. No transform.</div>
+          </div>
+        </div>
+        <div class="strip" style="margin-bottom:14px">
+          <div class="cell"><div class="lbl">Nav item</div>
+            <div style="background:var(--bg);padding:8px;border-radius:8px;width:230px">
+              <div class="ni"><svg class="i"><use href="#i-inbox"/></svg>Rest</div>
+              <div class="ni hov"><svg class="i"><use href="#i-inbox"/></svg>Hover<b>12</b></div>
+              <div class="ni on"><svg class="i"><use href="#i-inbox"/></svg>Active<b>12</b></div>
+              <div class="ni on hov"><svg class="i"><use href="#i-inbox"/></svg>Active + hover<b>12</b></div>
+              <div class="ni foc"><svg class="i"><use href="#i-inbox"/></svg>Focus</div>
+            </div>
+            <div class="cap">Full-width pill (<code>--r-pill</code>). Active fill 1.105:1 over the nav ground
+              — today's <code>#E8F0FE</code> measures <span class="fail">1.014:1</span> and is invisible.</div>
+          </div>
+          <div class="cell"><div class="lbl">Checkbox · star</div>
+            <div style="background:var(--read);padding:12px;border-radius:8px;display:flex;gap:14px;align-items:center">
+              <span class="cb"></span><span class="cb hov"></span>
+              <span class="cb on"><svg><use href="#i-check"/></svg></span>
+              <span class="cb mixed"><svg><use href="#i-minus"/></svg></span>
+              <span class="cb foc"></span>
+              <span style="width:1px;height:20px;background:var(--line)"></span>
+              <span class="star"><svg class="i"><use href="#i-star"/></svg></span>
+              <span class="star hov"><svg class="i"><use href="#i-star"/></svg></span>
+              <span class="star on"><svg class="i"><use href="#i-star"/></svg></span>
+            </div>
+            <div class="capn" style="margin-top:7px">rest · hover · on · mixed · focus &nbsp;|&nbsp; star rest · hover · on</div>
+            <div class="cap">Outline <code>--ctl-line</code> #7D8797 = <span class="pass">3.41:1</span>
+              on a read row (was <span class="fail">1.23:1</span> — <code>--line-2</code> at 60&nbsp;% opacity).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DARK -->
+    <div class="panel dark">
+      <div class="eyebrow" style="color:rgba(255,255,255,.5)">Dark</div>
+      <div class="om dark">
+        <div class="strip" style="margin-bottom:14px">
+          <div class="cell"><div class="lbl">Primary — Compose</div>
+            <div style="display:flex;gap:10px;align-items:center;background:var(--bg);padding:10px;border-radius:8px">
+              <button class="compose" style="margin:0">Compose</button>
+              <button class="compose hov" style="margin:0">Hover</button>
+              <button class="compose act" style="margin:0">Press</button>
+              <button class="compose foc" style="margin:0">Focus</button>
+            </div>
+            <div class="cap">Label on fill <span class="pass">9.04:1</span> → hover
+              <span class="pass">11.08:1</span> → press <span class="pass">6.92:1</span>.
+              Hover goes <em>lighter</em> (nearer), press goes darker.</div>
+          </div>
+        </div>
+        <div class="strip" style="margin-bottom:14px">
+          <div class="cell"><div class="lbl">Nav item</div>
+            <div style="background:var(--bg);padding:8px;border-radius:8px;width:230px">
+              <div class="ni"><svg class="i"><use href="#i-inbox"/></svg>Rest</div>
+              <div class="ni hov"><svg class="i"><use href="#i-inbox"/></svg>Hover<b>12</b></div>
+              <div class="ni on"><svg class="i"><use href="#i-inbox"/></svg>Active<b>12</b></div>
+              <div class="ni on hov"><svg class="i"><use href="#i-inbox"/></svg>Active + hover<b>12</b></div>
+              <div class="ni foc"><svg class="i"><use href="#i-inbox"/></svg>Focus</div>
+            </div>
+            <div class="cap">Active fill 1.523:1 over the nav ground; label
+              <code>--accent-ink</code> <span class="pass">8.61:1</span>, icon
+              <code>--accent</code> <span class="pass">5.94:1</span>.</div>
+          </div>
+          <div class="cell"><div class="lbl">Checkbox · star</div>
+            <div style="background:var(--read);padding:12px;border-radius:8px;display:flex;gap:14px;align-items:center">
+              <span class="cb"></span><span class="cb hov"></span>
+              <span class="cb on"><svg><use href="#i-check"/></svg></span>
+              <span class="cb mixed"><svg><use href="#i-minus"/></svg></span>
+              <span class="cb foc"></span>
+              <span style="width:1px;height:20px;background:var(--line)"></span>
+              <span class="star"><svg class="i"><use href="#i-star"/></svg></span>
+              <span class="star hov"><svg class="i"><use href="#i-star"/></svg></span>
+              <span class="star on"><svg class="i"><use href="#i-star"/></svg></span>
+            </div>
+            <div class="capn" style="margin-top:7px">rest · hover · on · mixed · focus &nbsp;|&nbsp; star rest · hover · on</div>
+            <div class="cap">Outline <code>--ctl-line</code> rgba(255,255,255,.38) =
+              <span class="pass">3.55:1</span> on a read row (was <span class="fail">1.38:1</span>).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section>
+  <div class="eyebrow">5 · elevation</div>
+  <h2>Three shadow tokens, used deliberately</h2>
+  <p class="lede">Resting cards are flat with a hairline. <code>--shadow-1</code> is the hover lift on a row.
+  <code>--shadow-2</code> is a menu or a docked compose. <code>--shadow-3</code> is a genuinely floating layer
+  — toast, palette, modal. In dark, each is a black shadow <em>and</em> a lighter surface, because a shadow on
+  a near-black ground carries almost no information on its own.</p>
+  <div class="grid2">
+    <div class="panel">
+      <div class="om">
+        <div class="elev" style="background:var(--bg);padding:20px;border-radius:10px">
+          <div class="e" style="background:var(--surface);border:1px solid var(--line);color:var(--fg-2)">flat + hairline</div>
+          <div class="e" style="background:var(--surface);box-shadow:var(--shadow-1);color:var(--fg-2)">--shadow-1</div>
+          <div class="e" style="background:var(--surface-2);box-shadow:var(--shadow-2);color:var(--fg-2)">--shadow-2</div>
+          <div class="e" style="background:var(--surface-2);box-shadow:var(--shadow-3);color:var(--fg-2)">--shadow-3</div>
+        </div>
+      </div>
+      <div class="cap">Light: rows · menus · toast/palette/dock.</div>
+    </div>
+    <div class="panel dark">
+      <div class="om dark">
+        <div class="elev" style="background:var(--bg);padding:20px;border-radius:10px">
+          <div class="e" style="background:var(--surface);border:1px solid var(--line);color:var(--fg-2)">flat + hairline</div>
+          <div class="e" style="background:var(--hover);box-shadow:var(--shadow-1);color:var(--fg-2)">--shadow-1<br>+ lighter surface</div>
+          <div class="e" style="background:var(--surface-2);box-shadow:var(--shadow-2);border:1px solid var(--line-2);color:var(--fg-2)">--shadow-2<br>+ hairline</div>
+          <div class="e" style="background:var(--surface-2);box-shadow:var(--shadow-3);border:1px solid var(--line-2);color:var(--fg-2)">--shadow-3<br>+ hairline</div>
+        </div>
+      </div>
+      <div class="cap">Dark: the surface step does the work the shadow cannot.</div>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-top:18px">
+    <div class="panel">
+      <div class="eyebrow">Light · floating layers in situ</div>
+      <div class="om">
+        <div style="background:var(--bg);padding:26px 20px;border-radius:10px;display:flex;
+                    gap:18px;align-items:center;justify-content:center;flex-wrap:wrap">
+          <div class="toast" style="position:static;transform:none">Conversation archived <a href="#">Undo</a><kbd>z</kbd></div>
+          <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-card);
+                      box-shadow:var(--shadow-2);padding:5px;width:180px">
+            <div class="ni" style="height:30px;border-radius:6px"><svg class="i"><use href="#i-archive"/></svg>Archive<kbd style="margin-left:auto">e</kbd></div>
+            <div class="ni hov" style="height:30px;border-radius:6px"><svg class="i"><use href="#i-trash"/></svg>Delete<kbd style="margin-left:auto">#</kbd></div>
+            <div class="ni" style="height:30px;border-radius:6px"><svg class="i"><use href="#i-mailopen"/></svg>Mark read</div>
+          </div>
+        </div>
+      </div>
+      <div class="cap">Toast on <code>--shadow-3</code>; overflow menu on <code>--shadow-2</code> plus a hairline.</div>
+    </div>
+    <div class="panel dark">
+      <div class="eyebrow" style="color:rgba(255,255,255,.5)">Dark · floating layers in situ</div>
+      <div class="om dark">
+        <div style="background:var(--bg);padding:26px 20px;border-radius:10px;display:flex;
+                    gap:18px;align-items:center;justify-content:center;flex-wrap:wrap">
+          <div class="toast" style="position:static;transform:none">Conversation archived <a href="#">Undo</a><kbd>z</kbd></div>
+          <div style="background:var(--surface-2);border:1px solid var(--line-2);border-radius:var(--r-card);
+                      box-shadow:var(--shadow-2);padding:5px;width:180px">
+            <div class="ni" style="height:30px;border-radius:6px"><svg class="i"><use href="#i-archive"/></svg>Archive<kbd style="margin-left:auto">e</kbd></div>
+            <div class="ni hov" style="height:30px;border-radius:6px"><svg class="i"><use href="#i-trash"/></svg>Delete<kbd style="margin-left:auto">#</kbd></div>
+            <div class="ni" style="height:30px;border-radius:6px"><svg class="i"><use href="#i-mailopen"/></svg>Mark read</div>
+          </div>
+        </div>
+      </div>
+      <div class="cap">The dark menu carries a <code>--line-2</code> hairline as well as the shadow — on a
+        near-black ground the edge, not the blur, is what reads.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================================== -->
+<section>
+  <div class="eyebrow">6 · motion</div>
+  <h2>Motion — colour, background, shadow. Nothing else.</h2>
+  <p class="lede">No transforms on hover, no decorative animation, one easing family. Everything below is
+  zeroed by <code>@media (prefers-reduced-motion: reduce)</code>, which the base layer already does.</p>
+  <div class="panel">
+    <table class="t">
+      <tr><th>Interaction</th><th>Properties</th><th>Duration</th><th>Easing</th></tr>
+      <tr><td>Icon button, nav pill, checkbox, star — hover / press</td><td><code>background-color, color, border-color</code></td><td><code>--dur-1</code> 120&nbsp;ms</td><td><code>--ease</code></td></tr>
+      <tr><td>List row — hover in/out</td><td><code>background-color, box-shadow, border-color</code></td><td><code>--dur-2</code> 160&nbsp;ms</td><td><code>--ease</code></td></tr>
+      <tr><td>Primary button — hover / press</td><td><code>background-color, box-shadow</code></td><td><code>--dur-2</code> 160&nbsp;ms</td><td><code>--ease</code></td></tr>
+      <tr><td>Search field — hover / focus</td><td><code>background-color, border-color, box-shadow</code></td><td><code>--dur-1</code> 120&nbsp;ms</td><td><code>--ease</code></td></tr>
+      <tr><td>Menus, popovers, quick settings</td><td><code>opacity, transform</code> (2&nbsp;px rise)</td><td><code>--dur-3</code> 200&nbsp;ms</td><td><code>--ease-out</code></td></tr>
+      <tr><td>Toast in / out</td><td><code>opacity, transform</code> (6&nbsp;px rise)</td><td>200&nbsp;ms in · 150&nbsp;ms out</td><td><code>--ease-out</code></td></tr>
+      <tr><td>Focus ring</td><td>—</td><td>0&nbsp;ms (instant)</td><td>—</td></tr>
+      <tr><td>Skeleton fade-in</td><td><code>opacity</code>, 300&nbsp;ms delay</td><td>120&nbsp;ms</td><td>linear</td></tr>
+      <tr><td><code>prefers-reduced-motion: reduce</code></td><td>all</td><td><b>0&nbsp;s</b></td><td>—</td></tr>
+    </table>
+  </div>
+</section>
+
+<p class="cap" style="margin-top:-14px">Inter is loaded from Google Fonts here for preview only; the product
+self-hosts the subset variable build. Density is Comfortable (52&nbsp;px, two-line) throughout —
+<code>--row-h</code> 36/44/52 is untouched by this pass.</p>
+
+</div>
+</body>
+</html>

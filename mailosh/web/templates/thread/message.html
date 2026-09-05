@@ -1,0 +1,178 @@
+{# One message card (spec §7, mockup key-moments.html §1's `.msg`).
+
+   **`id="msg-{id}"` is a contract, not decoration.** idiomorph matches
+   nodes by `id` across a swap, so a live update that re-renders the
+   conversation keeps an expanded card expanded and — the part that
+   actually matters — does not tear down and re-create its `<iframe>`,
+   which would re-fetch the body and flash the message away mid-read (1A
+   findings, item 3).
+
+   **The fold is a native `<details>`.** The whole `<summary>` row is the
+   control, so a collapsed message opens by clicking anywhere along it and
+   an open one closes the same way, with Enter/Space for free and no JS at
+   all — which matters twice over here, because the CSP forbids the inline
+   handler an Alpine or `hx-on:` version would need and Alpine's CSP build
+   would reject the expression besides.
+
+   That is also why the star and the ⋮ menu are **siblings of the
+   `<details>`, not children of its `<summary>`**, painted over the card's
+   top-right corner: interactive content inside a summary is at best
+   ambiguous (a click on the star would toggle the fold) and, for the
+   menu's own nested `<details>`, outright invalid. It is the same trick
+   `list/row.html` uses to keep its row controls out of the stretched
+   anchor beneath them.
+
+   `data-email-ids` carries this one message. Nothing reads it yet —
+   static/js/actions.js resolves an action outside `#list` to the first
+   `[data-email-ids]` in the document, which is the `.thread-scroll`
+   wrapper and therefore the whole conversation — but it is what a
+   message-scoped `targets()` needs, and the menu's own two mutating items
+   already carry their ids explicitly rather than waiting for it. #}
+<article id="msg-{{ message.id }}"
+         class="msg{% if message.unread %} is-unread{% endif %}"
+         data-email-ids="{{ message.id }}"{% if message.id == view.first_unread_id %} data-first-unread{% endif %}>
+
+  <details class="msg-fold"{% if message.expanded %} open{% endif %}>
+    {# Collapsed: avatar, name, snippet, date on one line. Expanded: the
+       same row with the snippet swapped for the sender's address (CSS
+       does the swap — one row, two states, so nothing is rendered twice
+       and the fold cannot desynchronise from its own header).
+
+       The avatar colour goes through `label_color` with the sender's
+       address as the seed, which resolves the same 0-11 index
+       `MessageView.avatar_color` already holds — the filter is the only
+       thing that can turn that index into a palette *name*, and a name is
+       what keeps a user-controlled value out of the `style` attribute. #}
+    <summary class="msg-summary">
+      <span class="avatar-sm" style="background: var(--label-{{ none | label_color(message.from_email or message.id) }})">
+        {{- message.initials -}}
+      </span>
+      <span class="msg-who">
+        <b class="msg-name">{{ message.from_name }}</b>
+        {% if message.from_email and message.from_email != message.from_name %}
+          <span class="msg-addr">&lt;{{ message.from_email }}&gt;</span>
+        {% endif %}
+        <span class="msg-snippet">{{ message.snippet }}</span>
+      </span>
+      <time class="msg-when" datetime="{{ message.received_at.isoformat() }}" title="{{ message.date_full }}">
+        {{- message.date_display -}}
+      </time>
+    </summary>
+
+    <div class="msg-recipients">{% include "thread/details.html" %}</div>
+
+    <div class="msg-body">
+      {% if message.has_html %}
+        {# The frame document, its sanitising and its CSP belong to
+           `/m/{id}/html`; the banner above it and the `<iframe>` that
+           embeds it belong to `GET /m/{id}/frame`. This end only asks for
+           the pair.
+
+           **Fetched, not included.** The banner has to say how many remote
+           images were blocked and which hosts they would have loaded from,
+           and those two numbers exist only where the sanitiser runs. This
+           view has no sanitised body: rendering the frame here would mean
+           sanitising a second time purely to count, which is the same
+           expensive work twice and two places for the count to drift from
+           itself. So the fragment is loaded, and `mailosh/web/frames.py`
+           stays the one place that knows what a message's images are.
+
+           `intersect once` rather than `load`: a twenty-message
+           conversation must not fetch twenty bodies before the reader has
+           scrolled to any of them, and a card that is still collapsed has
+           no layout at all so its placeholder never intersects — the same
+           bargain `loading="lazy"` struck on the `<iframe>` this replaces,
+           and the same trigger `list/rows.html`'s endless-scroll sentinel
+           uses. The swap is `outerHTML` of a target that already carries
+           the id the banner's own controls aim at, so what lands is
+           identical to what a later "Show images" swap lands.
+
+           Nothing about the images is asserted here. `remote` is absent
+           rather than `0`, so the reader's `remote_images` policy and
+           their per-sender allow list decide — spelling `remote=0` here
+           would be this template overruling a reader who chose "always
+           show", which is what it did before this fragment existed.
+
+           The pair sits in `#frame-area-{id}` because "Original colours"
+           replaces both: `POST /m/{id}/restyle` answers with the frame
+           alone, so swapping this wrapper `outerHTML` is what takes the
+           strip away when it has done its job. #}
+        <div id="frame-area-{{ message.id }}" class="frame-area">
+          {# The restyle strip carries the sender, and the sender is known
+             only here — `GET /m/{id}/frame` renders `thread/frame.html`
+             with no `From` in scope. So it goes outside the frame wrapper,
+             where a "Show images" swap cannot take it with it.
+
+             `message.restyled` is the whole gate: `mailosh/web/mail.py`
+             asks `mailosh.render.dark` the same question `/m/{id}/html`
+             asks before inverting anything, so the strip is on screen only
+             for a message that really was inverted. A sender already
+             opted out, a mail that declares its own colour scheme and a
+             mail that already reads dark all answer false — in every one
+             of those the button would rewrite a row that already says
+             what it would say, or offer to undo something nothing did.
+
+             `.frame-banner-dark` in styles/input.css finishes the job by
+             hiding the strip whenever the page is painting light, which a
+             `system` reader's OS can decide after this HTML is written. #}
+          {% if message.restyled %}
+            {% with email_id = message.id, restyle_sender = message.from_email %}
+              {% include "thread/banner.html" %}
+            {% endwith %}
+          {% endif %}
+
+          <div id="frame-{{ message.id }}" class="mail-frame-wrap frame-loading"
+               data-thread="{{ view.thread_id }}"
+               hx-get="/m/{{ message.id }}/frame?thread={{ view.thread_id | urlencode }}"
+               hx-trigger="intersect once"
+               hx-swap="outerHTML">
+            <span class="sr-only">Loading this message</span>
+          </div>
+        </div>
+      {% else %}
+        {% if message.visible_lines %}
+          <pre class="msg-text">{% for line in message.visible_lines %}{% if line.depth %}<span class="q{{ line.depth }}">{{ line.html }}</span>{% else %}{{ line.html }}{% endif %}{{ "\n" if not loop.last }}{% endfor %}</pre>
+        {% endif %}
+        {% if message.quoted_lines %}
+          {# The `•••` pill: the quoted half is hidden, never discarded —
+             `render_plain` cuts the body in two and both halves are here. #}
+          <details class="quote">
+            <summary class="quote-toggle" aria-label="Quoted text" title="Show quoted text">•••</summary>
+            <pre class="msg-text">{% for line in message.quoted_lines %}{% if line.depth %}<span class="q{{ line.depth }}">{{ line.html }}</span>{% else %}{{ line.html }}{% endif %}{{ "\n" if not loop.last }}{% endfor %}</pre>
+          </details>
+        {% endif %}
+      {% endif %}
+
+      {% if message.truncated %}
+        {# Stalwart returned only part of this body (the JMAP
+           `maxBodyValueBytes` cap). Saying so is the whole point: without
+           this line the message simply stops mid-sentence and the reader
+           has no way to tell that from a sender who trailed off. #}
+        <p class="msg-truncated">
+          This message was too large to show in full ·
+          <a href="/m/{{ message.id }}/source" target="_blank" rel="noopener noreferrer">Show original</a>
+        </p>
+      {% endif %}
+
+      {# Chips last, under the body they came with — and inside the fold,
+         so a collapsed one-line card stays one line. #}
+      {% include "thread/attachments.html" %}
+    </div>
+  </details>
+
+  <div class="msg-tools">
+    {# `data-action="star"` reaches the same delegated listener the list's
+       own star does. `aria-pressed` is what turns a click on an already
+       starred message into `on=0` rather than a second `on=1`. #}
+    <button type="button" class="btn-icon size-7 msg-star{% if message.starred %} is-on{% endif %}"
+            data-action="star"
+            aria-pressed="{{ 'true' if message.starred else 'false' }}"
+            aria-label="Star message" title="Star (s)">
+      {{ icon("star", class_="size-4") }}
+    </button>
+    {# `later_ids` — this message and every one after it — is set by
+       `thread/page.html`'s loop, which is the only place that knows where
+       in the conversation this card sits. #}
+    {% include "thread/menu.html" %}
+  </div>
+</article>

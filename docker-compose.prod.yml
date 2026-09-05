@@ -1,0 +1,369 @@
+# Production overlay. Use as:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# It is an *overlay*, never used alone, and never combined with
+# docker-compose.dev.yml. The design it implements, with the reasoning, is
+# docs/specs/2026-09-05-production-deployment.md.
+#
+# ---------------------------------------------------------------------
+# Why this file is full of `!reset`
+# ---------------------------------------------------------------------
+#
+# Compose does not *replace* a service's `ports:` when an override file
+# supplies its own -- it concatenates the two lists. Verified, not assumed:
+# a base publishing `127.0.0.1:8080:8080` plus an override publishing
+# `127.0.0.1:9999:9999` renders three published ports, not one. So an
+# override that simply "does not mention 8080" still publishes 8080.
+#
+# `!reset` (Compose v2.24+) is the only thing that removes an inherited
+# key. Every published port in docker-compose.yml is a *development*
+# convenience -- Stalwart's admin/JMAP HTTP port, Postgres with its
+# hardcoded credential, the app's own 8000 -- and every one of them is
+# reset here before anything is published back. `docker compose config`
+# is the check that this worked; §11 of the spec gives the exact command
+# and the port list it should print.
+#
+# `volumes: !reset []` on `mailosh` is belt-and-braces against the same
+# merge rule: if someone types `-f docker-compose.yml -f
+# docker-compose.dev.yml -f docker-compose.prod.yml`, the dev overlay's
+# `.:/app` bind mount would otherwise survive into a production run and
+# serve the working tree instead of the built image. It cannot now.
+# `MAILOSH_RELOAD: "0"` closes the other half of that scenario.
+
+services:
+  # -------------------------------------------------------------------
+  # caddy -- the only service that binds a public HTTP port
+  # -------------------------------------------------------------------
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    # 80 is not optional even though everything real is on 443: it is how
+    # the ACME HTTP-01 challenge is answered, and how a human typing
+    # `mail.example.com` gets redirected to https instead of a connection
+    # refused. 443/udp is HTTP/3; drop it if your firewall makes UDP
+    # awkward, nothing breaks.
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # Read-only, and the one bind mount in this file. The prohibition on
+      # bind mounts is about mounting *source* over the app -- that is
+      # what defeats the built image and what the dev overlay does. A
+      # single read-only config file is how a reverse proxy is configured
+      # everywhere; it keeps the Caddyfile in git and reviewable, and it
+      # lets `docker compose exec caddy caddy reload --config
+      # /etc/caddy/Caddyfile` apply an edit with no dropped connections.
+      # Baking it into a derived image would cost both and buy nothing.
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      # Both are consumed by the Caddyfile's `{$VAR}` substitution. The
+      # `:?` form makes `docker compose config` fail with this message
+      # rather than starting a proxy with an empty site address -- a
+      # missing hostname is a first-boot mistake, and it should be caught
+      # before anything binds a port.
+      MAILOSH_SITE_ADDRESS: "${MAILOSH_SITE_ADDRESS:?set MAILOSH_SITE_ADDRESS in .env — the hostname this webmail is served on, e.g. mail.example.com}"
+      MAILOSH_ACME_EMAIL: "${MAILOSH_ACME_EMAIL:?set MAILOSH_ACME_EMAIL in .env — the CA sends certificate-expiry warnings there}"
+    depends_on:
+      # `service_started`, deliberately not `service_healthy`. Caddy
+      # resolves its upstream per request, so it needs nothing from the
+      # app at boot -- and if the app is slow (migrations) or broken, a
+      # proxy that is already up answers the Caddyfile's `handle_errors`
+      # sentence. A proxy that is still waiting answers connection
+      # refused, which tells the reader nothing.
+      - mailosh
+    healthcheck:
+      # Caddy's admin API on its default localhost:2019, inside this
+      # container only and published nowhere. Verified to exit 0 against a
+      # running caddy:2.10-alpine.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    networks: [edge]
+
+  # -------------------------------------------------------------------
+  # mailosh -- the web app. Reachable only from caddy.
+  # -------------------------------------------------------------------
+  mailosh:
+    # docker-compose.yml publishes 127.0.0.1:8000. In production the only
+    # thing that may reach uvicorn is Caddy, over the `edge` network.
+    ports: !reset []
+    volumes: !reset []
+    restart: unless-stopped
+    environment:
+      # `environment:` beats `env_file:` for the same key (the base file's
+      # own comment establishes this), so these four win over whatever
+      # `.env` happens to say -- including the `MAILOSH_COOKIE_SECURE=false`
+      # that .env.example ships for localhost development. A production run
+      # cannot be talked into a non-Secure session cookie by a stale `.env`.
+      MAILOSH_COOKIE_SECURE: "true"
+
+      # The other half of the Caddyfile's `header_up X-Real-IP` comment.
+      # This makes `mailosh.web.auth._client_ip` read X-Forwarded-For, and
+      # the login rate limiter keys on the result -- which is safe only
+      # because (a) the app publishes no port, so the sole thing that can
+      # set that header is Caddy, and (b) Caddy 2.10 replaces an inbound
+      # X-Forwarded-For rather than appending to it. Turn this on with any
+      # other front end and you must confirm the same two facts about it
+      # first; get it wrong and a client walks past the per-IP limiter by
+      # sending its own header.
+      MAILOSH_TRUST_PROXY: "true"
+
+      # uvicorn's own proxy handling is enabled by default but trusts only
+      # 127.0.0.1, and Caddy is not on loopback -- it is another container.
+      # Without this, `request.url.scheme` stays "http" behind an https
+      # proxy, and the app builds its own origin from it
+      # (`mailosh/web/mail.py`'s `origin`, `mailosh/web/frames.py`'s
+      # `base_url`): the sandboxed mail frame's postMessage origin check
+      # would compare `http://host` against a page served from
+      # `https://host` and reject its own frames, and signed remote-image
+      # URLs would come out `http://` and be blocked as mixed content.
+      # `*` is the honest value in Docker (Caddy's container IP is not
+      # stable) and is safe for exactly the reason above: nothing but
+      # Caddy can open a connection to this port.
+      FORWARDED_ALLOW_IPS: "*"
+
+      # One source of truth for the Postgres credential -- see the
+      # `postgres` service below, which reads the same variable. Two
+      # variables that must agree is a foot-gun; one is not. Hex, so the
+      # value is always URL-safe inside this DSN.
+      MAILOSH_DATABASE_URL: "postgresql+asyncpg://mailosh:${MAILOSH_PG_PASSWORD:?set MAILOSH_PG_PASSWORD in .env — generate one with `openssl rand -hex 24`}@postgres:5432/mailosh"
+
+      # ONE WORKER. This is a correctness constraint, not a performance
+      # default, and raising it is not a tuning knob — it is a change that
+      # needs application work first.
+      #
+      # `mailosh.web.auth.logout` revokes the session row in Postgres —
+      # shared, so every process sees it — and then calls
+      # `pool.drop(session.id)` on `app.state.pool`, which is **per
+      # process**. A second worker's already-open `GET /events` keeps
+      # streaming that user's mail on the pooled client it still holds,
+      # because the drop never crossed the process boundary. And there is
+      # no time bound on it: `mailosh.jmap.pool` deliberately exempts a
+      # client with a live stream from `stop_idle`, so the sweep that
+      # would otherwise close it never will.
+      #
+      # It self-heals only if that logout was the user's *last* session —
+      # the Stalwart API key is destroyed and the upstream listener dies
+      # with it. If they still have a phone or a second browser signed in,
+      # the key survives and the **revoked** session's stream keeps
+      # delivering mail indefinitely.
+      #
+      # MAILOSH_SSE_FANOUT=postgres relays *live-update events* between
+      # workers. It is transport only. It does not make logout cross a
+      # process boundary, and it does not make this safe.
+      #
+      # Concurrency here comes from async I/O inside the one worker, which
+      # is what the app is built for. If this box is genuinely CPU-bound on
+      # Python, that is a finding worth investigating before it is a reason
+      # to change this line.
+      #
+      # uvicorn reads WEB_CONCURRENCY when no --workers flag is given
+      # (uvicorn/config.py), and only forks above 1 (uvicorn/main.py), so
+      # this pins today's behaviour explicitly rather than changing it.
+      WEB_CONCURRENCY: "1"
+
+      # Never reload in production, whatever else is on the command line.
+      MAILOSH_RELOAD: "0"
+    healthcheck:
+      # `GET /healthz` answers 204 with no session, no template and no
+      # database query. Liveness only, deliberately: it must NOT probe
+      # Postgres or Stalwart, because Docker's answer to an unhealthy
+      # container is to restart it -- and restarting the app neither fixes
+      # a failed dependency nor preserves the SSE streams it was serving.
+      # `scripts/healthcheck.sh` probes each store separately.
+      # python:3.12-slim ships neither curl nor wget (checked), so urllib.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).status == 204 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # Generous because this container runs `alembic upgrade head` before
+      # uvicorn binds anything (docker/entrypoint.sh). A long migration on
+      # a slow disk must not be reported as an unhealthy app.
+      start_period: 60s
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    networks: [edge, backend, mail]
+
+  # -------------------------------------------------------------------
+  # postgres -- application state only. Published nowhere.
+  # -------------------------------------------------------------------
+  postgres:
+    # docker-compose.yml publishes 127.0.0.1:55432 so host tooling works.
+    # That is a development affordance with a hardcoded `mailosh:mailosh`
+    # credential behind it, and it has no place here: the only thing that
+    # needs this database is the app, one hop away on `backend`.
+    ports: !reset []
+    restart: unless-stopped
+    environment:
+      # Only ever read at initdb, on the *first* boot with an empty
+      # `pg-data` volume. Changing it later changes nothing -- see the
+      # spec's §10 for how to rotate it on a database that already exists.
+      POSTGRES_PASSWORD: "${MAILOSH_PG_PASSWORD:?set MAILOSH_PG_PASSWORD in .env — generate one with `openssl rand -hex 24`}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mailosh -d mailosh"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # A SIGKILL through a shutdown checkpoint costs crash recovery on the
+    # next boot. Docker's default 10 s is usually enough and occasionally
+    # is not; 30 s costs nothing on a clean stop, because Postgres exits
+    # as soon as it is done.
+    stop_grace_period: 30s
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    networks: [backend]
+
+  # -------------------------------------------------------------------
+  # stalwart -- mail ports public, HTTP (JMAP + admin) internal only
+  # -------------------------------------------------------------------
+  stalwart:
+    # The whole point of the reset. docker-compose.yml publishes
+    # 127.0.0.1:8080 -> Stalwart's HTTP port, which serves *both* JMAP and
+    # the admin API and accepts MAILOSH_STALWART_ADMIN_SECRET -- a
+    # credential that can create and delete accounts and mint API keys for
+    # any of them. Loopback is a weak boundary on a shared box (every
+    # local user, every other container with host networking, every
+    # forwarded SSH session), and it is not a boundary the app needs at
+    # all: `MAILOSH_STALWART_URL=http://stalwart:8080` reaches it over the
+    # `mail` network. So it is published nowhere, and the ports below are
+    # only the ones the internet must reach for mail to work.
+    #
+    # `!override`, not `!reset`, because this key needs a *replacement*
+    # rather than a deletion. `!reset` discards the inherited value and the
+    # one written under it -- verified: `ports: !reset` followed by four
+    # entries rendered a service with no published ports at all. `!override`
+    # is the tag that means "ignore what the other files said, use exactly
+    # this".
+    #
+    # Every port below has a listener behind it, and that is checked rather
+    # than assumed: scripts/stalwart-bootstrap.sh reads the server's own
+    # x:NetworkListener objects and then opens a real TCP connection to each,
+    # from *inside* the container. A host-side probe of a published port
+    # proves nothing -- Docker's proxy accepts the connection and then drops
+    # it when there is nothing listening.
+    ports: !override
+      # 25 inbound MX. Without this the domain receives no mail at all.
+      - "25:25"
+      # 465 submissions (implicit TLS) and 587 submission (STARTTLS) --
+      # both, because real mail clients are split between them, and
+      # Thunderbird, Apple Mail, iOS Mail and Outlook all commonly default
+      # to 587.
+      #
+      # Stalwart v0.16.20 ships no listener on 587; until
+      # scripts/stalwart-bootstrap.sh started creating one, this line
+      # published a port that refused every connection. The listener it
+      # creates demands STARTTLS before it will take a credential (verified
+      # against the running server: `AUTH PLAIN` in the clear is answered
+      # `554 5.7.8 Authentication mechanism not supported`, and PLAIN/LOGIN
+      # appear only after STARTTLS) and authentication before it will take a
+      # message at all (`503 5.5.1 You must authenticate first`) -- so it is
+      # a submission port, not a second MX.
+      - "465:465"
+      - "587:587"
+      # 993 IMAPS. Plain 143 and ManageSieve 4190 are deliberately absent,
+      # as the deployment spec records: 993 covers every modern client, and
+      # neither 143 nor 4190 has a default listener to publish to in any
+      # case. If you add one, add the listener at the same time.
+      - "993:993"
+      # Listening in the container and deliberately NOT published: 995
+      # (pop3s) and 4190 (ManageSieve), which Stalwart runs by default and
+      # which nothing here needs to reach from the internet; 443, which
+      # Caddy owns on the host; and 8080, the JMAP *and admin* port -- see
+      # the paragraph above. An unpublished listener is a socket inside a
+      # container, not a promise to a client, so it is not the failure this
+      # list exists to avoid.
+    restart: unless-stopped
+    environment:
+      # `:?` instead of the base file's `:-changeme`. Shipping the literal
+      # string `changeme` as the credential that can mint an API key for
+      # any mailbox on the server is a development-only accident; here it
+      # stops the deployment before it starts.
+      STALWART_RECOVERY_ADMIN: "admin:${MAILOSH_STALWART_ADMIN_SECRET:?set MAILOSH_STALWART_ADMIN_SECRET in .env — generate one with `openssl rand -hex 24`}"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    networks: [backend, mail]
+
+# ---------------------------------------------------------------------
+# Networks -- three, each with one job
+# ---------------------------------------------------------------------
+#
+# docker-compose.yml declares none, so everything shares one implicit
+# `default` network there. Naming them here is what turns "we did not
+# publish that port" into "that container cannot open a socket to it".
+networks:
+  # caddy <-> mailosh. Not internal: Caddy needs outbound HTTPS to reach
+  # the ACME directory, or it can never get a certificate.
+  edge: {}
+
+  # mailosh <-> postgres, mailosh <-> stalwart's HTTP port.
+  # `internal: true` means no gateway is attached: Postgres cannot reach
+  # the internet, and the internet cannot reach it, independently of
+  # whether anyone remembers not to publish 5432.
+  backend:
+    internal: true
+
+  # mailosh <-> stalwart, and Stalwart's route out. Not internal, because
+  # a mail server that cannot open outbound connections cannot deliver
+  # mail or resolve MX records. `mailosh` also sits here, and on `edge`,
+  # which is what gives *it* egress -- Phase 1B's remote-image proxy
+  # (`GET /img`) fetches from arbitrary hosts on the reader's behalf, so
+  # the app genuinely needs it.
+  mail: {}
+
+# ---------------------------------------------------------------------
+# Volumes -- what holds mail, and what does not
+# ---------------------------------------------------------------------
+#
+# stalwart-etc and stalwart-data and pg-data are declared by
+# docker-compose.yml; the two Caddy volumes are added here. Restated
+# because "which of these is the irreplaceable one" is the question an
+# operator asks at exactly the wrong moment:
+#
+#   stalwart-data  ALL MAIL. Every message, every mailbox, the full-text
+#                  index. This is the volume whose loss is unrecoverable
+#                  and the one a backup exists for.
+#   stalwart-etc   Stalwart's configuration and its DKIM *private* keys.
+#                  Losing it does not lose mail, but it does lose the
+#                  keys your published DNS records point at, so signing
+#                  breaks until you republish new ones.
+#   pg-data        Application state only, never mail content: users,
+#                  sessions, label colours and visibility, UI
+#                  preferences, login-attempt counters, audit log.
+#                  Losing it signs everyone out and forgets their
+#                  settings. It does not lose a single message.
+#   caddy-data     The ACME account key and every issued certificate.
+#                  Losing it is survivable but not free: Caddy re-issues
+#                  from scratch, against Let's Encrypt's duplicate-
+#                  certificate rate limit (5 per week per exact name).
+#   caddy-config   Caddy's autosaved JSON. Regenerated from the Caddyfile
+#                  on every start; genuinely disposable.
+volumes:
+  caddy-data: {}
+  caddy-config: {}

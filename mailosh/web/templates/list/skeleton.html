@@ -1,0 +1,21 @@
+{# Loading skeleton, spec §5.4: "skeleton rows (shimmer) only if the response
+   takes > 300 ms".
+
+   It is not swapped in by a response — it is always in the document,
+   `opacity: 0`, and every list request points its `hx-indicator` here.
+   htmx puts `.htmx-request` on it for exactly as long as the request is in
+   flight, and `.list-skeleton`'s own `transition-delay: 300ms` (see
+   styles/input.css) is what makes it appear only for a request slow enough
+   to be worth admitting to. A fast swap never paints a frame of it, and
+   there is no timer anywhere. #}
+<div id="list-skeleton" class="list-skeleton" aria-hidden="true">
+  {% for _ in range(12) %}
+    <div class="row skeleton-row">
+      <span class="skeleton-bar" style="width: 15px"></span>
+      <span class="skeleton-bar" style="width: 15px"></span>
+      <span class="skeleton-bar" style="width: 120px"></span>
+      <span class="skeleton-bar skeleton-grow"></span>
+      <span class="skeleton-bar" style="width: 44px"></span>
+    </div>
+  {% endfor %}
+</div>

@@ -1,0 +1,14 @@
+{# The label a menu was asked for is no longer there — deleted in another
+   client, or by another session, between the nav being rendered and the ⋮
+   being clicked.
+
+   A fragment rather than an `om:error` with no body, because this reply is
+   *swapped into an open popover*: a bodyless error would leave the reader
+   looking at an empty panel with no explanation and no way out but Esc.
+   The nav catches up on the refresh `labels.js` fires when this closes. #}
+<div class="lm lm-gone">
+  <p class="lm-note">{{ message }}</p>
+  <div class="lm-danger">
+    <button type="button" class="lp-btn" data-role="lm-close">Close</button>
+  </div>
+</div>

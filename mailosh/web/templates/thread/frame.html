@@ -1,0 +1,41 @@
+{# One message body: the blocked-remote-images banner and the sandboxed
+   frame that contains the body itself.
+
+   Rendered only by `mailosh/web/frames.py` — `GET /m/{id}/frame` and the
+   two POSTs that re-render a frame — because the banner's count is a
+   property of the sanitising pass and nothing else knows it.
+   `thread/message.html` loads this fragment rather than including it: the
+   conversation view has no sanitised body to count, and counting a second
+   time there would be the same expensive work twice for a number that
+   could then disagree with itself.
+
+   The banner is INSIDE `#frame-{{ email_id }}` on purpose. Both of its
+   controls swap this wrapper `outerHTML`, so a strip outside it would
+   survive its own dismissal and sit there claiming images are blocked
+   while they load underneath. The dark-restyle strip is the opposite case
+   and lives in `thread/message.html`, outside this wrapper — see
+   `thread/banner.html`.
+
+   The wrapper carries the id so those swaps are plain htmx
+   (`hx-get="/m/{id}/frame?thread=…&remote=1"`, `hx-target="#frame-{id}"`,
+   `hx-swap="outerHTML"`) against a target that already has a URL, with no
+   bespoke JS on either side.
+
+   The `sandbox` attribute is the second half of the frame's containment;
+   `mailosh/render/frame_document.py`'s CSP `sandbox` directive is the
+   first, and a document under both gets the INTERSECTION of the two. The
+   two lists are therefore identical, and `allow-same-origin` is in
+   neither -- that omission is what gives the framed document an opaque
+   origin, and so no reach into the reader's session, cookies, storage or
+   `parent.document`. Never add it here "to fix" a frame that cannot read
+   something; a frame that needs to read something is a bug in the frame.
+
+   `referrerpolicy="no-referrer"` covers what the CSP cannot: the frame's
+   own subresource requests (`/img?u=…`, `/m/{id}/cid/…`) must not carry
+   the reading URL, which names the message being read. `loading="lazy"`
+   keeps a twenty-message thread from parsing twenty message bodies before
+   the reader has scrolled to any of them. #}
+<div id="frame-{{ email_id }}" class="mail-frame-wrap" data-thread="{{ thread_id }}">
+  {% include "thread/banner.html" %}
+  <iframe class="mail-frame" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" loading="lazy" title="Message content" src="{{ frame_src }}"></iframe>
+</div>

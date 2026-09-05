@@ -1,0 +1,116 @@
+{# Left nav, 224px (spec §5.2, mockup layout.html): Compose, the four system
+   items, a More disclosure, then the label tree.
+
+   Wrapped in `#nav` rather than rendered straight into layouts/app.html's
+   `<nav>` element so a mailbox switch that only swapped `#main` can bring
+   the re-rendered nav with it out of band (`oob=true` below) — the active
+   item and the unread counts move together with the list.
+
+   `hidden_in_nav` (a Jinja global registered in mailosh.web.app, backed by
+   `mailosh.services.mailbox_tree.hidden_in_nav`) is the single reader of
+   the "show if unread" preference: such a label keeps its chips on
+   conversations but loses its sidebar row while it has nothing unread.
+
+   No Snoozed, no Important, no category tabs (spec §3). #}
+
+{% macro nav_link(href, label, count, active, icon_name=None, color=None) %}
+  {# `title` is for the 64px icon rail below 1100px, where the label is
+     visually hidden and the icon is all a pointer has to go on. It is
+     redundant with the visible text at full width, which is the trade
+     Gmail makes for the same reason -- the alternative is a tooltip
+     component nobody needs, or an icon rail a mouse cannot read. #}
+  <a href="{{ href }}"
+     class="nav-item"
+     title="{{ label }}"
+     hx-get="{{ href }}"
+     hx-target="#main"
+     hx-swap="morph:innerHTML show:none"
+     hx-push-url="true"
+     hx-indicator="#list-skeleton"
+     {% if active %}aria-current="page"{% endif %}>
+    {% if color %}
+      <span class="nav-dot" style="background: var(--label-{{ color }})"></span>
+    {% else %}
+      {{ icon(icon_name, class_="size-4") }}
+    {% endif %}
+    <span class="nav-label truncate">{{ label }}</span>
+    {% if count %}<b class="nav-count">{{ count }}</b>{% endif %}
+  </a>
+{% endmacro %}
+
+{% macro label_rows(nodes, depth) %}
+  {% for node in nodes %}
+    {% if not hidden_in_nav(node) %}
+      {# `.nav-row` positions the ⋮ over the row's right edge rather than
+         beside the link, so the link keeps the full 224 px it had and the
+         unread badge keeps its place — the menu button takes that corner
+         only while the row is hovered or focused within (styles/labels.css),
+         which is how spec §5.2's "hover ⋮" reads without the count and the
+         button ever competing for the same pixels.
+
+         `data-label-menu`, not `data-action`: that hook names one of
+         `mailosh/web/actions.py`'s six routes, and this button posts
+         nothing — `static/js/labels.js` opens the menu popover from it. #}
+      {# Depth travels as a custom property, not as inline padding.
+         `styles/responsive.css` turns it into `padding-left` -- an inline
+         `style="padding-left: …"` would outrank every stylesheet, so the
+         64px icon rail could not un-indent a nested label and its colour
+         dot would sit off-centre by 14px per level. #}
+      <div class="nav-row" style="--nav-depth: {{ depth }}">
+        {{ nav_link("/mail/" ~ node.mailbox_id, node.name, node.count, node.mailbox_id == key,
+                    color=node.color | label_color(node.mailbox_id)) }}
+        <button type="button" class="nav-menu"
+                data-label-menu="{{ node.mailbox_id }}"
+                aria-haspopup="dialog"
+                title="Label options">
+          {{ icon("ellipsis-vertical", class_="size-4", label="Options for " ~ node.name) }}
+        </button>
+      </div>
+    {% endif %}
+    {{ label_rows(node.children, depth + 1) }}
+  {% endfor %}
+{% endmacro %}
+
+<div id="nav" class="flex flex-col gap-0.5"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {# `data-compose-open` rather than an `hx-get` on the button: opening goes
+     through `static/js/compose.js`'s own `open()`, which is where the
+     three-dock limit and its toast live. An `hx-get` here would happily
+     open a fourth. #}
+  <button type="button" class="compose-btn" data-compose-open
+          title="Compose (c)">
+    {{ icon("pen-line", class_="size-4") }}
+    <span class="nav-label">Compose</span>
+    {# No wrapper and no opacity: `.compose-btn .kbd` owns both the push to
+       the right edge and its own on-accent colour (polish v2 §4). #}
+    {{ kbd("c") }}
+  </button>
+
+  {% for item in nav.system %}
+    {{ nav_link("/mail/" ~ item.key, item.label, item.count, item.active, icon_name=item.icon) }}
+  {% endfor %}
+
+  {# Native <details>: a disclosure with keyboard support and no JS at all,
+     open when the view you are looking at lives inside it. #}
+  <details class="nav-more"{% if nav.more | selectattr("active") | list %} open{% endif %}>
+    <summary class="nav-item" title="More mailboxes">
+      {{ icon("chevron-down", class_="size-4 nav-chev") }}
+      <span class="nav-label">More</span>
+    </summary>
+    {% for item in nav.more %}
+      {{ nav_link("/mail/" ~ item.key, item.label, item.count, item.active, icon_name=item.icon) }}
+    {% endfor %}
+  </details>
+
+  {# The heading and its `+` render whether or not this account has any
+     labels yet (spec §5.2: "Labels section (+ create)"). Hiding them on an
+     empty account would make "create your first label" the one thing the
+     sidebar cannot do, which is exactly when a reader needs it. #}
+  <div class="nav-heading-row">
+    <h2 class="nav-heading">Labels</h2>
+    <button type="button" class="nav-add" data-label-new
+            aria-haspopup="dialog" title="New label">
+      {{ icon("plus", class_="size-4", label="New label") }}
+    </button>
+  </div>
+  {{ label_rows(nav.labels, 0) }}
+</div>

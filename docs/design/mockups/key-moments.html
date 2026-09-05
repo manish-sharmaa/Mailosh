@@ -1,0 +1,240 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  .om{--bg:#F4F6F8;--surface:#FFFFFF;--line:#E3E8EE;--line-2:#C9D2DC;--fg:#111827;--fg-2:#5A6472;--fg-3:#8A94A3;--field:#E9EEF4;
+      --accent:#1D6AE5;--accent-ink:#174EA6;--accent-soft:#E8F0FE;--read:#F5F7FA;--hover:#EEF2F7;--star:#F59E0B;--toast:#1F2937;--toast-fg:#fff;
+      font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.4;color:var(--fg);-webkit-font-smoothing:antialiased}
+  .om.dark{--bg:#111318;--surface:#191C22;--line:#282C35;--line-2:#3D4350;--fg:rgba(255,255,255,.9);--fg-2:rgba(255,255,255,.65);--fg-3:rgba(255,255,255,.42);--field:#1F232B;
+      --accent:#8AB4F8;--accent-ink:#C2D7FE;--accent-soft:rgba(138,180,248,.16);--read:#14171D;--hover:#1C2028;--toast:#F3F4F6;--toast-fg:#111827}
+  .om *{box-sizing:border-box;margin:0;padding:0}
+  .om svg.i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .om kbd{font:500 10.5px/1 Inter,system-ui,sans-serif;color:var(--fg-3);border:1px solid var(--line-2);border-bottom-width:2px;border-radius:4px;padding:2px 5px;background:var(--surface)}
+  .shot{background:var(--bg);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:grid;grid-template-rows:52px 1fr;grid-template-columns:224px 1fr;height:560px;position:relative;box-shadow:0 1px 2px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.08)}
+  .top{grid-column:1/3;display:flex;align-items:center;gap:12px;padding:0 14px 0 12px}
+  .btn{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--fg-2)}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;letter-spacing:-.01em;margin-right:8px}
+  .mark{width:22px;height:22px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center}
+  .mark svg{width:13px;height:13px;stroke:#fff;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  .dark .mark svg{stroke:#111318}
+  .search{flex:1;max-width:640px;height:36px;border-radius:8px;background:var(--field);display:flex;align-items:center;gap:10px;padding:0 12px;color:var(--fg-3);margin:0 auto}
+  .search span{flex:1}
+  .topright{display:flex;align-items:center;gap:4px;margin-left:auto}
+  .avatar{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-weight:600;font-size:12px;display:flex;align-items:center;justify-content:center;margin-left:6px}
+  .dark .avatar{color:#111318}
+  .nav{padding:6px 10px 10px 12px;display:flex;flex-direction:column;gap:2px}
+  .compose{height:36px;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;display:flex;align-items:center;gap:8px;padding:0 12px;margin:0 8px 10px 0}
+  .dark .compose{color:#111318}
+  .ni{height:32px;border-radius:6px;display:flex;align-items:center;gap:10px;padding:0 10px;color:var(--fg-2);font-weight:500}
+  .ni b{margin-left:auto;font-weight:600;font-size:12px}
+  .ni.on{background:var(--accent-soft);color:var(--accent-ink)}
+  .nh{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3);font-weight:600;padding:14px 10px 6px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;margin:0 3px}
+  .main{background:var(--surface);border-left:1px solid var(--line);border-top:1px solid var(--line);border-radius:10px 0 0 0;display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .bar{height:44px;display:flex;align-items:center;gap:2px;padding:0 10px 0 8px;border-bottom:1px solid var(--line);color:var(--fg-2)}
+  .bar .btn{width:30px;height:30px}
+  .sep{width:1px;height:18px;background:var(--line);margin:0 6px}
+  .count{margin-left:auto;font-size:12px;color:var(--fg-2);font-variant-numeric:tabular-nums}
+  .chip{font-size:11px;font-weight:500;padding:1px 7px;border-radius:99px;flex:none}
+  /* thread */
+  .th{padding:18px 28px 0 28px;display:flex;align-items:center;gap:10px}
+  .th h1{font-size:19px;font-weight:600;letter-spacing:-.012em}
+  .msg{margin:10px 28px 0;border:1px solid var(--line);border-radius:10px;padding:14px 16px;max-width:820px}
+  .msg.col{padding:10px 16px;color:var(--fg-2)}
+  .mh{display:flex;align-items:center;gap:10px}
+  .av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:13px;flex:none}
+  .who b{font-weight:600;color:var(--fg)}
+  .who div{font-size:12px;color:var(--fg-3)}
+  .when{margin-left:auto;font-size:12px;color:var(--fg-3);display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .body{margin-top:14px;font-size:14px;line-height:1.55;color:var(--fg);max-width:64ch}
+  .body p{margin-bottom:12px}
+  .trim{display:inline-flex;align-items:center;height:18px;padding:0 9px;border-radius:99px;background:var(--field);color:var(--fg-2);font-size:12px;letter-spacing:.15em;font-weight:700}
+  .reply{display:flex;gap:8px;padding:14px 28px;align-items:center}
+  .ghost{height:34px;border:1px solid var(--line-2);border-radius:8px;padding:0 14px;display:flex;align-items:center;gap:8px;font-weight:500;color:var(--fg)}
+  .hint{margin-left:auto;color:var(--fg-3);font-size:12px;display:flex;gap:6px;align-items:center}
+  /* rows (for compose screen background + density) */
+  .row{height:44px;display:flex;align-items:center;gap:10px;padding:0 14px 0 14px;border-bottom:1px solid var(--line);background:var(--read);color:var(--fg-2);position:relative}
+  .row.u{background:var(--surface)}
+  .ck{width:15px;height:15px;border:1.5px solid var(--line-2);border-radius:3.5px;flex:none;background:var(--surface)}
+  .st{color:var(--fg-3);display:flex}
+  .from{width:170px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row.u .from{font-weight:600;color:var(--fg)}
+  .txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .txt .s{color:var(--fg)}
+  .row.u .txt .s{font-weight:600}
+  .date{width:66px;text-align:right;font-size:12px;color:var(--fg-3);font-variant-numeric:tabular-nums;flex:none}
+  .row.u .date{color:var(--fg);font-weight:600}
+  /* compose dock */
+  .dock{position:absolute;right:16px;bottom:0;width:560px;height:520px;background:var(--surface);border:1px solid var(--line);border-bottom:0;border-radius:10px 10px 0 0;box-shadow:0 -2px 8px rgba(15,23,42,.06),0 12px 40px rgba(15,23,42,.22);display:flex;flex-direction:column;overflow:hidden}
+  .dh{height:40px;background:var(--field);display:flex;align-items:center;padding:0 8px 0 14px;font-weight:600;gap:2px}
+  .dh .btn{width:28px;height:28px;color:var(--fg-2)}
+  .dh .btn:first-of-type{margin-left:auto}
+  .fld{height:40px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--line)}
+  .fld .lbl{color:var(--fg-3);width:auto}
+  .pill{display:inline-flex;align-items:center;gap:6px;height:24px;border-radius:99px;border:1px solid var(--line-2);padding:0 8px 0 3px;font-weight:500}
+  .pill .av{width:18px;height:18px;font-size:9px}
+  .fld .ccbcc{margin-left:auto;color:var(--fg-3);display:flex;gap:10px;font-size:12px}
+  .dbody{flex:1;padding:14px;font-size:14px;line-height:1.55;color:var(--fg)}
+  .dbody p{margin-bottom:12px}
+  .caret{display:inline-block;width:1.5px;height:16px;background:var(--fg);vertical-align:-3px;margin-left:1px}
+  .dfoot{height:52px;display:flex;align-items:center;gap:2px;padding:0 10px 0 12px;border-top:1px solid var(--line)}
+  .send{height:34px;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;display:flex;align-items:center;padding:0 16px;gap:8px;margin-right:6px}
+  .send .v{border-left:1px solid rgba(255,255,255,.35);padding-left:8px;margin-left:2px;display:flex}
+  .dfoot .btn{width:30px;height:30px}
+  .dfoot .btn:last-child{margin-left:auto}
+  .saved{color:var(--fg-3);font-size:12px;margin-left:10px}
+  /* command palette */
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.42)}
+  .cmd{position:absolute;left:50%;top:84px;transform:translateX(-50%);width:600px;background:var(--surface);border:1px solid var(--line-2);border-radius:12px;box-shadow:0 24px 64px rgba(0,0,0,.5);overflow:hidden}
+  .ci{height:50px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--line);font-size:15px;color:var(--fg)}
+  .ci .ph{color:var(--fg-3)}
+  .ci .caret{height:18px}
+  .cg{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3);font-weight:600;padding:10px 16px 4px}
+  .cr{height:36px;display:flex;align-items:center;gap:12px;padding:0 12px;margin:0 6px;border-radius:7px;color:var(--fg)}
+  .cr.on{background:var(--accent-soft);color:var(--accent-ink)}
+  .cr .k{margin-left:auto;display:flex;gap:4px}
+  .cr .k kbd{background:transparent}
+  .cf{height:34px;display:flex;align-items:center;gap:14px;padding:0 16px;border-top:1px solid var(--line);color:var(--fg-3);font-size:12px;margin-top:6px}
+  .cf span{display:flex;align-items:center;gap:5px}
+  .cap{font-size:.85rem;color:var(--text-secondary);margin:.5rem 0 1.75rem}
+  /* density samples */
+  .dens .row{border:0;border-bottom:1px solid var(--line)}
+  .dens .rows{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface);width:100%}
+  .dens .row.c{height:36px}.dens .row.f{height:52px}
+  .dens .row.f .txt{white-space:normal;line-height:1.35}
+  .dens .row.f .txt .s{display:block}
+  .dens .row.f .txt .p{display:block;color:var(--fg-3);font-size:12px}
+</style>
+
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="k-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="k-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="k-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+  <symbol id="k-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/></symbol>
+  <symbol id="k-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="k-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="k-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+  <symbol id="k-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="k-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="k-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+  <symbol id="k-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="k-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+  <symbol id="k-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="k-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="k-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+  <symbol id="k-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
+  <symbol id="k-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+  <symbol id="k-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+  <symbol id="k-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="k-reply" viewBox="0 0 24 24"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></symbol>
+  <symbol id="k-replyall" viewBox="0 0 24 24"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></symbol>
+  <symbol id="k-fwd" viewBox="0 0 24 24"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></symbol>
+  <symbol id="k-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+  <symbol id="k-min" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="k-max" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+  <symbol id="k-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="k-type" viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></symbol>
+  <symbol id="k-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="k-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></symbol>
+  <symbol id="k-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></symbol>
+  <symbol id="k-cmd" viewBox="0 0 24 24"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></symbol>
+  <symbol id="k-enter" viewBox="0 0 24 24"><path d="M9 10 4 15l5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></symbol>
+  <symbol id="k-updown" viewBox="0 0 24 24"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></symbol>
+</svg>
+
+<h2>Three moments, and the default density</h2>
+<p class="subtitle">In Graphite &amp; Blue. These are the interactions that decide whether it feels like Gmail with better manners. Tell me what's off; then pick a default density at the bottom.</p>
+
+<!-- 1. Conversation view -->
+<h3>1 · Open a conversation — it replaces the list</h3>
+<div class="om"><div class="shot">
+  <div class="top"><div class="btn"><svg class="i"><use href="#k-menu"/></svg></div><div class="brand"><div class="mark"><svg><use href="#k-mail"/></svg></div>Mailosh</div><div class="search"><svg class="i"><use href="#k-search"/></svg><span>Search mail</span><kbd>/</kbd></div><div class="topright"><div class="btn"><svg class="i"><use href="#k-help"/></svg></div><div class="btn"><svg class="i"><use href="#k-sliders"/></svg></div><div class="avatar">M</div></div></div>
+  <div class="nav"><div class="compose"><svg class="i"><use href="#k-pen"/></svg>Compose</div><div class="ni on"><svg class="i"><use href="#k-inbox"/></svg>Inbox<b>11</b></div><div class="ni"><svg class="i"><use href="#k-star"/></svg>Starred</div><div class="ni"><svg class="i"><use href="#k-clock"/></svg>Snoozed</div><div class="ni"><svg class="i"><use href="#k-send"/></svg>Sent</div><div class="ni"><svg class="i"><use href="#k-file"/></svg>Drafts<b>2</b></div><div class="ni"><svg class="i"><use href="#k-chev"/></svg>More</div><div class="nh">Labels</div><div class="ni"><span class="dot" style="background:#6366F1"></span>Work<b>3</b></div><div class="ni"><span class="dot" style="background:#10B981"></span>Receipts</div><div class="ni"><span class="dot" style="background:#F43F5E"></span>Family</div></div>
+  <div class="main">
+    <div class="bar">
+      <div class="btn"><svg class="i"><use href="#k-back"/></svg></div><kbd style="margin-right:6px">u</kbd><span class="sep"></span>
+      <div class="btn"><svg class="i"><use href="#k-archive"/></svg></div><div class="btn"><svg class="i"><use href="#k-trash"/></svg></div><div class="btn"><svg class="i"><use href="#k-mail"/></svg></div><div class="btn"><svg class="i"><use href="#k-clock"/></svg></div><div class="btn"><svg class="i"><use href="#k-tag"/></svg></div><div class="btn"><svg class="i"><use href="#k-more"/></svg></div>
+      <span class="count">4 of 1,284</span><div class="btn"><svg class="i"><use href="#k-left"/></svg></div><div class="btn"><svg class="i"><use href="#k-right"/></svg></div>
+    </div>
+    <div class="th"><h1>Re: Dinner on Saturday?</h1><span class="chip" style="background:#FFF1F2;color:#BE123C">Family</span></div>
+    <div class="msg col"><div class="mh"><div class="av" style="background:#1D6AE5">M</div><div class="who"><b>Manish Sharma</b> &nbsp;<span>Hey — are you free Saturday evening? Was thinking we could try that new place on…</span></div><div class="when">Aug 30</div></div></div>
+    <div class="msg">
+      <div class="mh"><div class="av" style="background:#0F9D78">D</div><div class="who"><b>Daniel Okafor</b> <span style="color:var(--fg-3)">&lt;daniel@okafor.dev&gt;</span><div>to me <svg class="i" style="width:12px;height:12px;display:inline;vertical-align:-2px"><use href="#k-chev"/></svg></div></div><div class="when">Yesterday, 8:41 PM <svg class="i"><use href="#k-star"/></svg><svg class="i"><use href="#k-reply"/></svg><svg class="i"><use href="#k-more"/></svg></div></div>
+      <div class="body"><p>Sounds great — 7pm works. I'll book the table at Ottolenghi; they had a spot when I checked last night.</p><p>Should I invite Priya and Tom too? Tom mentioned he's back from Lisbon on Friday.</p><p>Daniel</p><span class="trim">•••</span></div>
+    </div>
+    <div class="reply"><div class="ghost"><svg class="i"><use href="#k-reply"/></svg>Reply</div><div class="ghost"><svg class="i"><use href="#k-replyall"/></svg>Reply all</div><div class="ghost"><svg class="i"><use href="#k-fwd"/></svg>Forward</div><div class="hint"><kbd>r</kbd><kbd>a</kbd><kbd>f</kbd></div></div>
+  </div>
+</div></div>
+<p class="cap">Back arrow with its <kbd style="font-size:.7rem">u</kbd> hint; the same action bar as the list; "4 of 1,284" with prev/next so archiving auto-advances to the next conversation. Earlier messages collapse to one line; quoted text hides behind the pill.</p>
+
+<!-- 2. Compose dock -->
+<h3>2 · Compose — a dock in the corner, the inbox stays put</h3>
+<div class="om"><div class="shot">
+  <div class="top"><div class="btn"><svg class="i"><use href="#k-menu"/></svg></div><div class="brand"><div class="mark"><svg><use href="#k-mail"/></svg></div>Mailosh</div><div class="search"><svg class="i"><use href="#k-search"/></svg><span>Search mail</span><kbd>/</kbd></div><div class="topright"><div class="btn"><svg class="i"><use href="#k-help"/></svg></div><div class="btn"><svg class="i"><use href="#k-sliders"/></svg></div><div class="avatar">M</div></div></div>
+  <div class="nav"><div class="compose"><svg class="i"><use href="#k-pen"/></svg>Compose</div><div class="ni on"><svg class="i"><use href="#k-inbox"/></svg>Inbox<b>11</b></div><div class="ni"><svg class="i"><use href="#k-star"/></svg>Starred</div><div class="ni"><svg class="i"><use href="#k-clock"/></svg>Snoozed</div><div class="ni"><svg class="i"><use href="#k-send"/></svg>Sent</div><div class="ni"><svg class="i"><use href="#k-file"/></svg>Drafts<b>3</b></div><div class="ni"><svg class="i"><use href="#k-chev"/></svg>More</div><div class="nh">Labels</div><div class="ni"><span class="dot" style="background:#6366F1"></span>Work<b>3</b></div><div class="ni"><span class="dot" style="background:#10B981"></span>Receipts</div><div class="ni"><span class="dot" style="background:#F43F5E"></span>Family</div></div>
+  <div class="main">
+    <div class="bar"><span class="ck" style="margin:0 6px 0 8px"></span><div class="btn"><svg class="i"><use href="#k-more"/></svg></div><span class="count">1–50 of 1,284</span><div class="btn"><svg class="i"><use href="#k-left"/></svg></div><div class="btn"><svg class="i"><use href="#k-right"/></svg></div></div>
+    <div class="row u"><span class="ck"></span><span class="st" style="color:var(--star)"><svg class="i" style="fill:var(--star);stroke:var(--star)"><use href="#k-star"/></svg></span><span class="from">Priya Natarajan</span><span class="txt"><span class="s">Q3 roadmap review — notes and next steps</span> – Attaching the deck we walked through; owners are tagged inline</span><span class="chip" style="background:#EEF2FF;color:#3730A3">Work</span><span class="date">10:42 AM</span></div>
+    <div class="row u"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">GitHub</span><span class="txt"><span class="s">[mailosh/mailosh] Run #482 passed: main</span> – All checks have passed — 115 unit, 1 integration</span><span class="date">9:58 AM</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Hetzner Cloud</span><span class="txt"><span class="s">Your invoice for August 2026</span> – Invoice #2026-08-14421 is available in the console</span><span class="chip" style="background:#ECFDF5;color:#047857">Receipts</span><span class="date">9:15 AM</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Daniel Okafor</span><span class="txt"><span class="s">Re: Dinner on Saturday?</span> – Sounds great — 7pm works. I'll book the table</span><span class="chip" style="background:#FFF1F2;color:#BE123C">Family</span><span class="date">Yesterday</span></div>
+    <div class="row u"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Stalwart Labs</span><span class="txt"><span class="s">Stalwart 1.0.0-rc.1 is out</span> – Schema freeze, performance work, and the new management API</span><span class="date">Yesterday</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Fastmail Blog</span><span class="txt"><span class="s">How JMAP makes push cheap</span> – State strings, EventSource, and why polling was never the answer</span><span class="date">Aug 30</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Aisha, Tom, me (3)</span><span class="txt"><span class="s">Re: Offsite agenda</span> – Let's lock the Thursday slot and send the invite today</span><span class="date">Aug 30</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Backblaze</span><span class="txt"><span class="s">Your B2 usage report</span> – 41.2 GB stored, 3.1 GB egress, $0.29 this month</span><span class="date">Aug 29</span></div>
+    <div class="row u"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Lena Fischer</span><span class="txt"><span class="s">Photos from the hike</span> – Finally uploaded — the ridge shots came out beautifully</span><span class="date">Aug 29</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Let's Encrypt</span><span class="txt"><span class="s">Certificate expiration notice</span> – Your certificate will expire in 19 days</span><span class="date">Aug 28</span></div>
+
+    <div class="dock">
+      <div class="dh">New message<div class="btn"><svg class="i"><use href="#k-min"/></svg></div><div class="btn"><svg class="i"><use href="#k-max"/></svg></div><div class="btn"><svg class="i"><use href="#k-x"/></svg></div></div>
+      <div class="fld"><span class="lbl">To</span><span class="pill"><span class="av" style="background:#0F9D78">D</span>Daniel Okafor</span><span class="pill"><span class="av" style="background:#7C3AED">P</span>priya@natarajan.io</span><span class="ccbcc"><span>Cc</span><span>Bcc</span></span></div>
+      <div class="fld"><span style="font-weight:500">Saturday — table booked for 7</span></div>
+      <div class="dbody"><p>Daniel booked Ottolenghi for 7pm. Priya — Tom's back Friday, so it's the four of us.</p><p>I'll bring the <b>photos from the hike</b><span class="caret"></span></p></div>
+      <div class="dfoot"><div class="send">Send<span class="v"><svg class="i" style="width:14px;height:14px;stroke:#fff"><use href="#k-chev"/></svg></span></div><div class="btn"><svg class="i"><use href="#k-type"/></svg></div><div class="btn"><svg class="i"><use href="#k-clip"/></svg></div><div class="btn"><svg class="i"><use href="#k-link"/></svg></div><div class="btn"><svg class="i"><use href="#k-smile"/></svg></div><div class="btn"><svg class="i"><use href="#k-image"/></svg></div><div class="btn"><svg class="i"><use href="#k-more"/></svg></div><span class="saved">Saved</span><div class="btn"><svg class="i"><use href="#k-trash"/></svg></div></div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">560 × 520 dock, minimize / full-screen / close; recipient chips with avatars, Cc/Bcc on the right; Gmail's bottom toolbar (Send + schedule ▾, formatting, attach, link, emoji, image, more); "Saved" autosave state; <kbd style="font-size:.7rem">⌘↵</kbd> sends. The inbox behind it keeps working — you can triage while drafting.</p>
+
+<!-- 3. Command palette -->
+<h3>3 · ⌘K — every action, searchable, teaching its own shortcut</h3>
+<div class="om dark"><div class="shot">
+  <div class="top"><div class="btn"><svg class="i"><use href="#k-menu"/></svg></div><div class="brand"><div class="mark"><svg><use href="#k-mail"/></svg></div>Mailosh</div><div class="search"><svg class="i"><use href="#k-search"/></svg><span>Search mail</span><kbd>/</kbd></div><div class="topright"><div class="btn"><svg class="i"><use href="#k-help"/></svg></div><div class="btn"><svg class="i"><use href="#k-sliders"/></svg></div><div class="avatar">M</div></div></div>
+  <div class="nav"><div class="compose"><svg class="i"><use href="#k-pen"/></svg>Compose</div><div class="ni on"><svg class="i"><use href="#k-inbox"/></svg>Inbox<b>11</b></div><div class="ni"><svg class="i"><use href="#k-star"/></svg>Starred</div><div class="ni"><svg class="i"><use href="#k-clock"/></svg>Snoozed</div><div class="ni"><svg class="i"><use href="#k-send"/></svg>Sent</div><div class="ni"><svg class="i"><use href="#k-file"/></svg>Drafts<b>2</b></div><div class="ni"><svg class="i"><use href="#k-chev"/></svg>More</div><div class="nh">Labels</div><div class="ni"><span class="dot" style="background:#818CF8"></span>Work<b>3</b></div><div class="ni"><span class="dot" style="background:#34D399"></span>Receipts</div><div class="ni"><span class="dot" style="background:#FB7185"></span>Family</div></div>
+  <div class="main">
+    <div class="bar"><span class="ck" style="margin:0 6px 0 8px"></span><div class="btn"><svg class="i"><use href="#k-more"/></svg></div><span class="count">1–50 of 1,284</span><div class="btn"><svg class="i"><use href="#k-left"/></svg></div><div class="btn"><svg class="i"><use href="#k-right"/></svg></div></div>
+    <div class="row u"><span class="ck"></span><span class="st" style="color:var(--star)"><svg class="i" style="fill:var(--star);stroke:var(--star)"><use href="#k-star"/></svg></span><span class="from">Priya Natarajan</span><span class="txt"><span class="s">Q3 roadmap review — notes and next steps</span> – Attaching the deck we walked through</span><span class="chip" style="background:rgba(129,140,248,.18);color:#C7D2FE">Work</span><span class="date">10:42 AM</span></div>
+    <div class="row u"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">GitHub</span><span class="txt"><span class="s">[mailosh/mailosh] Run #482 passed: main</span> – All checks have passed</span><span class="date">9:58 AM</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Hetzner Cloud</span><span class="txt"><span class="s">Your invoice for August 2026</span> – Invoice #2026-08-14421 is available</span><span class="chip" style="background:rgba(16,185,129,.16);color:#6EE7B7">Receipts</span><span class="date">9:15 AM</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Daniel Okafor</span><span class="txt"><span class="s">Re: Dinner on Saturday?</span> – Sounds great — 7pm works</span><span class="chip" style="background:rgba(244,63,94,.18);color:#FDA4AF">Family</span><span class="date">Yesterday</span></div>
+    <div class="row u"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Stalwart Labs</span><span class="txt"><span class="s">Stalwart 1.0.0-rc.1 is out</span> – Schema freeze, performance work</span><span class="date">Yesterday</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Fastmail Blog</span><span class="txt"><span class="s">How JMAP makes push cheap</span> – State strings, EventSource</span><span class="date">Aug 30</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Aisha, Tom, me (3)</span><span class="txt"><span class="s">Re: Offsite agenda</span> – Let's lock the Thursday slot</span><span class="date">Aug 30</span></div>
+    <div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Backblaze</span><span class="txt"><span class="s">Your B2 usage report</span> – 41.2 GB stored</span><span class="date">Aug 29</span></div>
+  </div>
+  <div class="scrim"></div>
+  <div class="cmd">
+    <div class="ci"><svg class="i" style="width:18px;height:18px;color:var(--fg-3)"><use href="#k-search"/></svg><span>arch</span><span class="caret"></span><span class="ph" style="margin-left:auto;font-size:12px">Type a command, label, or search</span></div>
+    <div class="cg">Actions</div>
+    <div class="cr on"><svg class="i"><use href="#k-archive"/></svg>Archive conversation<span class="k"><kbd>e</kbd></span></div>
+    <div class="cr"><svg class="i"><use href="#k-archive"/></svg>Archive all from Backblaze<span class="k"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>e</kbd></span></div>
+    <div class="cg">Go to</div>
+    <div class="cr"><svg class="i"><use href="#k-inbox"/></svg>All mail (archive)<span class="k"><kbd>g</kbd><kbd>a</kbd></span></div>
+    <div class="cg">Search</div>
+    <div class="cr"><svg class="i"><use href="#k-search"/></svg>Search mail for “arch”<span class="k"><kbd>↵</kbd></span></div>
+    <div class="cf"><span><svg class="i" style="width:13px;height:13px"><use href="#k-updown"/></svg>navigate</span><span><svg class="i" style="width:13px;height:13px"><use href="#k-enter"/></svg>run</span><span><kbd>esc</kbd>close</span><span style="margin-left:auto"><kbd>?</kbd>all shortcuts</span></div>
+  </div>
+</div></div>
+<p class="cap">Fuzzy over actions, labels, folders and settings; the shortcut for each result sits at the right so the palette is also the tutorial (Superhuman's trick — we vendor their open-source matcher). Falls through to search. Shown in the dark theme.</p>
+
+<!-- 4. Density -->
+<h3>4 · Default density</h3>
+<p class="subtitle" style="margin-bottom:.75rem">All three ship (Quick settings). Which one do new users see first? Click to choose.</p>
+<div class="om dens">
+<div class="options">
+  <div class="option" data-choice="compact" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>Compact — 36 px rows</h3><p>~19 rows on a laptop screen. Superhuman's register; power-user default.</p>
+    <div class="rows" style="margin-top:.6rem"><div class="row u c"><span class="ck"></span><span class="st" style="color:var(--star)"><svg class="i" style="fill:var(--star);stroke:var(--star)"><use href="#k-star"/></svg></span><span class="from">Priya Natarajan</span><span class="txt"><span class="s">Q3 roadmap review — notes and next steps</span> – Attaching the deck we walked through</span><span class="date">10:42 AM</span></div><div class="row c"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Hetzner Cloud</span><span class="txt"><span class="s">Your invoice for August 2026</span> – Invoice #2026-08-14421 is available</span><span class="date">9:15 AM</span></div></div></div></div>
+  <div class="option" data-choice="default" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>Default — 44 px rows <span style="font-weight:400;color:var(--text-secondary)">(Recommended)</span></h3><p>~15 rows. What every mockup so far used; Gmail's "Default" without the attachment-chip row.</p>
+    <div class="rows" style="margin-top:.6rem"><div class="row u"><span class="ck"></span><span class="st" style="color:var(--star)"><svg class="i" style="fill:var(--star);stroke:var(--star)"><use href="#k-star"/></svg></span><span class="from">Priya Natarajan</span><span class="txt"><span class="s">Q3 roadmap review — notes and next steps</span> – Attaching the deck we walked through</span><span class="date">10:42 AM</span></div><div class="row"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Hetzner Cloud</span><span class="txt"><span class="s">Your invoice for August 2026</span> – Invoice #2026-08-14421 is available</span><span class="date">9:15 AM</span></div></div></div></div>
+  <div class="option" data-choice="comfortable" onclick="toggleSelect(this)"><div class="letter">C</div><div class="content"><h3>Comfortable — 52 px, two lines</h3><p>~12 rows; subject and preview on separate lines. Easiest to scan for casual users.</p>
+    <div class="rows" style="margin-top:.6rem"><div class="row u f"><span class="ck"></span><span class="st" style="color:var(--star)"><svg class="i" style="fill:var(--star);stroke:var(--star)"><use href="#k-star"/></svg></span><span class="from">Priya Natarajan</span><span class="txt"><span class="s">Q3 roadmap review — notes and next steps</span><span class="p">Attaching the deck we walked through; owners are tagged inline</span></span><span class="date">10:42 AM</span></div><div class="row f"><span class="ck"></span><span class="st"><svg class="i"><use href="#k-star"/></svg></span><span class="from">Hetzner Cloud</span><span class="txt"><span class="s">Your invoice for August 2026</span><span class="p">Invoice #2026-08-14421 is available in the console</span></span><span class="date">9:15 AM</span></div></div></div></div>
+</div>
+</div>

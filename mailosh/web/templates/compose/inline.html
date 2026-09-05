@@ -1,0 +1,42 @@
+{# The inline composer card (design spec §8): reply / reply all / forward
+   render "at the thread's end using the same component", with a pop-out
+   to a dock.
+
+   The same `compose/form.html` as the dock — same fields, same editor,
+   same toolbar, same autosave — inside a card that sits in the flow of
+   the conversation instead of floating over it. That is the entire
+   difference, and it is why `surface` is the only thing the route varies:
+   a reply that behaved differently from a compose would be a second
+   compose to maintain and a second one to get wrong.
+
+   Not a dock, so: no minimise, no full screen, no tiling, and no fixed
+   position. What it does keep is the one control a card needs that a dock
+   does not — **pop out**, which re-asks the same route with
+   `?surface=dock`, drops the answer into `#compose-dock`, and removes
+   this card. The draft id travels with it (the card's own hidden input is
+   posted as part of that request's form), so popping out mid-sentence
+   does not fork the draft.
+
+   `data-morph-ignore` for the same reason the dock carries it: this card
+   lives inside `#main`, which *is* a morph target, and a morph that
+   re-created the editor would throw away whatever the reader had typed. #}
+<section class="compose compose-inline" id="{{ dom_id }}" x-data="compose"
+         data-compose data-surface="inline" data-mode="rich" data-state="open"
+         data-morph-ignore
+         role="region" aria-label="{{ title }}">
+  <header class="compose-head" data-role="bar">
+    <h2 class="compose-title">{{ title }}</h2>
+    <div class="compose-head-tools">
+      <button type="button" class="compose-head-btn" data-role="popout"
+              title="Open in a compose window" aria-label="Open in a compose window">
+        {{ icon("maximize-2", class_="size-4") }}
+      </button>
+      <button type="button" class="compose-head-btn" data-role="close"
+              title="Save &amp; close" aria-label="Save and close">
+        {{ icon("x", class_="size-4") }}
+      </button>
+    </div>
+  </header>
+
+  {% include "compose/form.html" %}
+</section>

@@ -1,0 +1,17 @@
+{# The toolbar's range readout ("1–24 of 24") — one span, rendered in two
+   places, which is the whole point of it being its own file.
+
+   It sits in `list/toolbar.html`, *outside* `#list`, but it describes what
+   is inside `#list`. Every live update replaces only `#list`'s contents
+   (`hx-trigger="mail:changed from:body"`), so the readout went stale on its
+   own: 24 over 23 rows after an archive, 24 over 25 after new mail landed.
+   `list/rows.html` therefore renders this again with `oob=true`, and htmx
+   swaps it by id alongside the rows — the same out-of-band idiom, and the
+   same reason, as `shell/nav.html`'s badges.
+
+   `range_label` (mailosh.web.mail._range_label) is the only thing that
+   formats it: the en dash, the thousands separators and the "0 of 0" empty
+   case are all server-side, so nothing here or in the client re-derives a
+   number the server already knows. #}
+<span id="list-range" class="ml-auto tabular-nums text-[12px] text-fg-2"
+      {%- if oob %} hx-swap-oob="true"{% endif %}>{{ range_label }}</span>

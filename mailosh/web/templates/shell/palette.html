@@ -1,0 +1,71 @@
+{# The ⌘K command palette (spec §6.2) — the frame only. Every result row is
+   built by static/js/palette.js from `GET /palette/index`, for two reasons
+   that are both about safety rather than taste: a mailbox name is user
+   data, and building rows with `createElement`/`textContent` means no label
+   is ever parsed as markup; and the list is context-aware (the six
+   mutations only appear when there is a selection or an open conversation
+   to run them against), which the server that renders this shell has no
+   way to know.
+
+   A native `<dialog>` opened with `showModal()`, like the `?` overlay and
+   the bulk confirmation: the focus trap, the backdrop, the inert
+   background and `Esc` are the platform's, and none of them needs markup,
+   script or an Alpine directive. No `x-data` here for the same reason —
+   there is no Alpine directive on this subtree at all, so there is no
+   `x-show`/`x-bind` to be silently skipped for want of a root.
+
+   Rendered once, by layouts/app.html, *outside* `#main`: every htmx swap
+   in this app targets `#main` or `#list`, so the dialog and the listeners
+   palette.js binds to it survive every navigation. layouts/fragment.html
+   deliberately does not include it — a swap carrying a second
+   `<dialog id="palette">` would put two in the document and
+   `querySelector` would find whichever came first. #}
+<dialog id="palette" class="palette" aria-label="Commands">
+  <div class="palette-field">
+    {{ icon("search", class_="size-[18px] palette-field-icon") }}
+    {# `role="combobox"` with `aria-activedescendant`: the input keeps DOM
+       focus so typing never stops working, and points at the row a screen
+       reader should announce. palette.js writes the descendant id and the
+       `aria-selected` on each option. #}
+    <input
+      type="text"
+      class="palette-input"
+      data-role="palette-input"
+      autocomplete="off"
+      autocapitalize="off"
+      autocorrect="off"
+      spellcheck="false"
+      placeholder="Type a command, label, or search"
+      aria-label="Type a command, label, or search"
+      role="combobox"
+      aria-expanded="true"
+      aria-haspopup="listbox"
+      aria-autocomplete="list"
+      aria-controls="palette-results"
+    >
+  </div>
+
+  {# Empty as served — the rows come from the registry and the index at
+     runtime, so no command is written down in two places. #}
+  <div id="palette-results" class="palette-results" data-role="palette-results" role="listbox"
+       aria-label="Results"></div>
+
+  <div class="palette-foot">
+    <span>{{ kbd("↑ ↓") }}navigate</span>
+    <span>{{ kbd("↵") }}run</span>
+    <span>{{ kbd("Esc") }}close</span>
+    <span class="palette-foot-end">{{ kbd("?") }}all shortcuts</span>
+  </div>
+
+  {# The design system's own glyphs, rendered once by the `icon()` macro
+     (the only thing in this app that knows how a Lucide SVG is restyled —
+     and it runs on the server) for palette.js to clone per row. A
+     `<template>`, so nothing here is rendered, focusable or announced
+     until it is copied out. #}
+  <template data-role="palette-icons">
+    {% for name in ["archive", "trash-2", "shield-alert", "star", "mail-open", "mail",
+                    "inbox", "send", "file", "settings-2"] %}
+      <span data-icon="{{ name }}">{{ icon(name, class_="size-4") }}</span>
+    {% endfor %}
+  </template>
+</dialog>

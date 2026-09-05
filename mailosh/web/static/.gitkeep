@@ -1,0 +1,7 @@
+This file exists solely so `mailosh/web/static/` is present on a fresh
+clone. `mailosh/web/app.py`'s `StaticFiles(directory=...)` mount raises
+`RuntimeError` at import/test-collection time if this directory doesn't
+exist at all -- the vendored JS (`vendor/`) and built CSS (`app.css`) that
+actually belong here are gitignored and fetched/built by `make vendor`/
+`make css` (also run automatically by `make test`/`make itest`/`make up`;
+see the top-level Makefile and README).

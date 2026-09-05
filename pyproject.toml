@@ -1,0 +1,84 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mailosh"
+version = "0.1.0"
+description = "Open-source, self-hosted mail platform: Stalwart engine, Gmail-class webmail"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "httpx>=0.27",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.4",
+  "jinja2>=3.1",
+  "sse-starlette>=2.1",
+  "typer>=0.12",
+  "python-multipart>=0.0.9",
+  "sqlalchemy[asyncio]>=2.0",
+  "asyncpg>=0.30",
+  "alembic>=1.13",
+  "cryptography>=43",
+  # Message rendering (Phase 1B). Both parse content the sender controls,
+  # so both are pinned to a floor rather than left open: nh3 is the Rust
+  # ammonia binding that does the HTML allow-listing, tinycss2 sanitises
+  # the CSS that survives it.
+  "nh3>=0.3.7",
+  "tinycss2>=1.5",
+]
+
+[project.optional-dependencies]
+# httpx2 is dev-only: starlette's TestClient prefers it over httpx and emits
+# a StarletteDeprecationWarning when it falls back to plain httpx (see
+# starlette/testclient.py's import block) — installing it keeps
+# `fastapi.testclient.TestClient` (used from Task 6 onward) warning-free
+# without touching the app's own runtime httpx dependency above.
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.24",
+  "respx>=0.21",
+  "pytailwindcss>=0.2",
+  "ruff>=0.6",
+  "httpx2>=2.0",
+  "aiosqlite>=0.20",
+  "fonttools[woff]>=4.50",
+]
+
+# Needed only while building the production image, never at runtime and
+# never in development: `scripts/minify-js.py` strips the comments and
+# formatting out of this app's own JavaScript on the way into the image.
+# The source in git keeps them. Kept out of `dev` deliberately -- a
+# developer has no reason to install it, and `make test` must never be able
+# to run against minified source.
+build = [
+  "rjsmin>=1.2",
+]
+
+[project.scripts]
+mailosh = "mailosh.cli:app"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = ["integration: needs docker compose stack running"]
+addopts = "-m 'not integration'"
+
+[tool.ruff]
+line-length = 100
+# Docs under docs/ (spec/plan/findings) embed illustrative Python snippets in
+# fenced code blocks for narrative purposes -- not source this project ships
+# or runs. Excluding *.md keeps ruff's lint/format passes scoped to actual
+# source (mailosh/, tests/, scripts/) instead of reformatting/relinting
+# historical spike documentation as a side effect of tightening the rules
+# below (phase0 final review, FIX 2).
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+# E501 (line-too-long) lives under "E" but was NOT enforced before this
+# (ruff's own default select omits it) despite line-length = 100 being set
+# above -- phase0 final review FIX 2. "F"/"I"/"RUF" match what was already
+# effectively active by default (F401, I001, RUF019 were all being reported
+# pre-fix); spelling them out explicitly here, alongside "E", is the fix.
+select = ["E", "F", "I", "RUF"]

@@ -1,0 +1,207 @@
+{# Top bar, 52px (spec §4.3/§5.1, mockup layout.html "The frame"): menu,
+   wordmark, centred search pill, help, Quick settings, avatar.
+
+   One control here still belongs to a feature that has not shipped (the
+   nav-rail toggle behind the menu button is the responsive pass's), so it
+   renders as an `aria-disabled` control with a `title` saying so, and with
+   no href/hx-* of any kind — visible frame, no dead link. Help, Quick
+   settings and now search are all live: the key registry landed, the panel
+   landed, and `mailosh/web/search.py` landed, so a "arrives in a later
+   task" title on any of them would be a false claim on the only control a
+   mouse has for that surface.
+   Nothing here advertises a *deferred* feature (spec §3) — there is no
+   snooze, no schedule-send, no category tabs anywhere in this bar. #}
+{# The responsive pass has landed, and this is not its control: below 768px
+   `responsive.css` hides this button and `nav.js`'s own toggle opens the
+   drawer. What is still unbuilt is spec §5.1's *desktop* rail toggle, which
+   collapses the 224px nav to the 64px rail on demand and persists that
+   choice — the rail appears on its own under 1100px today, but nothing lets
+   a reader ask for it. The title names that, rather than a pass that is
+   done. #}
+<button type="button" class="btn-icon shrink-0" aria-disabled="true"
+        title="Collapsing the sidebar on demand is not built yet">
+  {{ icon("menu", class_="size-5", label="Toggle navigation") }}
+</button>
+
+{# The mark is the supplied artwork; "Mailosh" stays live text rather than
+   the wordmark PNG, which sets the name in near-black and would disappear
+   on the dark theme. Text also stays crisp at any zoom and is readable by
+   a screen reader, so the image is decorative and carries an empty alt. #}
+<a href="/mail/inbox" class="mr-2 flex shrink-0 items-center gap-2 text-[15px] font-semibold tracking-[-.01em]">
+  <img src="{{ static('brand/mark-64.png') }}" alt="" width="22" height="22" class="size-[22px] shrink-0 rounded-[6px]">
+  Mailosh
+</a>
+
+{# Search (spec §5.1/§10). Centred, max 640px.
+
+   **Three siblings, in this order, and the order is the stylesheet's.**
+   `.search-pop` is revealed by `.search-pill:focus-within + .search-pop`
+   — an adjacent-sibling rule, so it has to follow the form immediately —
+   and the advanced `<details>` comes after it so that opening *that* does
+   not also open the suggestions (both live inside `.search-shell`, and a
+   `:focus-within` on the shell would not tell them apart).
+
+   **The advanced panel is outside the form, not inside it.** It holds a
+   form of its own, and a form inside a form is markup the parser silently
+   discards — the inner one simply never exists. It is placed over the
+   pill's right edge instead (`styles/search.css`), which is where the
+   filter icon spec §5.1 asks for sits anyway.
+
+   The pill is a real `<form>` with a real `action`, so search works with
+   no JavaScript at all; htmx upgrades the same submit to a `#main` swap
+   with the URL pushed. `q` is prefilled on a search page (the route puts
+   it in the context) and empty everywhere else — `static/js/search.js`
+   keeps it in step after an htmx swap that changed the query without
+   re-rendering this bar. #}
+<div class="search-shell" role="search">
+  <form class="search-pill" action="/search" method="get"
+        hx-get="/search" hx-target="#main" hx-swap="morph:innerHTML show:none"
+        hx-push-url="true" hx-indicator="#list-skeleton">
+    {{ icon("search", class_="size-4 shrink-0 text-fg-3") }}
+    {# `type="search"`, not `type="text"`: the platform's own clear button
+       and the on-screen "search" enter key come with it, and neither is
+       worth reimplementing. `data-role` is what `/` reaches (the entry in
+       static/js/keys.js's registry) — a `data-action` would name one of
+       `mailosh/web/actions.py`'s six mutations, and this posts nothing. #}
+    <input type="search" name="q" class="search-input" data-role="search-input"
+           value="{{ q | default('', true) }}" placeholder="Search mail"
+           aria-label="Search mail" autocomplete="off" autocapitalize="off"
+           autocorrect="off" spellcheck="false" enterkeyhint="search"
+           maxlength="400">
+    <span class="search-kbd" aria-hidden="true">{{ kbd("/") }}</span>
+  </form>
+
+  {# The focus surface (spec §10: "focus shows recent searches and operator
+     hints"). Revealed by CSS alone — `:focus-within` on the pill, plus
+     `:hover` on the panel itself so that a mousedown on a recent search,
+     which blurs the input before the click lands, does not pull the panel
+     out from under the pointer. No Alpine directive, no `hx-on:`, no
+     `keydown` listener: nothing here needs an evaluator, and the CSP
+     forbids all three anyway.
+
+     The operator rows are informational and inert on purpose — they are a
+     reference card, not controls, so they take no focus and cannot steal
+     the click that is on its way to a recent search. The recents come from
+     `localStorage` (this app stores no per-user search history server-side)
+     and are built by `static/js/search.js` with `textContent`, never
+     markup. #}
+  <div class="search-pop">
+    <div class="search-pop-recent" data-role="search-recent" hidden>
+      <p class="search-pop-head">
+        Recent searches
+        <button type="button" class="search-pop-clear" data-role="search-recent-clear">Clear</button>
+      </p>
+      <div data-role="search-recent-list"></div>
+    </div>
+    <p class="search-pop-head">Search operators</p>
+    {% include "search/tips.html" %}
+  </div>
+
+  {# Advanced search (spec §10). A native `<details>`: the disclosure, its
+     keyboard behaviour and `Esc` are the platform's, and none of them
+     needs a directive the CSP would reject.
+
+     Loaded when it opens, and re-loaded on every open rather than once,
+     because a search run between two opens changes what the panel should
+     show and that swap only replaced `#main`. `/search/advanced` reads the
+     current query from `HX-Current-URL` when the request carries none of
+     its own, so the panel is right even on a page whose top bar was
+     rendered before the search was. #}
+  <details class="search-adv">
+    <summary class="btn-icon size-7 search-adv-toggle" title="Advanced search"
+             aria-label="Advanced search">
+      {{ icon("sliders-horizontal", class_="size-4") }}
+    </summary>
+    {# A `<section>`, not a `<div>`: it is a labelled region of the page,
+       and the conversation view's own tests read "every `<div>` carrying
+       an `hx-get`" as "the message frame placeholders". A second one
+       riding along in the top bar of every page would be a lazily-loaded
+       panel quietly joining a set it has nothing to do with. #}
+    <section class="search-adv-panel" data-role="search-adv-panel"
+             aria-label="Advanced search"
+             hx-get="/search/advanced" hx-trigger="toggle from:closest details"
+             hx-target="this" hx-swap="innerHTML">
+      <p class="search-adv-loading">Loading…</p>
+    </section>
+  </details>
+</div>
+
+<div class="ml-auto flex shrink-0 items-center gap-1">
+  {# Live: the key registry has landed, so this opens the same `?` overlay
+     `keys.js` opens, from the same table. `data-role`, not `data-action` —
+     every `data-action` in this app names one of `mailosh/web/actions.py`'s
+     six routes and this control posts nothing; `static/js/actions.js`'s
+     delegated `click` listener calls `openShortcuts()` for it. No `hx-on:`
+     (the CSP forbids it) and no Alpine directive (the overlay is a native
+     `<dialog>`, opened from JS). #}
+  <button type="button" class="btn-icon" data-role="help" title="Keyboard shortcuts (?)">
+    {{ icon("circle-help", class_="size-5", label="Help") }}
+  </button>
+  {# Live: opens `shell/quick_settings.html` (spec §10). `data-role` for
+     the same reason as Help above — `data-action` names one of
+     `mailosh/web/actions.py`'s six routes and this control posts nothing
+     on its own; `static/js/app.js`, which owns the `ui` store the panel
+     writes, calls `showModal()` for it. #}
+  <button type="button" class="btn-icon" data-role="settings"
+          aria-haspopup="dialog" aria-controls="quick-settings" title="Quick settings">
+    {{ icon("settings-2", class_="size-5", label="Settings") }}
+  </button>
+  {# The account menu. Signing out was reachable by no control at all until
+     now -- `POST /logout` and `POST /logout/all` have existed since Phase
+     1A, fully implemented down to revoking the session row, destroying the
+     Stalwart API key and writing an audit row, and nothing in any template
+     or module ever called them. A route with no way in is a feature nobody
+     has.
+
+     `<details>`, matching `thread/menu.html`: the disclosure is the
+     platform's, so it needs no JavaScript, no `showModal`, and nothing from
+     the keyboard registry -- which matters because `keys.js` stops
+     dispatching entirely while a `<dialog>` is open, and an account menu is
+     not worth that cost.
+
+     Plain `<form method="post">` rather than `hx-post`: signing out ends in
+     a 303 to `/login`, and that should be a real navigation replacing the
+     whole document. An htmx swap would leave the shell of a signed-out
+     session on screen around it. The hidden `csrf_token` is what
+     `deps.csrf_protect` reads for a non-htmx POST (it checks the form field
+     when the content type is a form, and the header otherwise). #}
+  <details class="account-menu">
+    <summary class="account-avatar" title="{{ user.email }}"
+             aria-label="Account: {{ user.email }}">{{ user.display_name | initials(user.email) }}</summary>
+    <div class="menu-panel account-panel">
+      {# The name line only when there is a name that is not just the
+         address again. `display_name` is empty for an account created
+         without one, and falling back to `user.email` printed the same
+         string twice -- which reads as a rendering bug, not as identity. #}
+      <div class="account-who">
+        {% if user.display_name and user.display_name != user.email %}
+        <span class="account-name">{{ user.display_name }}</span>
+        {% endif %}
+        <span class="account-email">{{ user.email }}</span>
+      </div>
+      <form class="menu-form" method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="menu-item">
+          {{ icon("arrow-left", class_="size-4") }}Sign out
+        </button>
+      </form>
+      {# Distinct from the above and worth its own control: this destroys
+         the Stalwart API key every session of this user shares, so a phone
+         or a second browser is signed out too. #}
+      <form class="menu-form" method="post" action="/logout/all">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="menu-item menu-item-danger">
+          {{ icon("shield-alert", class_="size-4") }}Sign out everywhere
+        </button>
+      </form>
+    </div>
+  </details>
+</div>
+
+{# The pill's own module: recents, and keeping the input in step with a
+   query changed by a chip. It has no tag in `layouts/app.html` because it
+   ships with the surface it drives — this include is rendered once per
+   full page load and never inside a fragment (`layouts/fragment.html`
+   renders `main`/`oob` only), which is exactly the "bound once" contract
+   every other module in this app gets from its tag there. #}
+<script src="{{ static('js/search.js') }}" type="module"></script>

@@ -1,0 +1,15 @@
+{# The chrome-less counterpart of layouts/app.html, for an htmx swap into
+   `#main`. Every page template in this app writes its content into the same
+   `main` block and picks its parent at render time
+   (`{% extends layout %}`, with `layout` supplied by mailosh.web.mail):
+   `layouts/app.html` for a full navigation, this file for a fragment — one
+   template, two shapes, no duplicated markup.
+
+   Only two blocks render here. `title` becomes a bare `<title>` element,
+   which htmx lifts out of any response to retitle the document (spec §6.5's
+   "(3) Inbox — Mailosh"). `oob` carries whatever must be swapped *outside*
+   the target — the re-rendered nav, so the active item and unread counts
+   follow a mailbox switch that only replaced `#main`. #}
+<title>{% block title %}Mailosh{% endblock %}</title>
+{% block main %}{% endblock %}
+{% block oob %}{% endblock %}

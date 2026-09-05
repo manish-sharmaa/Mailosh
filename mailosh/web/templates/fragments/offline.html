@@ -1,0 +1,45 @@
+{# Design spec §5.4/§6.5's connection-lost banner: a thin strip under the
+   top bar while the `/events` stream is down, cleared on reconnect.
+
+   `static/js/sse.js` owns *when*: after `OFFLINE_AFTER_MS` of a stream it
+   could not re-open it sets `$store.ui.offline`, and clears it on the next
+   `open`. That flag has existed (and the 120 s fallback polling behind it
+   has worked) since the live-updates task, but no template rendered it —
+   sse.js's own header, `mailosh/sse.py`'s `upstream_lost` and the spec
+   all described a banner that did not exist. This file is it.
+
+   Included by layouts/app.html only. Deliberately not by
+   layouts/fragment.html: a swap carrying a second `<div id="offline">`
+   would put two of them in the document, and the second would never be
+   initialized by Alpine (see below) — the same rule the `?` dialog
+   follows.
+
+   Three details are load-bearing, and every one of them fails *silently* —
+   no console error, correct-looking markup, a banner that never appears:
+
+   1. **The bare `x-data`.** Alpine only initializes trees rooted at
+      `[x-data]`/`[x-init]`; a standalone directive on an element with
+      neither is never evaluated at all. Same reason `list/toolbar.html`
+      carries one.
+   2. **`x-bind:hidden`, not `x-show`.** `x-show` works by clearing the
+      element's inline `display`, which does nothing whatever against the
+      `hidden` attribute — `[hidden]` is `display: none !important` in
+      Tailwind's preflight, so an `x-show`n element that still carries
+      `hidden` stays invisible forever. Binding the attribute itself is
+      what makes the served-HTML `hidden` (spec's own wording, and what
+      keeps the strip out of a JS-less page) and the reactive state one
+      mechanism instead of two fighting.
+   3. **Alpine's script stays last in layouts/app.html.** It queues
+      `start()` in a microtask that drains before the next script runs, so
+      ahead of app.js it would walk this element before `$store.ui`
+      existed, throw once invisibly, and never subscribe.
+
+   No `role="status"`/`aria-live`: a live region that is toggled between
+   hidden and shown is announced inconsistently across screen readers, and
+   claiming an announcement this markup cannot reliably deliver is worse
+   than not claiming one. `#status` in layouts/app.html is this app's one
+   real announcement channel; wiring connection state into it belongs with
+   sse.js, which owns the state. #}
+<div id="offline" class="offline" x-data x-bind:hidden="!$store.ui.offline" hidden>
+  Reconnecting to your mailbox…
+</div>

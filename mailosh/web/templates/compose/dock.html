@@ -1,0 +1,61 @@
+{# The corner dock (design spec §8): 560 × 520 bottom-right, "New message"
+   header with minimise (280 × 44 bar), full-screen (inset 24 px) and
+   close; up to three tile leftwards; full-screen automatically under
+   768 px.
+
+   ---------------------------------------------------------------------
+   **This element is a sibling of the list, and that is the whole design.**
+
+   It is swapped into `#compose-dock` in `layouts/app.html` — outside
+   `#main`, outside `#list`, outside every target any other route in this
+   app swaps into, and outside the grid that lays the app out (it is
+   `position: fixed`, so the mount point holds no height at all). Nothing
+   here is a `<dialog>`; nothing here paints a backdrop; nothing here
+   traps focus. So while a draft is open the inbox behind it still
+   scrolls, still takes clicks, still updates over SSE, and still answers
+   `j`/`k`/`e` — and `static/js/keys.js`, which stops dispatching entirely
+   while `dialog[open]` matches anything, keeps working precisely because
+   this is a `<section>`.
+
+   `hx-history="false"` on the mount point keeps a draft out of the back
+   button. `data-morph-ignore` here says the same thing to idiomorph: a
+   morph that ever reached this subtree would re-create the editor and
+   throw the reader's message away mid-sentence.
+
+   ---------------------------------------------------------------------
+   Header
+
+   The title bar is the minimise affordance (Gmail's gesture: click the
+   header, the dock collapses to its 280 × 44 bar and the title is all
+   that is left). The three controls beside it are buttons, and
+   `compose.js` stops their clicks from also reaching the bar.
+
+   Close **keeps the draft** — that is what the tooltip says and what the
+   handler does: the last autosave stands and the dock goes away. Throwing
+   a message away is the trash in the toolbar, which is a different
+   control saying a different thing. #}
+<section class="compose" id="{{ dom_id }}" x-data="compose"
+         data-compose data-surface="dock" data-mode="rich" data-state="open"
+         data-morph-ignore
+         role="region" aria-label="{{ title }}">
+  <header class="compose-head" data-role="bar">
+    <h2 class="compose-title" data-role="title">{{ title }}</h2>
+    <div class="compose-head-tools">
+      <button type="button" class="compose-head-btn" data-role="minimize"
+              title="Minimise" aria-label="Minimise">
+        {{ icon("minus", class_="size-4") }}
+      </button>
+      <button type="button" class="compose-head-btn" data-role="expand"
+              title="Full screen" aria-label="Full screen">
+        {{ icon("maximize-2", class_="size-4 compose-glyph-grow") }}
+        {{ icon("minimize-2", class_="size-4 compose-glyph-shrink") }}
+      </button>
+      <button type="button" class="compose-head-btn" data-role="close"
+              title="Save &amp; close" aria-label="Save and close">
+        {{ icon("x", class_="size-4") }}
+      </button>
+    </div>
+  </header>
+
+  {% include "compose/form.html" %}
+</section>

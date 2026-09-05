@@ -1,0 +1,145 @@
+{# The strips that sit above a framed message body (spec §7): the
+   blocked-remote-images banner, and the dark-restyle "Original colours"
+   toggle.
+
+   Both live here because they are one visual component in two states, and
+   each **self-guards on its own context**, so an include that supplies
+   neither renders nothing at all. That is what lets the same file be
+   included from two places with two different scopes:
+
+   - from `thread/frame.html`, INSIDE `#frame-{{ email_id }}`, with
+     `blocked_remote`/`remote_hosts`/`sender`. The remote strip has to be
+     inside that wrapper, because its own two controls swap the wrapper
+     `outerHTML` — a strip outside it would survive its own dismissal and
+     sit there claiming images are blocked while they load underneath.
+   - from `thread/message.html`, OUTSIDE that wrapper and inside
+     `#frame-area-{{ email_id }}`, with `restyle_sender`. The restyle strip
+     has to be outside, because the sender it posts is known only to the
+     conversation view — `GET /m/{id}/frame` renders `thread/frame.html`
+     with no sender in scope, so a strip inside the wrapper would vanish
+     the first time "Show images" swapped it and never come back.
+
+   Pass each set inside its own `with` block. Jinja's include inherits the
+   whole surrounding context, so a `restyle_sender` left in scope around
+   the frame include would reach this file a second time through
+   `thread/frame.html` and draw the restyle strip twice.
+
+   ---------------------------------------------------------------------
+   No JavaScript, on purpose
+
+   "Show images" is a plain `hx-get` of `/m/{id}/frame?remote=1` and
+   "Always show from" is a plain form `hx-post`; both target the wrapper by
+   id and swap it whole. That is not a stylistic preference: the CSP serves
+   `script-src 'self'` with no `'unsafe-eval'`, which rules out htmx's
+   `hx-on:`/`hx-vals='js:…'` (compiled with `new Function`), and Alpine's
+   CSP build would reject an inline expression too. A control built out of
+   attributes htmx already understands is the one shape that cannot fail
+   silently in the browser.
+
+   The address goes in a hidden field rather than `hx-vals`: `hx-vals`
+   would have to carry JSON through an HTML attribute, and a `From` header
+   is sender-controlled text — one `"` in it and the JSON stops parsing,
+   with no error anywhere. A form field is escaped by Jinja and
+   URL-encoded by htmx, whatever the header says.
+
+   ---------------------------------------------------------------------
+   What the copy may and may not claim
+
+   `blocked_remote` counts `<img src>` loads, and `remote_hosts` is the
+   deduplicated host list behind exactly those loads. It is NOT every host
+   that wanted to know the reader opened this mail: `srcset`, `poster`,
+   `background` and `data-src` are struck out by the sanitiser as
+   *attributes*, before any URL policy runs, so their hosts never reach
+   this template and no count here ever included them. Those references are
+   gone rather than deferred — "Show images" cannot bring them back either.
+
+   So the second line is scoped to the images this banner is actually
+   about ("They would load from …") and never to trackers in general. A
+   banner that promised the full list would be wrong in the one direction
+   a privacy control must never be wrong in. #}
+{% if blocked_remote %}
+  <div class="frame-banner">
+    {{ icon("image-off", class_="size-4 frame-banner-icon") }}
+    <p class="frame-banner-text">
+      <span class="frame-banner-count">This message has {{ blocked_remote }} remote image{{ "s" if blocked_remote != 1 }}</span>
+      {% if remote_hosts %}
+        {% set shown = remote_hosts[:3] %}
+        <span class="frame-banner-hosts">They would load from {{ shown | join(", ") }}{% if (remote_hosts | length) > (shown | length) %} and {{ (remote_hosts | length) - (shown | length) }} more{% endif %}.</span>
+      {% endif %}
+    </p>
+
+    <div class="frame-banner-actions">
+      <button type="button" class="frame-banner-btn"
+              hx-get="/m/{{ email_id }}/frame?thread={{ thread_id | urlencode }}&amp;remote=1"
+              hx-target="#frame-{{ email_id }}"
+              hx-swap="outerHTML">Show images</button>
+
+      {# Only when there is an address to key a row on. A message with no
+         usable `From` cannot be allow-listed at all, and spec §3 would
+         rather show one control than two with a dead one among them. #}
+      {% if sender %}
+        <form class="frame-banner-form"
+              hx-post="/m/{{ email_id }}/images/allow"
+              hx-target="#frame-{{ email_id }}"
+              hx-swap="outerHTML">
+          <input type="hidden" name="sender" value="{{ sender }}">
+          <button type="submit" class="frame-banner-btn">Always show from {{ sender }}</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+
+{# ---------------------------------------------------------------------
+   The dark restyle (spec §7): "Original colours", remembered for this
+   sender.
+
+   **Not "Show original", which spec §7 names it.** The ⋮ menu in the same
+   card already carries a "Show original" — the raw RFC 5322 source — and
+   two controls with one name in one card is an accessibility failure
+   outright: a screen-reader user hears the same name twice for two
+   different effects and can guess neither. The spec is amended with a
+   note saying so (§7), so the next reader does not "fix" this back.
+
+   `POST /m/{id}/restyle` writes the per-sender row and answers with
+   `thread/frame.html` — the frame alone, not this strip. Targeting
+   `#frame-area-{id}` with `outerHTML` is what makes that the right answer:
+   the whole area, banner included, is replaced by a frame showing the
+   message as its sender wrote it. The control removes itself by doing its
+   job, which is the only honest end state available — `set_sender_restyle`
+   has a route for `False` and none for putting the restyle back, so a
+   toggle that offered the return trip would be offering a control that
+   does not exist.
+
+   No `remote` field is posted, so the route re-renders at `remote=0`,
+   matching the `frame_src` `thread/message.html` first rendered.
+
+   **What the copy claims, and what decides whether it is shown.** Whether
+   *this* message was inverted is decided inside `GET /m/{id}/html`
+   (`mailosh.render.dark.restyle_mode`, from the mail's own
+   `color-scheme` declaration and background) and is not knowable from
+   here. What the conversation view does know is the reader's settings, so
+   `thread/message.html` gates on those, and `.frame-banner-dark` in
+   styles/input.css hides this strip outright whenever the page is actually
+   painting light — which is what makes "showing this message in dark mode"
+   true whenever the sentence is on screen. The residual case is a mail
+   that declared its own colour scheme or was already dark: nothing was
+   inverted, and the strip is not drawn at all — `MessageView.restyled`
+   is false for both, so the control is absent rather than present with
+   nothing to undo. #}
+{% if restyle_sender %}
+  <div class="frame-banner frame-banner-dark">
+    {{ icon("eye", class_="size-4 frame-banner-icon") }}
+    <p class="frame-banner-text">Showing this message in dark mode</p>
+
+    <div class="frame-banner-actions">
+      <form class="frame-banner-form"
+            hx-post="/m/{{ email_id }}/restyle"
+            hx-target="#frame-area-{{ email_id }}"
+            hx-swap="outerHTML">
+        <input type="hidden" name="sender" value="{{ restyle_sender }}">
+        <button type="submit" class="frame-banner-btn">Original colours</button>
+      </form>
+    </div>
+  </div>
+{% endif %}

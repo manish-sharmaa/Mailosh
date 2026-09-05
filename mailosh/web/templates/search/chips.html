@@ -1,0 +1,92 @@
+{# The chips row (spec §10: From · To · Any time ▾ · Has attachment ·
+   Is unread · Label ▾), and every one of them *edits the query*.
+
+   That is the whole design, and it is why almost nothing here is
+   interactive in the JavaScript sense: `mailosh.web.search` computed each
+   chip's destination while it rendered this page, so a toggle is a link to
+   `/search?q=<this query, edited>` and a menu is a `<details>` full of
+   them. The URL that results is the same URL the reader could have typed,
+   shareable and bookmarkable, and the parser reads it exactly as if they
+   had. Only the two free-text chips need a round trip to compute their own
+   `q` (the value is typed, not chosen), and they get one: `GET
+   /search/refine`.
+
+   `aria-pressed` on the toggles rather than a class alone: "Is unread" is
+   a two-state control and says so to a screen reader, which a link styled
+   blue does not.
+
+   The `<details>` menus reuse `.menu-panel`/`.menu-item` from
+   `thread/menu.html` — same component, same keyboard behaviour, no second
+   popover mechanism in the app. #}
+<div class="chips-row" role="group" aria-label="Refine this search">
+  {% for chip in chips %}
+    {% if chip.kind == "toggle" %}
+      <a class="schip{% if chip.active %} is-on{% endif %}"
+         href="{{ chip.url }}"
+         hx-get="{{ chip.url }}" hx-target="#main" hx-swap="morph:innerHTML show:none"
+         hx-push-url="true" hx-indicator="#list-skeleton"
+         role="button" aria-pressed="{{ 'true' if chip.active else 'false' }}">{{ chip.label }}</a>
+
+    {% elif chip.kind == "menu" %}
+      <details class="schip-menu">
+        <summary class="schip{% if chip.active %} is-on{% endif %}">
+          {{ chip.label }}{{ icon("chevron-down", class_="size-3 schip-caret") }}
+        </summary>
+        <div class="menu-panel schip-panel">
+          {% for option in chip.options %}
+            <a class="menu-item{% if option.current %} is-current{% endif %}"
+               href="{{ option.url }}"
+               hx-get="{{ option.url }}" hx-target="#main"
+               hx-swap="morph:innerHTML show:none" hx-push-url="true"
+               hx-indicator="#list-skeleton"
+               {% if option.current %}aria-current="true"{% endif %}>{{ option.label }}</a>
+          {% endfor %}
+        </div>
+      </details>
+
+    {% else %}
+      {# A one-field GET form, so it works with the keyboard, with the
+         mouse and with no JavaScript at all. `q` rides along as a hidden
+         field because the route edits *this* query rather than starting a
+         new one — the pill above holds the same text, but a form posts
+         what it carries, not what some other element happens to show. #}
+      <details class="schip-menu">
+        <summary class="schip{% if chip.active %} is-on{% endif %}">
+          {{ chip.label }}{{ icon("chevron-down", class_="size-3 schip-caret") }}
+        </summary>
+        <div class="menu-panel schip-panel schip-form-panel">
+          <form action="/search/refine" method="get"
+                hx-get="/search/refine" hx-target="#main"
+                hx-swap="morph:innerHTML show:none" hx-push-url="true"
+                hx-indicator="#list-skeleton">
+            <input type="hidden" name="q" value="{{ q }}">
+            <input type="hidden" name="field" value="{{ chip.field }}">
+            <label class="schip-label" for="schip-{{ chip.name }}">
+              {{ "Sender" if chip.name == "from" else "Recipient" }}
+            </label>
+            <input class="schip-input" id="schip-{{ chip.name }}" type="text" name="value"
+                   value="{{ chip.value }}" autocomplete="off" spellcheck="false"
+                   placeholder="name or address">
+            <div class="schip-actions">
+              <button type="submit" class="search-submit">Apply</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    {% endif %}
+  {% endfor %}
+
+  {# Spec §10's default scope, said out loud rather than left to be
+     discovered. A reader who never typed `in:` is searching everything
+     except Spam and Trash; `scope_note` is the one-click way out of that,
+     and it is a query — not a hidden setting — so the address bar keeps
+     saying what was searched. `mailosh.web.search` leaves it `None` the
+     moment the reader states a scope of their own. #}
+  {% if scope_note %}
+    <a class="schip schip-quiet ml-auto"
+       href="{{ scope_note }}"
+       hx-get="{{ scope_note }}" hx-target="#main" hx-swap="morph:innerHTML show:none"
+       hx-push-url="true" hx-indicator="#list-skeleton"
+       title="Search Spam and Trash as well">Excluding Spam &amp; Trash</a>
+  {% endif %}
+</div>

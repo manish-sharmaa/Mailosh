@@ -1,0 +1,105 @@
+{# The label picker (`l`) and the Move chooser (`v`) — spec §10's "Label
+   picker = popover with search, checkboxes for multi-apply, type-to-create;
+   Move = single choice".
+
+   **The frame is not here.** `static/js/labels.js` owns one `<dialog>` per
+   page and swaps this fragment into it, the same division `shell/palette.
+   html` uses: the dialog has to outlive every `#main`/`#list` swap, and a
+   fragment that carried its own `<dialog>` would leave a second one in the
+   document every time it was fetched.
+
+   No `x-data`, no `hx-on:`, no `hx-vals='js:…'` anywhere below. The app's
+   CSP is `script-src 'self'` with no `'unsafe-eval'`, which rules out all
+   three (see `static/js/app.js`'s header) — every control here is reached
+   by `labels.js` through a `data-role` hook and a delegated listener.
+
+   The two modes differ in exactly three things, and nothing else:
+   checkboxes vs. radios, whether the system mailboxes are offered, and
+   whether typing a new name can create one. Everything shared — the search
+   field, the row shape, the colour dot, the indent — is written once. #}
+<div class="lp" data-mode="{{ mode }}" data-count="{{ ids | length }}">
+  <div class="lp-field">
+    {{ icon("search", class_="size-4 lp-field-icon") }}
+    {# `autocomplete=off` and friends for the same reason the palette's own
+       input carries them: a browser's saved-value dropdown over a filtered
+       list is two lists of suggestions fighting for the same arrow keys. #}
+    <input type="text"
+           class="lp-input"
+           data-role="lp-search"
+           autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+           placeholder="{{ 'Move to…' if mode == 'move' else 'Label as…' }}"
+           aria-label="{{ 'Move to…' if mode == 'move' else 'Label as…' }}"
+           role="combobox" aria-expanded="true" aria-autocomplete="list"
+           aria-controls="lp-list">
+  </div>
+
+  <div id="lp-list" class="lp-list" data-role="lp-list"
+       role="{{ 'radiogroup' if mode == 'move' else 'group' }}"
+       aria-label="{{ 'Folders' if mode == 'move' else 'Labels' }}">
+    {% if mode == 'move' %}
+      {# Move offers the system mailboxes too: "move to Archive" and "move
+         to Trash" are the two most common moves there are, and sending the
+         reader to a different control for them would be a taxonomy nobody
+         asked about. Labels follow, under their own heading. #}
+      <div class="lp-group" role="presentation">Folders</div>
+      {% for item in systems %}
+        <label class="lp-option" data-name="{{ item.name }}">
+          <input type="radio" name="to" value="{{ item.key }}" class="lp-radio">
+          <span class="lp-mark">{{ icon(item.icon, class_="size-4") }}</span>
+          <span class="lp-name">{{ item.name }}</span>
+        </label>
+      {% endfor %}
+      {% if rows %}<div class="lp-group" role="presentation">Labels</div>{% endif %}
+    {% endif %}
+
+    {% for row in rows %}
+      {# `data-name` is what the client filters on: the search is local to
+         the rows already rendered, so typing costs no round trip and the
+         list cannot flicker between server answers. `data-state` carries
+         the tri-state — "mixed" cannot be an HTML attribute at all
+         (`indeterminate` is a DOM property), so `labels.js` sets it from
+         here on the way in, and reads it back to tell "the reader clicked
+         this" from "it started out partly applied". #}
+      <label class="lp-option{% if row.muted %} is-muted{% endif %}"
+             data-name="{{ row.name }}"
+             style="padding-left: {{ 12 + row.depth * 14 }}px">
+        {% if mode == 'move' %}
+          <input type="radio" name="to" value="{{ row.id }}" class="lp-radio">
+          <span class="lp-mark">
+            <span class="lp-dot" style="background: var(--label-{{ row.color | label_color(row.id) }})"></span>
+          </span>
+        {% else %}
+          <input type="checkbox" class="lp-check" value="{{ row.id }}"
+                 data-state="{{ row.state }}"{% if row.state == 'on' %} checked{% endif %}>
+          <span class="lp-box" aria-hidden="true">
+            {{ icon("check", class_="size-3 lp-box-on") }}
+            {{ icon("minus", class_="size-3 lp-box-some") }}
+          </span>
+          <span class="lp-mark">
+            <span class="lp-dot" style="background: var(--label-{{ row.color | label_color(row.id) }})"></span>
+          </span>
+        {% endif %}
+        <span class="lp-name">{{ row.name }}</span>
+      </label>
+    {% endfor %}
+
+    {# Nothing matched what was typed. In label mode the answer is to make
+       it (spec §10's "type-to-create"); in Move mode there is nothing to
+       offer, because "move into a folder that does not exist" is two
+       gestures wearing one coat. Both rows are `hidden` as served and
+       `labels.js` reveals whichever applies. #}
+    <button type="button" class="lp-option lp-create" data-role="lp-create" hidden>
+      <span class="lp-mark">{{ icon("plus", class_="size-4") }}</span>
+      <span class="lp-name">Create “<span data-role="lp-create-name"></span>”</span>
+    </button>
+    <div class="lp-empty" data-role="lp-empty" hidden>No match</div>
+  </div>
+
+  <div class="lp-foot">
+    <span class="lp-hint" data-role="lp-hint"></span>
+    <button type="button" class="lp-btn" data-role="lp-cancel">Cancel</button>
+    <button type="button" class="lp-btn is-accent" data-role="lp-commit">
+      {{ 'Move' if mode == 'move' else 'Apply' }}
+    </button>
+  </div>
+</div>

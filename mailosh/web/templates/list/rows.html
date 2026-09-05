@@ -1,0 +1,74 @@
+{# One page of rows — the whole body of `#list` on first render, the reply to
+   the list's own `mail:changed` re-GET, and the reply to the endless-scroll
+   sentinel.
+
+   The sentinel is rendered **only when `ThreadPage.next_position` is not
+   None**. The Phase 0 list shipped one unconditionally, so at the bottom of
+   the last page it re-armed itself forever against a page that would never
+   have any rows; `build_page` computes `next_position` from the server's own
+   `calculateTotal`, and this is the single place that decides whether the
+   list keeps asking for more.
+
+   The empty state belongs to the first page only: page 2 coming back empty
+   is a race (mail moved between the query and the fetch), not an empty
+   mailbox, and replacing the rows already on screen with "You're all caught
+   up" would be a lie. #}
+{# `standalone` is set only when this fragment IS the whole response (the
+   `mail:changed` refresh and the sentinel), never when list/page.html
+   includes it — in that case the title, the nav and the toolbar are already
+   being rendered by the layout's own blocks. Carrying all three here is what
+   keeps the unread badge, the document title and the toolbar's range honest
+   after live mail arrives; the list would otherwise grow a row while the
+   sidebar still claimed the old count and the range still claimed the old
+   span. The range is the same case as the nav, one element further out:
+   both live outside `#list`, and `#list` is all the swap replaces. #}
+{% if standalone %}
+  <title>{% if view_unread %}({{ view_unread }}) {% endif %}{{ view_label }} — Mailosh</title>
+{% endif %}
+
+{# `pos` is the row's absolute place in the mailbox, which is what it hands
+   the conversation view so that view can render "4 of 1,284" and its two
+   arrows without searching a mailbox for a thread it is already rendering.
+
+   `page.position`, never `start`: they are the same on a first render, but
+   the endless-scroll sentinel appends page 2 beneath a page 1 that is
+   still there, and `start` is where the *rendered list* begins. Numbering
+   the appended rows from there would put row 51 at position 1. #}
+{% for row in page.rows %}{% with pos = page.position + loop.index0 %}{% include "list/row.html" %}{% endwith %}{% endfor %}
+
+{# `#list` is `role="grid"`, whose only permitted children are rows (and
+   rowgroups). A bare `<div>` sitting beside the rows is an owned element
+   with no role the grid pattern allows, and a screen reader is entitled to
+   drop it or to stop reporting the grid's shape at that point — so both
+   the empty state and the endless-scroll sentinel are given a row/gridcell
+   skin. The empty state gets a wrapper (nothing ever swaps it, so an extra
+   element is free); the sentinel gets the roles on itself, because its
+   `hx-swap="outerHTML"` replaces *it* with the next page of rows and a
+   wrapper would leave those rows nested one level inside a `role="row"`. #}
+{% if not page.rows and page.position == 0 %}
+  <div role="row">
+    <div role="gridcell">{% include "list/empty.html" %}</div>
+  </div>
+{% endif %}
+
+{% if page.next_position is not none %}
+  {# `start` rides along so the appended page's own out-of-band range
+     describes the whole list the reader can see, not just the slice being
+     appended below it (mailosh.web.mail._range_label). #}
+  <div class="row-sentinel"
+       hx-get="/mail/{{ key }}/rows?position={{ page.next_position }}&limit={{ page.limit }}&start={{ start }}"
+       hx-trigger="intersect once root:#list"
+       hx-swap="outerHTML"
+       hx-indicator="this"
+       role="row">
+    <span class="sentinel-cell" role="gridcell">
+      <span class="sentinel-spinner" aria-hidden="true"></span>
+      <span class="sr-only">Loading more conversations</span>
+    </span>
+  </div>
+{% endif %}
+
+{% if standalone %}
+  {% with oob = true %}{% include "list/range.html" %}{% endwith %}
+  {% with oob = true %}{% include "shell/nav.html" %}{% endwith %}
+{% endif %}

@@ -1,0 +1,127 @@
+# Mailosh production reverse proxy.
+#
+# Mounted read-only at /etc/caddy/Caddyfile by docker-compose.prod.yml.
+# Caddy is the only thing in the stack that binds a public HTTP port: it
+# terminates TLS, obtains and renews the certificate itself over ACME, and
+# proxies to `mailosh:8000` over the stack's `edge` network. Nothing else
+# in the stack publishes an HTTP port at all -- see
+# docs/specs/2026-09-05-production-deployment.md §3.
+#
+# Two variables come from the environment (docker-compose.prod.yml passes
+# them through from `.env`, and fails the `docker compose config` outright
+# if either is unset, so a missing one is never a runtime surprise):
+#
+#   MAILOSH_SITE_ADDRESS   the hostname this webmail is served on, e.g.
+#                          mail.example.com. It is also what Caddy asks a
+#                          CA to certify, so it must resolve, publicly, to
+#                          this box before the first `up`.
+#   MAILOSH_ACME_EMAIL     the address the CA uses for expiry warnings.
+#
+# To serve without ACME -- a LAN box, or a staging run behind an existing
+# TLS terminator -- set MAILOSH_SITE_ADDRESS to `mail.example.com` and add
+# `tls internal` inside the site block (Caddy's own local CA), or set it to
+# `:80` and put your own terminator in front. Both are deliberate operator
+# choices, not defaults: the default is a real, publicly trusted
+# certificate, because that is what a self-hoster actually needs.
+{
+	# Where Let's Encrypt sends "your certificate expires in N days" if
+	# renewal has been failing. Worth a real inbox that is *not* on this
+	# server -- if the mail server is what broke, you will not read it.
+	email {$MAILOSH_ACME_EMAIL}
+
+	# The admin API stays at its default `localhost:2019`, which is
+	# inside this container only and is published nowhere. It is what
+	# `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile`
+	# talks to for a zero-downtime config reload, and what the compose
+	# healthcheck probes. Turning it off would cost both.
+}
+
+{$MAILOSH_SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Not set by the app (mailosh/web/app.py's `_SECURITY_HEADERS` covers
+	# CSP, nosniff and Referrer-Policy, but HSTS is a transport fact and
+	# only the thing terminating TLS knows it is true).
+	#
+	# One year, no `includeSubDomains`, no `preload`. `includeSubDomains`
+	# is a commitment on behalf of *every* name under the registrable
+	# domain -- including the one you may later point at something that
+	# is not HTTPS -- and `preload` is close to irreversible. Add either
+	# knowingly; neither belongs in a default.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	# `mailosh.ui.static` renders every asset URL as `/static/<path>?v=<sha256:8>`
+	# of the file's own bytes, so a versioned URL can never go stale:
+	# changing the file changes the URL. That -- and only that -- is what
+	# makes `immutable` safe here, which is why the matcher requires the
+	# `v` parameter rather than matching the path alone. An unversioned
+	# `/static/...` (hand-typed, or a future code path that forgets to
+	# version) falls through to the app's own validators instead of being
+	# frozen in every cache for a year.
+	@versioned_static {
+		path /static/*
+		query v=*
+	}
+	header @versioned_static Cache-Control "public, max-age=31536000, immutable"
+
+	reverse_proxy mailosh:8000 {
+		# THE LOAD-BEARING PAIR. Read this together with
+		# MAILOSH_TRUST_PROXY=true in docker-compose.prod.yml.
+		#
+		# `mailosh.web.auth._client_ip` takes `X-Forwarded-For`'s first
+		# hop as the client address when MAILOSH_TRUST_PROXY is on, and
+		# the Postgres-backed login rate limiter (20 failures per IP per
+		# 15 min) keys on the result. So the header must be *this
+		# proxy's* statement about who connected, never something a
+		# client can influence.
+		#
+		# Caddy 2.10 already guarantees that: with no `trusted_proxies`
+		# configured, the immediate peer is untrusted, so Caddy
+		# *replaces* any inbound X-Forwarded-For with the peer's real
+		# address rather than appending to it. Verified here rather than
+		# taken from the docs -- a request carrying
+		# `X-Forwarded-For: 1.2.3.4` reached the upstream as the real
+		# peer address, with the spoofed value gone. That is also why
+		# the image is pinned to `caddy:2.10-alpine`: this is a
+		# behavioural guarantee, not a configuration one, and it should
+		# not change under the deployment on a `latest` tag.
+		#
+		# X-Real-IP is the exception and the reason for the line below.
+		# Caddy passes it through untouched, so the same test saw the
+		# spoofed `1.2.3.4` arrive at the upstream verbatim. Nothing in
+		# Mailosh reads X-Real-IP today -- this overwrites it so that
+		# nothing which starts reading it tomorrow inherits a spoofable
+		# input.
+		header_up X-Real-IP {remote_host}
+
+		# Not configured, on purpose: no response buffering and no
+		# stream timeout. `GET /events` is an SSE stream
+		# (`sse_starlette`, 25 s keepalive ping) and both would break
+		# live updates. Verified: a `text/event-stream` response
+		# proxied through this exact `encode zstd gzip` + reverse_proxy
+		# pair, with the client negotiating gzip, arrived one event at a
+		# time as it was written -- not buffered to completion.
+	}
+
+	# Without this a dead app container answers a bare, unstyled Caddy
+	# 502. With it, the reader gets one plain sentence that says which
+	# layer failed, which is the difference between "the mail server is
+	# down" and "the internet is broken" when someone is diagnosing from
+	# a phone.
+	handle_errors {
+		respond "Mailosh is not responding ({err.status_code}). If this persists, check `docker compose ps`." {err.status_code}
+	}
+}
+
+# A note on logs, which are on by default and go to stdout as JSON
+# (`docker compose logs caddy`): request paths in this app carry thread ids
+# (`/t/{thread_id}`) and message ids (`/m/{id}/...`). That is not message
+# content, but it is a record of what each user read and when, retained for
+# as long as Docker's log driver keeps it. If that is more than you want to
+# hold, add `log { output discard }` to the site block, or point the log at
+# a file with a short rotation. Deleting the access log costs you the
+# ability to investigate an abusive client by IP, so it is a trade, not an
+# upgrade.

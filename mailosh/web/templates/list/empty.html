@@ -1,0 +1,24 @@
+{# Empty state, spec §5.4: the Inbox gets the one line worth earning ("You're
+   all caught up"); every other mailbox gets the neutral "Nothing here". The
+   illustration is a plain inline SVG — calm, two tokens, no photos, no
+   third-party asset. #}
+<div class="empty-state">
+  <svg viewBox="0 0 120 84" class="empty-art" aria-hidden="true" fill="none">
+    <path d="M14 34 60 8l46 26v34a6 6 0 0 1-6 6H20a6 6 0 0 1-6-6V34Z"
+          stroke="var(--line-2)" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M14 34l43 24a6 6 0 0 0 6 0l43-24" stroke="var(--line-2)" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M44 30h32M44 42h20" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"
+          opacity=".5"/>
+  </svg>
+  <p class="empty-title">
+    {%- if key == "inbox" -%}You're all caught up{%- else -%}Nothing here{%- endif -%}
+  </p>
+  <p class="empty-body">
+    {%- if key == "inbox" -%}
+      New mail lands here the moment it arrives.
+    {%- else -%}
+      There are no conversations in {{ view_label }}.
+    {%- endif -%}
+  </p>
+</div>

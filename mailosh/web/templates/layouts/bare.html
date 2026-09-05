@@ -1,0 +1,42 @@
+<!doctype html>
+{# The chrome-less counterpart to layouts/app.html: same head (theme/
+   density tokens, preloaded Inter, app.css, CSRF meta) and the same
+   content-versioned-local-assets-only rule, but no top bar / nav rail /
+   status region / toast stack / compose dock -- for pages that aren't the
+   mail shell itself. Task 5's auth/login.html is the first real user of
+   this (a centered card, no session yet to build a nav model from); nothing
+   in this task renders through it. #}
+<html lang="en" data-theme="{{ prefs.theme }}" data-density="{{ prefs.density }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Mailosh{% endblock %}</title>
+    {# See layouts/app.html's identical block for why "system" needs a
+       media-conditional pair instead of one resolved colour. #}
+    {% if prefs.theme == "system" %}
+      <meta name="theme-color" content="#EBEEF3" media="(prefers-color-scheme: light)">
+      <meta name="theme-color" content="#0D1015" media="(prefers-color-scheme: dark)">
+    {% else %}
+      <meta name="theme-color" content="{{ '#0D1015' if prefs.theme == 'dark' else '#EBEEF3' }}">
+    {% endif %}
+    {# Same brand marks as layouts/app.html — see that file's note. #}
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ static('brand/mark-32.png') }}">
+    <link rel="icon" type="image/png" sizes="192x192" href="{{ static('brand/mark-192.png') }}">
+    <link rel="apple-touch-icon" href="{{ static('brand/mark-180.png') }}">
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="{{ static('fonts/inter-latin.woff2') }}">
+    <link rel="stylesheet" href="{{ static('app.css') }}">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    {% block head %}{% endblock %}
+  </head>
+  <body class="flex min-h-dvh items-center justify-center bg-bg text-fg">
+    {% block content %}{% endblock %}
+
+    {# A deliberately smaller vendor set than layouts/app.html: no
+       idiomorph/preload (nothing here streams list rows), no command-
+       score (no palette), no keys/actions/palette/sse (nothing to key
+       into, act on, or live-update on an unauthenticated page). #}
+    <script src="{{ static('vendor/htmx.min.js') }}"></script>
+    <script src="{{ static('vendor/alpine.min.js') }}" defer></script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

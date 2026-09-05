@@ -1,0 +1,104 @@
+services:
+  stalwart:
+    image: stalwartlabs/stalwart:v0.16.20
+    # Loopback-only dev bindings (127.0.0.1, not the implicit 0.0.0.0):
+    # unbound, every port here is reachable from the whole local network --
+    # notably Stalwart's admin/JMAP HTTP port, which accepts the admin
+    # secret (security review finding). A production deployment terminates
+    # TLS at a reverse proxy and never publishes Stalwart's HTTP port
+    # directly like this at all -- that's Phase 2's wizard/deployment work,
+    # not implemented here.
+    #
+    # Every port here now maps to a listener that actually exists. That was
+    # not true before scripts/stalwart-bootstrap.sh started creating the 587
+    # submission listener: Stalwart v0.16.20's default post-bootstrap set is
+    # smtp/25, submissions/465, imaps/993, pop3s/995, sieve/4190, http/8080,
+    # https/443 -- no 587, and no 143.
+    #
+    # A published port with no listener behind it is worse than a missing
+    # one. Docker's proxy accepts the connection on the host and then drops
+    # it, so the client sees a hang or a reset, nothing reaches Stalwart, and
+    # nothing appears in any log to say why. `1143:143` was exactly that and
+    # is gone: plain IMAP is not configured here and 993 covers every modern
+    # client, so the host-side IMAP forward points at 1993 -> 993 (IMAPS,
+    # self-signed until you configure TLS) instead of at nothing.
+    #
+    # 465 is listening too and is simply not forwarded; 1587 -> 587 is the
+    # submission port a mail client would be pointed at, and it works now.
+    ports: ["127.0.0.1:8080:8080", "127.0.0.1:2525:25", "127.0.0.1:1587:587", "127.0.0.1:1993:993"]
+    volumes: ["stalwart-etc:/etc/stalwart", "stalwart-data:/var/lib/stalwart"]
+    environment:
+      - STALWART_RECOVERY_ADMIN=admin:${MAILOSH_STALWART_ADMIN_SECRET:-changeme}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz/live"]
+      interval: 5s
+      retries: 20
+  postgres:
+    image: postgres:16-alpine
+    environment: {POSTGRES_USER: mailosh, POSTGRES_PASSWORD: mailosh, POSTGRES_DB: mailosh}
+    # Published on 55432, not 5432 (code review, Task 1): 5432 is a common
+    # port for a host-native Postgres install to already own, and
+    # publishing it unconditionally would silently collide with one
+    # instead of erroring -- exactly what happened on a real dev machine
+    # (see Task 1's report, Concern #1). 55432 collides with nothing (the
+    # problem was only ever 5432 vs. a host-native server), so it's
+    # published straight on the default service -- host tooling (psql, a
+    # GUI client, `make db-upgrade-host`, ...) just works, no profile or
+    # extra moving part needed. `make db-upgrade` itself runs inside the
+    # `mailosh` container instead (`docker compose exec`), so it needs no
+    # published port at all either way. Bound to 127.0.0.1, not 0.0.0.0
+    # (security review finding): the hardcoded mailosh:mailosh credential
+    # must not be reachable from the local network either.
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["pg-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mailosh"]
+      interval: 5s
+      retries: 20
+  mailosh:
+    build: {context: ., dockerfile: docker/mailosh.Dockerfile}
+    ports: ["127.0.0.1:8000:8000"]
+    env_file: .env
+    environment:
+      # Container DNS, not localhost — Settings' own default (used outside
+      # Docker, e.g. by the CLI/pytest on the host) is http://localhost:8080,
+      # which is unreachable from inside this container. This overrides
+      # whatever MAILOSH_STALWART_URL (if any) came from env_file: above —
+      # compose gives inline `environment:` precedence over `env_file:` for
+      # the same key.
+      - MAILOSH_STALWART_URL=http://stalwart:8080
+      # Same reasoning, same override mechanism, for Postgres: `postgres`
+      # (compose service DNS name) on its real 5432, not the host-facing
+      # 55432 published above.
+      - MAILOSH_DATABASE_URL=postgresql+asyncpg://mailosh:mailosh@postgres:5432/mailosh
+    # Overrides mailosh.Dockerfile's own CMD: docker/entrypoint.sh applies
+    # pending Alembic migrations (`alembic upgrade head`) before starting
+    # uvicorn, so a fresh `postgres` volume is always migrated before this
+    # service serves its first request.
+    command: ["/app/docker/entrypoint.sh"]
+    healthcheck:
+      # `GET /healthz` answers 204 with no session, no template and no
+      # database query. Liveness only, deliberately: it must NOT probe
+      # Postgres or Stalwart, because Docker's answer to an unhealthy
+      # container is to restart it -- and restarting the app neither fixes
+      # a failed dependency nor preserves the SSE streams it was serving.
+      # `scripts/healthcheck.sh` probes each store separately.
+      # Without this the service has no healthcheck at all, so
+      # `docker compose ps` never reports mailosh as healthy -- only as
+      # "running", which is true of a container that is failing every
+      # request.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).status == 204 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      stalwart:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+volumes: {stalwart-etc: {}, stalwart-data: {}, pg-data: {}}

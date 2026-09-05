@@ -1,0 +1,210 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  .om{--bg:#F6F7F9;--surface:#FFFFFF;--line:#E6E9EF;--line-2:#D3D8E1;--fg:#0F172A;--fg-2:#5B6577;--fg-3:#8B95A5;
+      --accent:#4F46E5;--accent-ink:#3730A3;--accent-soft:#EEF2FF;--read:#F7F8FA;--hover:#F1F3F7;--star:#F59E0B;
+      font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.4;color:var(--fg);
+      -webkit-font-smoothing:antialiased;}
+  .om *{box-sizing:border-box;margin:0;padding:0}
+  .om svg.i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .om kbd{font:500 10.5px/1 Inter,system-ui,sans-serif;color:var(--fg-3);border:1px solid var(--line-2);border-bottom-width:2px;border-radius:4px;padding:2px 5px;background:#fff}
+  .om-shot{background:var(--bg);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:grid;grid-template-rows:52px 1fr;grid-template-columns:224px 440px 1fr;height:640px;box-shadow:0 1px 2px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.08);position:relative;min-width:1040px}
+  /* top bar */
+  .om-top{grid-column:1/4;display:flex;align-items:center;gap:12px;padding:0 14px 0 12px;background:var(--bg)}
+  .om-btn{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--fg-2)}
+  .om-brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;letter-spacing:-.01em;margin-right:8px}
+  .om-mark{width:22px;height:22px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center}
+  .om-mark svg{width:13px;height:13px;stroke:#fff;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  .om-search{flex:1;max-width:640px;height:36px;border-radius:8px;background:#EDF0F5;display:flex;align-items:center;gap:10px;padding:0 12px;color:var(--fg-3);margin:0 auto}
+  .om-search span{flex:1}
+  .om-topright{display:flex;align-items:center;gap:4px;margin-left:auto}
+  .om-avatar{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-weight:600;font-size:12px;display:flex;align-items:center;justify-content:center;margin-left:6px}
+  /* nav */
+  .om-nav{padding:6px 10px 10px 12px;display:flex;flex-direction:column;gap:2px}
+  .om-compose{height:36px;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;display:flex;align-items:center;gap:8px;padding:0 12px 0 12px;margin:0 8px 10px 0;box-shadow:0 1px 2px rgba(79,70,229,.3)}
+  .om-compose kbd{margin-left:auto;background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.25);color:#fff}
+  .om-nav-item{height:32px;border-radius:6px;display:flex;align-items:center;gap:10px;padding:0 10px;color:var(--fg-2);font-weight:500}
+  .om-nav-item b{margin-left:auto;font-weight:600;font-size:12px;color:var(--fg-2)}
+  .om-nav-item.on{background:var(--accent-soft);color:var(--accent-ink)}
+  .om-nav-item.on b{color:var(--accent-ink)}
+  .om-nav-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3);font-weight:600;padding:14px 10px 6px;display:flex;align-items:center}
+  .om-nav-h span{margin-left:auto;font-weight:500;font-size:15px;line-height:1;color:var(--fg-3)}
+  .om-dot{width:9px;height:9px;border-radius:50%;flex:none;margin:0 3px}
+  /* list */
+  .om-list{background:var(--surface);border-left:1px solid var(--line);border-right:1px solid var(--line);border-top:1px solid var(--line);border-radius:10px 0 0 0;display:flex;flex-direction:column;overflow:hidden}
+  .om-lbar{height:44px;display:flex;align-items:center;gap:6px;padding:0 10px 0 14px;border-bottom:1px solid var(--line);color:var(--fg-2)}
+  .om-check{width:15px;height:15px;border:1.5px solid var(--line-2);border-radius:3.5px;flex:none;background:#fff}
+  .om-count{margin-left:auto;font-size:12px;color:var(--fg-2);font-variant-numeric:tabular-nums}
+  .om-row{height:44px;display:flex;align-items:center;gap:10px;padding:0 12px 0 14px;border-bottom:1px solid var(--line);background:var(--read);position:relative}
+  .om-row.u{background:var(--surface)}
+  .om-row.hov{background:var(--hover)}
+  .om-row.open{background:var(--accent-soft)}
+  .om-row.open::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+  .om-star{color:var(--fg-3)}
+  .om-star.on{color:var(--star)}
+  .om-star.on svg{fill:var(--star);stroke:var(--star)}
+  .om-from{width:150px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--fg-2)}
+  .om-row.u .om-from{font-weight:600;color:var(--fg)}
+  .om-text{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--fg-2)}
+  .om-text .s{color:var(--fg)}
+  .om-row.u .om-text .s{font-weight:600}
+  .om-chip{font-size:11px;font-weight:500;padding:1px 7px;border-radius:99px;flex:none}
+  .om-date{width:66px;text-align:right;font-size:12px;color:var(--fg-3);font-variant-numeric:tabular-nums;flex:none}
+  .om-row.u .om-date{color:var(--fg);font-weight:600}
+  .om-acts{display:flex;gap:2px;margin-left:auto}
+  .om-acts .om-btn{width:28px;height:28px;color:var(--fg-2)}
+  /* reading pane */
+  .om-read{background:var(--surface);border-top:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+  .om-rhead{display:flex;align-items:center;gap:8px;padding:14px 18px 12px 22px;border-bottom:1px solid var(--line)}
+  .om-rhead h1{font-size:17px;font-weight:600;letter-spacing:-.01em;margin-right:4px}
+  .om-rhead .om-acts{gap:2px}
+  .om-msg{margin:10px 18px 0 18px;border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .om-msg.col{padding:10px 16px;color:var(--fg-2)}
+  .om-mh{display:flex;align-items:center;gap:10px}
+  .om-av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:13px;flex:none}
+  .om-who b{font-weight:600}
+  .om-who div{font-size:12px;color:var(--fg-3)}
+  .om-when{margin-left:auto;font-size:12px;color:var(--fg-3);display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .om-body{margin-top:14px;font-size:14px;line-height:1.55;color:var(--fg);max-width:64ch}
+  .om-body p{margin-bottom:12px}
+  .om-trim{display:inline-flex;align-items:center;height:18px;padding:0 9px;border-radius:99px;background:#EDF0F5;color:var(--fg-2);font-size:12px;letter-spacing:.15em;font-weight:700}
+  .om-reply{display:flex;gap:8px;padding:14px 18px;margin-top:auto;border-top:1px solid var(--line);align-items:center}
+  .om-ghost{height:34px;border:1px solid var(--line-2);border-radius:8px;padding:0 14px;display:flex;align-items:center;gap:8px;font-weight:500;color:var(--fg)}
+  .om-hint{margin-left:auto;color:var(--fg-3);font-size:12px;display:flex;gap:6px;align-items:center}
+  .om-toast{position:absolute;left:236px;bottom:14px;background:#1B2130;color:#fff;border-radius:8px;padding:9px 12px 9px 14px;display:flex;align-items:center;gap:14px;font-size:13px;box-shadow:0 8px 24px rgba(15,23,42,.25)}
+  .om-toast a{color:#A5B4FC;font-weight:600}
+  .om-toast kbd{background:transparent;border-color:rgba(255,255,255,.25);color:rgba(255,255,255,.75)}
+  /* option thumbnails */
+  .thumb{width:132px;height:84px;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);display:grid;gap:3px;padding:4px;flex:none}
+  .thumb i{display:block;background:var(--bg-tertiary);border-radius:2px}
+  .thumb i.a{background:var(--accent);opacity:.55}
+  .t-right{grid-template-columns:22px 44px 1fr;grid-template-rows:8px 1fr}
+  .t-right i:nth-child(1){grid-column:1/4}
+  .t-none{grid-template-columns:22px 1fr;grid-template-rows:8px 1fr}
+  .t-none i:nth-child(1){grid-column:1/3}
+  .t-below{grid-template-columns:22px 1fr;grid-template-rows:8px 1fr 1fr}
+  .t-below i:nth-child(1){grid-column:1/3}
+  .t-below i:nth-child(2){grid-row:2/4}
+  .note{font-size:.85rem;color:var(--text-secondary);margin:.25rem 0 1.25rem}
+</style>
+
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+  <symbol id="i-mailopen" viewBox="0 0 24 24"><path d="M21.2 8.4c.5.38.8.97.8 1.6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10a2 2 0 0 1 .8-1.6l8-6a2 2 0 0 1 2.4 0l8 6Z"/><path d="m22 10-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 10"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-reply" viewBox="0 0 24 24"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></symbol>
+  <symbol id="i-replyall" viewBox="0 0 24 24"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></symbol>
+  <symbol id="i-fwd" viewBox="0 0 24 24"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+</svg>
+
+<h2>The frame</h2>
+<p class="subtitle">Approach C, rendered with real content: Gmail's regions and affordances, Superhuman's restraint. Wide-screen default shown — reading pane on the right, row 4 open, row 3 hovered (actions replace the date), an undo toast after an archive.</p>
+
+<div class="om"><div class="om-shot">
+  <div class="om-top">
+    <div class="om-btn"><svg class="i"><use href="#i-menu"/></svg></div>
+    <div class="om-brand"><div class="om-mark"><svg><use href="#i-mail"/></svg></div>Mailosh</div>
+    <div class="om-search"><svg class="i"><use href="#i-search"/></svg><span>Search mail</span><kbd>/</kbd><svg class="i"><use href="#i-sliders"/></svg></div>
+    <div class="om-topright">
+      <div class="om-btn"><svg class="i"><use href="#i-help"/></svg></div>
+      <div class="om-btn"><svg class="i"><use href="#i-sliders"/></svg></div>
+      <div class="om-avatar">M</div>
+    </div>
+  </div>
+
+  <div class="om-nav">
+    <div class="om-compose"><svg class="i"><use href="#i-pen"/></svg>Compose<kbd>c</kbd></div>
+    <div class="om-nav-item on"><svg class="i"><use href="#i-inbox"/></svg>Inbox<b>12</b></div>
+    <div class="om-nav-item"><svg class="i"><use href="#i-star"/></svg>Starred</div>
+    <div class="om-nav-item"><svg class="i"><use href="#i-clock"/></svg>Snoozed</div>
+    <div class="om-nav-item"><svg class="i"><use href="#i-send"/></svg>Sent</div>
+    <div class="om-nav-item"><svg class="i"><use href="#i-file"/></svg>Drafts<b>2</b></div>
+    <div class="om-nav-item"><svg class="i"><use href="#i-chev"/></svg>More</div>
+    <div class="om-nav-h">Labels<span>+</span></div>
+    <div class="om-nav-item"><span class="om-dot" style="background:#6366F1"></span>Work<b>3</b></div>
+    <div class="om-nav-item"><span class="om-dot" style="background:#10B981"></span>Receipts</div>
+    <div class="om-nav-item"><span class="om-dot" style="background:#F43F5E"></span>Family</div>
+    <div class="om-nav-item"><span class="om-dot" style="background:#F59E0B"></span>Newsletters<b>8</b></div>
+  </div>
+
+  <div class="om-list">
+    <div class="om-lbar">
+      <span class="om-check"></span>
+      <div class="om-btn" style="width:28px;height:28px"><svg class="i"><use href="#i-refresh"/></svg></div>
+      <div class="om-btn" style="width:28px;height:28px"><svg class="i"><use href="#i-more"/></svg></div>
+      <span class="om-count">1–50 of 1,284</span>
+      <div class="om-btn" style="width:28px;height:28px"><svg class="i"><use href="#i-left"/></svg></div>
+      <div class="om-btn" style="width:28px;height:28px"><svg class="i"><use href="#i-right"/></svg></div>
+    </div>
+    <div class="om-row u"><span class="om-check"></span><span class="om-star on"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">Priya Natarajan</span><span class="om-text"><span class="s">Q3 roadmap review — notes and next steps</span> – Attaching the deck we walked through; owners are tagged inline</span><span class="om-chip" style="background:#EEF2FF;color:#3730A3">Work</span><svg class="i" style="color:var(--fg-3)"><use href="#i-clip"/></svg><span class="om-date">10:42 AM</span></div>
+    <div class="om-row u"><span class="om-check"></span><span class="om-star"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">GitHub</span><span class="om-text"><span class="s">[mailosh/mailosh] Run #482 passed: main</span> – All checks have passed — 115 unit, 1 integration</span><span class="om-date">9:58 AM</span></div>
+    <div class="om-row hov"><span class="om-check"></span><span class="om-star"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">Hetzner Cloud</span><span class="om-text"><span class="s">Your invoice for August 2026</span> – Invoice #2026-08-14421 is available in the console</span><span class="om-chip" style="background:#ECFDF5;color:#047857">Receipts</span><div class="om-acts"><div class="om-btn"><svg class="i"><use href="#i-archive"/></svg></div><div class="om-btn"><svg class="i"><use href="#i-trash"/></svg></div><div class="om-btn"><svg class="i"><use href="#i-mailopen"/></svg></div><div class="om-btn"><svg class="i"><use href="#i-clock"/></svg></div></div></div>
+    <div class="om-row open"><span class="om-check"></span><span class="om-star"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">Daniel Okafor</span><span class="om-text"><span class="s">Re: Dinner on Saturday?</span> – Sounds great — 7pm works. I'll book the table</span><span class="om-chip" style="background:#FFF1F2;color:#BE123C">Family</span><span class="om-date">Yesterday</span></div>
+    <div class="om-row u"><span class="om-check"></span><span class="om-star"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">Stalwart Labs</span><span class="om-text"><span class="s">Stalwart 1.0.0-rc.1 is out</span> – Schema freeze, performance work, and the new management API</span><span class="om-date">Yesterday</span></div>
+    <div class="om-row"><span class="om-check"></span><span class="om-star"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">Fastmail Blog</span><span class="om-text"><span class="s">How JMAP makes push cheap</span> – State strings, EventSource, and why polling was never the answer</span><span class="om-chip" style="background:#FFFBEB;color:#B45309">Newsletters</span><span class="om-date">Aug 30</span></div>
+    <div class="om-row"><span class="om-check"></span><span class="om-star"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">Aisha, Tom, me (3)</span><span class="om-text"><span class="s">Re: Offsite agenda</span> – Let's lock the Thursday slot and send the invite today</span><span class="om-date">Aug 30</span></div>
+    <div class="om-row"><span class="om-check"></span><span class="om-star"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">Backblaze</span><span class="om-text"><span class="s">Your B2 usage report</span> – 41.2 GB stored, 3.1 GB egress, $0.29 this month</span><span class="om-date">Aug 29</span></div>
+    <div class="om-row u"><span class="om-check"></span><span class="om-star"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">Lena Fischer</span><span class="om-text"><span class="s">Photos from the hike</span> – Finally uploaded — the ridge shots came out beautifully</span><svg class="i" style="color:var(--fg-3)"><use href="#i-clip"/></svg><span class="om-date">Aug 29</span></div>
+    <div class="om-row"><span class="om-check"></span><span class="om-star"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">Let's Encrypt</span><span class="om-text"><span class="s">Certificate expiration notice for mail.example.com</span> – Your certificate will expire in 19 days</span><span class="om-date">Aug 28</span></div>
+    <div class="om-row"><span class="om-check"></span><span class="om-star"><svg class="i"><use href="#i-star"/></svg></span><span class="om-from">Ravi Menon</span><span class="om-text"><span class="s">Intro: Ravi ↔ Manish</span> – Manish, meet Ravi — he's been building JMAP tooling and wanted to compare notes</span><span class="om-date">Aug 27</span></div>
+  </div>
+
+  <div class="om-read">
+    <div class="om-rhead">
+      <h1>Re: Dinner on Saturday?</h1><span class="om-chip" style="background:#FFF1F2;color:#BE123C">Family</span>
+      <div class="om-acts"><div class="om-btn"><svg class="i"><use href="#i-archive"/></svg></div><div class="om-btn"><svg class="i"><use href="#i-trash"/></svg></div><div class="om-btn"><svg class="i"><use href="#i-mailopen"/></svg></div><div class="om-btn"><svg class="i"><use href="#i-clock"/></svg></div><div class="om-btn"><svg class="i"><use href="#i-tag"/></svg></div><div class="om-btn"><svg class="i"><use href="#i-more"/></svg></div></div>
+    </div>
+    <div class="om-msg col"><div class="om-mh"><div class="om-av" style="background:#4F46E5">M</div><div class="om-who"><b style="color:var(--fg)">Manish Sharma</b> &nbsp;<span>Hey — are you free Saturday evening? Was thinking we could try that new place…</span></div><div class="om-when">Aug 30</div></div></div>
+    <div class="om-msg">
+      <div class="om-mh"><div class="om-av" style="background:#0F9D78">D</div><div class="om-who"><b>Daniel Okafor</b> <span style="color:var(--fg-3)">&lt;daniel@okafor.dev&gt;</span><div>to me <svg class="i" style="width:12px;height:12px;display:inline;vertical-align:-2px"><use href="#i-chev"/></svg></div></div>
+        <div class="om-when">Yesterday, 8:41 PM <svg class="i"><use href="#i-star"/></svg><svg class="i"><use href="#i-reply"/></svg><svg class="i"><use href="#i-more"/></svg></div></div>
+      <div class="om-body"><p>Sounds great — 7pm works. I'll book the table at Ottolenghi; they had a spot when I checked last night.</p><p>Should I invite Priya and Tom too? Tom mentioned he's back from Lisbon on Friday.</p><p>Daniel</p><span class="om-trim">•••</span></div>
+    </div>
+    <div class="om-reply">
+      <div class="om-ghost"><svg class="i"><use href="#i-reply"/></svg>Reply</div>
+      <div class="om-ghost"><svg class="i"><use href="#i-replyall"/></svg>Reply all</div>
+      <div class="om-ghost"><svg class="i"><use href="#i-fwd"/></svg>Forward</div>
+      <div class="om-hint"><kbd>r</kbd><kbd>a</kbd><kbd>f</kbd></div>
+    </div>
+  </div>
+
+  <div class="om-toast">Conversation archived <a>Undo</a><kbd>z</kbd></div>
+</div></div>
+<p class="note">Type is Inter at 13 px; rows are 44 px (the "Default" density); radii 6–10 px; one accent. Nothing here is final colour — that's the next screen.</p>
+
+<h3>One decision: the default reading-pane mode on wide screens</h3>
+<p class="subtitle" style="margin-bottom:.75rem">Users can switch this in Quick settings; below ~1100 px everyone gets the list-first single pane. Click to choose.</p>
+<div class="options">
+  <div class="option" data-choice="right" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="thumb t-right"><i></i><i></i><i class="a"></i><i></i></div>
+    <div class="content"><h3>Right of the list (Recommended)</h3><p>What you see above. The convention of Fastmail, Outlook, Apple Mail and ihasmail; Gmail offers it. Triage and read without losing your place.</p></div>
+  </div>
+  <div class="option" data-choice="none" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="thumb t-none"><i></i><i></i><i class="a"></i></div>
+    <div class="content"><h3>No split — conversation replaces the list</h3><p>Gmail's default and Superhuman's "one thing at a time". Wider rows and a calmer screen; costs a keystroke (<kbd style="font-size:.7rem">u</kbd>) to get back.</p></div>
+  </div>
+  <div class="option" data-choice="below" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="thumb t-below"><i></i><i></i><i class="a"></i><i></i></div>
+    <div class="content"><h3>Below the list</h3><p>Outlook-classic. Full-width rows for long subjects; shallower reading area.</p></div>
+  </div>
+</div>

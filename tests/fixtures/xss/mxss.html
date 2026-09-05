@@ -1,0 +1,27 @@
+<!-- family: mutation XSS -- parser confusion between the sanitiser's parse
+     and the browser's re-parse of the sanitiser's output.
+     These are the shapes that historically broke DOMPurify and every
+     regex-based cleaner: an element whose content model is raw text
+     (noscript, title, style, textarea, xmp) contains a string that is inert
+     while it stays inside that element and becomes live markup the moment
+     the element around it is removed or moved. The defence is that all five
+     are in CLEAN_CONTENT_TAGS -- tag AND contents dropped -- so there is
+     never a stripped-wrapper step where the inner text is re-parsed. -->
+<noscript><p title="</noscript><img src=x onerror=alert(1)>"></noscript>
+<noscript><style></noscript><img src=x onerror=alert(1)></style></noscript>
+<title><img src=x onerror=alert(1)></title>
+<title></title><img src=x onerror=alert(1)>
+<svg></p><style><a id="</style><img src=1 onerror=alert(1)>"></style></svg>
+<xmp><p title="</xmp><img src=x onerror=alert(1)>"></xmp>
+<textarea><img src=x onerror=alert(1)></textarea>
+<textarea></textarea><img src=x onerror=alert(1)>
+<plaintext><img src=x onerror=alert(1)>
+<template><script>alert(1)</script></template>
+<template><img src=x onerror=alert(1)></template>
+<style><style /><img src=x onerror=alert(1)>
+<listing><img src=x onerror=alert(1)></listing>
+<p><math><mi//xlink:href="data:x,<script>alert(1)</script>"></math></p>
+<form><math><mtext></form><form><mglyph><style></math><img src onerror=alert(1)>
+<table><caption><svg><foreignObject><p></p><style><img src=x onerror=alert(1)>
+<select><noembed></select><img src=x onerror=alert(1)>
+<option><style></option></select><img src=x onerror=alert(1)></style>

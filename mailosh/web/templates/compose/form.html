@@ -1,0 +1,271 @@
+{# The compose component itself (design spec §8) — the fields, the editor,
+   the attachment row and the bottom toolbar. `compose/dock.html` and
+   `compose/inline.html` are the two frames around it and are the *only*
+   difference between a corner dock and a reply card at the end of a
+   conversation; everything a reader actually types into is here, once.
+
+   ---------------------------------------------------------------------
+   Why this is markup and `static/js/compose.js` is behaviour
+
+   The app's CSP is `script-src 'self'` with no `'unsafe-eval'`, and what
+   is vendored is Alpine's **CSP build**, so this file carries no inline
+   expression that needs an evaluator: no `hx-on:`, no `hx-vals='js:…'`,
+   no `x-on`/`x-show`, and no `x-data` object literal with methods in it.
+   The single directive here is a bare `x-data="compose"` naming a
+   component registered with `Alpine.data()` — which is exactly the shape
+   the CSP build exists to serve, and which gives the component the
+   `init`/`destroy` pair a Squire instance needs (spec §8: "owning a
+   Squire instance in a closure ... `destroy` -> `editor.destroy()`").
+   Everything else is `data-role`/`data-field` hooks read by one delegated
+   listener, the same model `static/js/actions.js` and `app.js` already
+   use.
+
+   ---------------------------------------------------------------------
+   Autosave is htmx's, and nothing else here is
+
+   `hx-post="/compose/draft"` with `hx-trigger="input delay:2s"` and
+   `hx-sync="this:replace"` is spec §8's autosave, verbatim: `input`
+   bubbles from every field *and* from the contenteditable editor up to
+   this form, `delay` restarts on each one (so the timer measures "since
+   the last edit", not "since the first"), and `this:replace` means a save
+   that is still in flight when the next one comes due is abandoned rather
+   than raced.
+
+   `hx-target` is this dock's own state chip and nothing else. No compose
+   request in this app ever targets `#main`, and none pushes a URL — a
+   draft in progress is not a place, and the inbox behind it must keep
+   working while it is open.
+
+   Send, discard and the attachment upload are `fetch`/`XHR` from
+   `compose.js` rather than htmx, for the reason `actions.js` documents
+   for its own six: those responses have no body to swap, and send in
+   particular is a *delayed* commit whose request must not exist until the
+   undo window has run out.
+
+   ---------------------------------------------------------------------
+   The body is seeded from a hidden input, not from the DOM
+
+   `data-html` carries the draft's HTML as an attribute value (escaped by
+   Jinja, so nothing in it is parsed as markup here) and `compose.js` puts
+   it through DOMPurify and into Squire. A reply quotes a message a
+   stranger wrote; rendering that HTML into this document even once —
+   before Squire has sanitised anything — is the one thing a mail client
+   may never do. #}
+
+{% macro recipient(field, person) %}
+  {# One chip. `static/js/compose.js` builds byte-identical markup when a
+     chip is committed client-side, so a reopened draft and a freshly
+     typed address are the same element with the same hooks. The hidden
+     input is what actually posts: `Name <addr>`, the exact spelling
+     `mailosh.web.compose._recipients` parses back. #}
+  <span class="recipient{% if person.external %} is-external{% endif %}"
+        data-recipient data-email="{{ person.email }}"
+        {% if person.external %}title="{{ person.email }} — outside your domain"{% else %}title="{{ person.email }}"{% endif %}>
+    <span class="recipient-avatar" aria-hidden="true"
+          style="background: var(--label-{{ none | label_color(person.email) }})">{{- person.name | initials(person.email) -}}</span>
+    <span class="recipient-label">{{ person.name or person.email }}</span>
+    <button type="button" class="recipient-x" data-role="unchip"
+            aria-label="Remove {{ person.name or person.email }}">{{ icon("x", class_="size-3") }}</button>
+    <input type="hidden" name="{{ field }}" value="{{ person.value }}">
+  </span>
+{% endmacro %}
+
+{% macro chipfield(field, label, people, dom_id, hidden) %}
+  <div class="compose-row" data-field="{{ field }}"{% if hidden %} hidden{% endif %}>
+    <label class="compose-key" for="{{ dom_id }}-{{ field }}">{{ label }}</label>
+    {# The chip box is the real field: chips and the entry input share one
+       box so the caret sits where the next address goes, and clicking
+       anywhere in the box focuses the entry (compose.js). #}
+    <div class="chipbox" data-chipbox>
+      {% for person in people %}{{ recipient(field, person) }}{% endfor %}
+      <input type="text" class="chip-entry" id="{{ dom_id }}-{{ field }}"
+             data-entry="{{ field }}" autocomplete="off" autocapitalize="off"
+             spellcheck="false" aria-label="{{ label }} recipients">
+    </div>
+    {% if field == "to" %}
+      <div class="compose-ccbcc">
+        <button type="button" class="compose-link" data-role="reveal" data-target="cc"
+                title="Add Cc (⌘⇧C)">Cc</button>
+        <button type="button" class="compose-link" data-role="reveal" data-target="bcc"
+                title="Add Bcc (⌘⇧B)">Bcc</button>
+      </div>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+<form class="compose-form" id="{{ dom_id }}-form"
+      hx-post="/compose/draft"
+      hx-trigger="input delay:2s"
+      hx-sync="this:replace"
+      hx-target="#{{ dom_id }}-state"
+      hx-swap="outerHTML"
+      hx-push-url="false"
+      autocomplete="off"
+      data-domain="{{ me_domain }}">
+  {# `dom_id` comes back on every response so a reply from the server can
+     only ever land in the dock that asked for it, even with three open. #}
+  <input type="hidden" name="dom_id" value="{{ dom_id }}">
+  {# Replaced out of band by `compose/state.html` after each save: JMAP
+     bodies are immutable, so every autosave creates a new draft and
+     destroys the previous one, and this is how the form learns the new
+     id without a line of JavaScript. #}
+  <input type="hidden" id="{{ dom_id }}-draft" name="draft_id" value="{{ draft_id or '' }}">
+  {% if draft.in_reply_to %}
+    <input type="hidden" name="in_reply_to" value="{{ draft.in_reply_to }}">
+  {% endif %}
+  {% for reference in draft.references %}
+    <input type="hidden" name="references" value="{{ reference }}">
+  {% endfor %}
+
+  <div class="compose-fields">
+    {{ chipfield("to", "To", to, dom_id, false) }}
+    {{ chipfield("cc", "Cc", cc, dom_id, not cc) }}
+    {{ chipfield("bcc", "Bcc", bcc, dom_id, not bcc) }}
+
+    {# Spec §8: the identity picker exists only when there is more than
+       one thing to pick. One address is not a choice, and a select with a
+       single option is a control that promises one. #}
+    {% if identities | length > 1 %}
+      <div class="compose-row" data-field="from">
+        <label class="compose-key" for="{{ dom_id }}-from">From</label>
+        <select class="compose-select" id="{{ dom_id }}-from" name="identity_id">
+          {% for identity in identities %}
+            <option value="{{ identity.id }}"{% if identity.id == draft.identity_id %} selected{% endif %}>
+              {{- identity.name ~ " <" ~ identity.email ~ ">" if identity.name else identity.email -}}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    <div class="compose-row" data-field="subject">
+      <label class="sr-only" for="{{ dom_id }}-subject">Subject</label>
+      <input class="compose-subject" id="{{ dom_id }}-subject" name="subject" type="text"
+             value="{{ draft.subject }}" placeholder="Subject" autocomplete="off">
+    </div>
+  </div>
+
+  <div class="compose-body">
+    {# Squire's root. Empty in the served HTML on purpose — see this
+       file's header: the draft's own HTML arrives as an attribute value
+       and is sanitised on the way in. `role="textbox"` is what a
+       contenteditable div owes assistive tech; the label is beside it in
+       `aria-label` because the visible chrome has no room for one. #}
+    <div class="compose-editor" id="{{ dom_id }}-editor" data-editor
+         role="textbox" aria-multiline="true" aria-label="Message body"></div>
+    <input type="hidden" name="html" value="{{ draft.html }}" data-html>
+    {# The plain-text half. Always submitted (it is the message's
+       `text/plain` alternative part, kept in step with the editor by
+       compose.js) and revealed as the only body when the plain-text
+       toggle is on. `display: none` still posts a field; `disabled`
+       would not, which is exactly why it is not used. #}
+    <label class="sr-only" for="{{ dom_id }}-plain">Message body, plain text</label>
+    <textarea class="compose-plain" id="{{ dom_id }}-plain" name="text"
+              data-plain spellcheck="true">{{ draft.text }}</textarea>
+  </div>
+
+  <div class="compose-attachments" id="{{ dom_id }}-attachments" data-attachments>
+    {% for attachment in attachments %}
+      {% include "compose/attachment.html" %}
+    {% endfor %}
+  </div>
+
+  {# Bottom toolbar, in Gmail's order (spec §8): Send, formatting, attach,
+     link, plain-text — then the autosave state and the trash at the right
+     edge, where Gmail also keeps discard. #}
+  <div class="compose-toolbar">
+    <button type="button" class="compose-send" data-role="send" title="Send (⌘↵)">
+      {{ icon("send", class_="size-4") }}<span>Send</span>
+    </button>
+
+    <div class="compose-tools">
+      <button type="button" class="btn-icon size-7" data-role="format"
+              aria-expanded="false" aria-controls="{{ dom_id }}-fmt"
+              title="Formatting options">
+        {{ icon("case-sensitive", class_="size-4", label="Formatting options") }}
+      </button>
+      <button type="button" class="btn-icon size-7" data-role="attach" title="Attach files">
+        {{ icon("paperclip", class_="size-4", label="Attach files") }}
+      </button>
+      <button type="button" class="btn-icon size-7" data-role="link" title="Insert link (⌘K)">
+        {{ icon("link", class_="size-4", label="Insert link") }}
+      </button>
+      <button type="button" class="btn-icon size-7" data-role="plaintext"
+              aria-pressed="false" title="Plain text mode">
+        {{ icon("type", class_="size-4", label="Plain text mode") }}
+      </button>
+    </div>
+
+    {# Spec §8's "Saving…"/"Saved" at the right. Both words ship; which
+       one shows is CSS reading `.htmx-request` on the form above and
+       `data-state` here, so the readout has no JavaScript behind it and
+       cannot be left claiming "Saving…" by a listener that missed an
+       event. #}
+    <span class="compose-state" id="{{ dom_id }}-state" data-state="idle"
+          role="status" aria-live="polite">
+      <span class="compose-state-saving">Saving…</span>
+      <span class="compose-state-saved">Saved</span>
+    </span>
+
+    <button type="button" class="btn-icon size-7 compose-discard" data-role="discard"
+            title="Discard draft">
+      {{ icon("trash-2", class_="size-4", label="Discard draft") }}
+    </button>
+  </div>
+
+  {# The formatting popover (spec §8: "B I U, size, bullets/numbers,
+     quote, link, clear"). A plain element rather than a `<dialog>`: a
+     modal here would take the keyboard away from the editor it formats,
+     and would freeze the inbox behind the dock — the one property this
+     whole component is built around. #}
+  <div class="fmt-popover" id="{{ dom_id }}-fmt" data-popover hidden>
+    <div class="fmt-group">
+      <button type="button" class="btn-icon size-7" data-fmt="bold" title="Bold (⌘B)">
+        {{ icon("bold", class_="size-4", label="Bold") }}
+      </button>
+      <button type="button" class="btn-icon size-7" data-fmt="italic" title="Italic (⌘I)">
+        {{ icon("italic", class_="size-4", label="Italic") }}
+      </button>
+      <button type="button" class="btn-icon size-7" data-fmt="underline" title="Underline (⌘U)">
+        {{ icon("underline", class_="size-4", label="Underline") }}
+      </button>
+    </div>
+    <span class="fmt-sep"></span>
+    <div class="fmt-group">
+      <button type="button" class="fmt-size" data-fmt="size" data-size="12px" title="Small">S</button>
+      <button type="button" class="fmt-size" data-fmt="size" data-size="14px" title="Normal">M</button>
+      <button type="button" class="fmt-size" data-fmt="size" data-size="18px" title="Large">L</button>
+    </div>
+    <span class="fmt-sep"></span>
+    <div class="fmt-group">
+      <button type="button" class="btn-icon size-7" data-fmt="ul" title="Bulleted list">
+        {{ icon("list", class_="size-4", label="Bulleted list") }}
+      </button>
+      <button type="button" class="btn-icon size-7" data-fmt="ol" title="Numbered list">
+        {{ icon("list-ordered", class_="size-4", label="Numbered list") }}
+      </button>
+      <button type="button" class="btn-icon size-7" data-fmt="quote" title="Quote">
+        {{ icon("quote", class_="size-4", label="Quote") }}
+      </button>
+    </div>
+    <span class="fmt-sep"></span>
+    <div class="fmt-group">
+      <button type="button" class="btn-icon size-7" data-fmt="link" title="Insert link (⌘K)">
+        {{ icon("link", class_="size-4", label="Insert link") }}
+      </button>
+      <button type="button" class="btn-icon size-7" data-fmt="unlink" title="Remove link">
+        {{ icon("unlink", class_="size-4", label="Remove link") }}
+      </button>
+      <button type="button" class="btn-icon size-7" data-fmt="clear" title="Clear formatting">
+        {{ icon("remove-formatting", class_="size-4", label="Clear formatting") }}
+      </button>
+    </div>
+  </div>
+</form>
+
+{# Outside the form, deliberately. A `<input type="file">` inside it would
+   turn every two-second autosave into a multipart POST carrying the whole
+   attachment again; the upload has its own route, its own XHR and its own
+   progress bar (`compose.js`). #}
+<input type="file" class="sr-only" id="{{ dom_id }}-file" data-file multiple
+       tabindex="-1" aria-hidden="true">

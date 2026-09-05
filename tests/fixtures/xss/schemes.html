@@ -1,0 +1,33 @@
+<!-- family: URL schemes.
+     nh3's url_schemes check is GLOBAL, not per tag, and it runs on the raw
+     attribute value before the attribute filter sees it. Every entry below
+     targets one of the two seams: a scheme nh3 folds away by itself
+     (javascript with an embedded tab), or a scheme that is legitimately in
+     url_schemes for one tag and must be refused on another (data:, cid:). -->
+<a href="javascript:alert(1)">plain</a>
+<a href="JaVaScRiPt:alert(1)">mixed case</a>
+<a href="java&#09;script:alert(1)">tab entity inside the scheme</a>
+<a href="java	script:alert(1)">literal tab inside the scheme</a>
+<a href="java&#10;script:alert(1)">newline entity inside the scheme</a>
+<a href="  javascript:alert(1)  ">leading and trailing whitespace</a>
+<a href="&#106;avascript:alert(1)">first letter as an entity</a>
+<a href="vbscript:msgbox(1)">vbscript</a>
+<a href="livescript:alert(1)">livescript</a>
+<a href="file:///etc/passwd">file</a>
+<a href="//evil.test/x">protocol-relative</a>
+<a href="/relative/path">root-relative</a>
+<a href="#anchor">fragment</a>
+<a href="cid:logo@mail">cid on an anchor is not an inline image</a>
+<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">data:text/html on an anchor</a>
+<a href="data:image/png;base64,iVBORw0KGgo=">even an image data: uri is not a navigation target</a>
+<img src="data:text/html,<script>alert(1)</script>">
+<img src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' onload='alert(1)'/>">
+<img src="data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+PC9zdmc+">
+<img src="javascript:alert(1)">
+<img src="cid:missing@mail">
+<img src="//evil.test/pixel.gif">
+<object data="javascript:alert(1)"></object>
+<embed src="javascript:alert(1)">
+<blockquote cite="javascript:alert(1)">q</blockquote>
+<q cite="javascript:alert(1)">q</q>
+<del cite="javascript:alert(1)">d</del>

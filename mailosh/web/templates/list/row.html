@@ -1,0 +1,169 @@
+{# One conversation row (spec §5.3, mockup layout.html `.om-row`) — the
+   markup contract Tasks 9-11 bind to, so the attribute set here is
+   deliberate rather than incidental:
+
+   `data-id` is the thread id every selection/keyboard operation keys off;
+   `data-email-ids` is the *whole* conversation, which is what an action
+   operates on, while `data-count` is the number of messages in the mailbox
+   being viewed (`ThreadRow.count`) — never `len(email_ids)`, which spans
+   messages that are not in this view at all.
+
+   `role="row"` + `aria-selected` complete the roving-tabindex grid
+   `list/page.html` opens. The roving `tabindex` starts here rather than in
+   JS: `list.render()` in app.js only ran on `htmx:afterSettle`, which does
+   not fire on a first full page load, so the shipped page contained zero
+   `tabindex="0"` and the list could not be reached by Tab at all (review
+   finding B1). The first row of a *page* render carries the 0 — that is
+   the only render that can be the whole document. A `standalone` render is
+   the `/rows` fragment, which is either the endless-scroll append (where a
+   second 0 would be wrong) or the `mail:changed` refresh (which cannot
+   happen without JS at all); app.js owns the tab stop in both, as it does
+   for every row after the first.
+
+   Row controls (check, star, hover actions) carry a `data-action` hook and
+   the keyboard hint in their tooltip (spec §6.1's "Archive (e)"). One
+   delegated listener in static/js/actions.js reads those hooks and runs the
+   action, and static/js/keys.js's registry reaches the same code from the
+   keyboard. Nothing has to stop their clicks from also opening the
+   conversation: they are siblings of the stretched anchor below and paint
+   above it, so a click on one never reaches it.
+
+   Every one of them is `tabindex="-1"`, which is the other half of the grid
+   the row opens. They were all natively focusable, and `.row:focus-within`
+   *revealed* the three hover actions part-way through a traversal, so a
+   measured tab-walk stopped five times per row — roughly 251 stops on a
+   50-row page, for a list whose focused row then did nothing, because
+   nothing bound `Enter`. In an ARIA grid the row is the tab stop and the
+   arrow keys reach its cells: `ArrowRight`/`ArrowLeft` walk these controls
+   (app.js), `Enter`/`o` opens the conversation (keys.js).
+
+   Two of them are two-way, and each says so in the DOM rather than needing
+   the client to guess: the star's `aria-pressed` is what turns a click into
+   `on=0` instead of `on=1`, and `.row.is-unread` is what picks between the
+   pair of mail buttons at the end of the row. #}
+<div id="row-{{ row.thread_id }}"
+     class="row{% if row.unread %} is-unread{% endif %}"
+     role="row"
+     tabindex="{{ '0' if not standalone and row.thread_id == page.rows[0].thread_id else '-1' }}"
+     data-id="{{ row.thread_id }}"
+     data-email-ids="{{ row.email_ids | join(',') }}"
+     data-count="{{ row.count }}"
+     aria-selected="false"
+     {% if row.thread_id == open_thread_id %}aria-current="true"{% endif %}>
+
+  {# The row's real click target (review finding B2). A bare `<div>` with
+     `hx-get` had no pointer cursor and did nothing at all on ⌘/middle-click,
+     "Open link in new tab", or with JS off — so the primary target is an
+     anchor, stretched over the whole row by `.row-link` and sitting under
+     the row's own controls.
+
+     `hx-boost` rather than `hx-get`: htmx hands a ⌘/Ctrl-click on a
+     *boosted* anchor straight back to the browser (its `shouldCancel` would
+     otherwise `preventDefault()` a modifier click on any `hx-get` anchor),
+     while a plain click still swaps `#main` in place exactly as before.
+     That early return covers ⌘/Ctrl only, so Shift- and Alt-click are
+     restored by app.js's delegated capture listener instead; middle-click
+     never needed anything, being `auxclick`, which htmx does not bind.
+     `preload="mousedown"` (spec §6.4) moves here with it — the preload
+     extension follows `hx-boost` to the same htmx GET it used to make.
+
+     `aria-hidden` + `tabindex="-1"`: the row itself is the grid's operable
+     unit and already exposes the subject as a cell, so an extra named link
+     on every row would be pure duplication in the accessibility tree. It is
+     a pointer/native-navigation affordance only.
+
+     `?key=&pos=` is the other end of the conversation view's position
+     readout: this row is the only thing that knows where in the mailbox it
+     sat, and handing that over is what saves `/t/{id}` a search through a
+     mailbox for a thread that genuinely lives in several. Both travel or
+     neither is useful — a position names a place in no particular mailbox
+     — and `mailosh.web.mail` validates `key` against the nav exactly as
+     `/mail/{key}` does before either reaches a query. #}
+  {# A draft is not a conversation to read, it is a message to keep writing,
+     so in Drafts the row reopens the dock instead of navigating. It carries
+     no htmx attributes of its own: `data-compose-draft` routes it through
+     `compose.js`'s `open()`, which owns the three-dock limit. The `href`
+     stays real so a modifier click is still a modifier click. #}
+  {% if key == "drafts" %}
+  <a class="row-link"
+     href="/compose/{{ row.latest_email_id }}"
+     data-compose-draft="{{ row.latest_email_id }}"
+     tabindex="-1"
+     aria-hidden="true"></a>
+  {% else %}
+  <a class="row-link"
+     href="/t/{{ row.thread_id }}?key={{ key | urlencode }}&amp;pos={{ pos }}"
+     hx-boost="true"
+     hx-target="#main"
+     hx-swap="morph:innerHTML show:none"
+     hx-push-url="true"
+     preload="mousedown"
+     tabindex="-1"
+     aria-hidden="true"></a>
+  {% endif %}
+
+  <span class="row-controls" role="gridcell">
+    <button type="button" class="row-check" aria-label="Select conversation"
+            aria-pressed="false" data-action="select" tabindex="-1" title="Select (x)">
+      {{ icon("check", class_="size-3") }}
+    </button>
+    <button type="button" class="row-star{% if row.starred %} is-on{% endif %}"
+            aria-label="Star conversation" aria-pressed="{{ 'true' if row.starred else 'false' }}"
+            data-action="star" tabindex="-1" title="Star (s)">
+      {{ icon("star", class_="size-4") }}
+    </button>
+  </span>
+
+  <span class="row-from" role="gridcell">{{ row.senders }}</span>
+
+  <span class="row-text" role="gridcell">
+    <span class="row-subject">{{ row.subject }}</span><span class="row-preview">{{ row.preview }}</span>
+  </span>
+
+  <span class="row-meta" role="gridcell">
+    {% if row.chips %}
+      <span class="row-chips">
+        {% for chip in row.chips[:2] %}
+          {% set color = chip.color | label_color(chip.mailbox_id) %}
+          {# The chip's colour is handed to CSS as a pair of custom properties
+             rather than a finished background/color: `--chip` is the wash
+             (14% light / 18% dark) and `--chip-ink` the text, spec §4.1's
+             "the colour's ink shade (light) or the light shade (dark)". The
+             ink is a real token, not a `color-mix` off `--chip`: a mix
+             cannot clear 4.5:1 on all four row grounds for the light half
+             of the palette (styles/input.css `--label-*-ink`). #}
+          <span class="chip" style="--chip: var(--label-{{ color }}); --chip-ink: var(--label-{{ color }}-ink)">{{ chip.name }}</span>
+        {% endfor %}
+        {% if row.chips | length > 2 %}
+          <span class="chip chip-more">+{{ row.chips | length - 2 }}</span>
+        {% endif %}
+      </span>
+    {% endif %}
+    {% if row.has_attachment %}{{ icon("paperclip", class_="size-4 text-icon-quiet", label="Has attachment") }}{% endif %}
+    <span class="row-end">
+      <time class="row-date" datetime="{{ row.received_at.isoformat() }}">{{ row.date_display }}</time>
+      <span class="row-actions">
+        <button type="button" class="btn-icon size-7" data-action="archive" tabindex="-1" title="Archive (e)">
+          {{ icon("archive", class_="size-4", label="Archive") }}
+        </button>
+        <button type="button" class="btn-icon size-7" data-action="delete" tabindex="-1" title="Delete (#)">
+          {{ icon("trash-2", class_="size-4", label="Delete") }}
+        </button>
+        {# Both directions ship on every row and `.row.is-unread` picks the
+           one that applies (`.act-read`/`.act-unread` in styles/input.css).
+           A Jinja `{% if row.unread %}` here would have been one button
+           fewer per row, but it would also have made the optimistic
+           mark-as-read in actions.js a DOM rebuild — a new icon, label and
+           `data-action` — instead of the single class flip that already
+           drives the row's weights and date. State the row can be in
+           belongs in CSS; state the server knows belongs in the template. #}
+        <button type="button" class="btn-icon size-7 act-read" data-action="read" tabindex="-1" title="Mark as read (Shift+I)">
+          {{ icon("mail-open", class_="size-4", label="Mark as read") }}
+        </button>
+        <button type="button" class="btn-icon size-7 act-unread" data-action="unread" tabindex="-1" title="Mark as unread (Shift+U)">
+          {{ icon("mail", class_="size-4", label="Mark as unread") }}
+        </button>
+      </span>
+    </span>
+  </span>
+</div>

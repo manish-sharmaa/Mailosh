@@ -1,0 +1,124 @@
+{# One label's hover menu (spec §5.2: "hover ⋮ → colour / show / hide /
+   show if unread / edit / remove").
+
+   Fetched on demand into the popover `static/js/labels.js` owns, for the
+   same reason the picker is: twelve swatches, three visibility choices, a
+   rename field and a nest chooser rendered inside every nav row would put
+   that markup in the document once per label, permanently, for a control
+   used seconds at a time.
+
+   Every control here posts through `labels.js`'s own `fetch` (CSRF from
+   the layout's `<meta name="csrf-token">`, exactly as `actions.js` does),
+   never through an inline handler — `script-src 'self'` with no
+   `'unsafe-eval'` rules out `hx-on:`/`hx-vals='js:…'`, and a `data-role`
+   hook plus a delegated listener needs neither. #}
+<div class="lm" data-label="{{ plan.mailbox_id }}" data-name="{{ plan.name }}">
+  <div class="lm-head">
+    <h2 class="lm-title">{{ plan.name }}</h2>
+    <button type="button" class="btn-icon size-7" data-role="lm-close" title="Close (Esc)">
+      {{ icon("x", class_="size-4", label="Close") }}
+    </button>
+  </div>
+
+  <form class="lm-field" data-role="lm-rename">
+    <label class="lm-label" for="lm-name">Name</label>
+    <div class="lm-inline">
+      <input id="lm-name" class="lm-input" name="name" type="text" value="{{ plan.name }}"
+             maxlength="100" autocomplete="off" spellcheck="false">
+      <button type="submit" class="lp-btn">Rename</button>
+    </div>
+  </form>
+
+  <div class="lm-field">
+    <span class="lm-label">Colour</span>
+    <div class="lm-swatches">
+      {% for name in colors %}
+        {# The colour reaches CSS as a `var(--label-…)` reference built from
+           a palette *name*, never as a stored value interpolated into a
+           style attribute — `mailosh.ui.format.LABEL_COLORS` is the whole
+           vocabulary and `POST /labels/{id}/meta` refuses anything else. #}
+        <button type="button"
+                class="lm-swatch{% if name == color %} is-on{% endif %}"
+                style="background: var(--label-{{ name }})"
+                data-role="lm-color" data-color="{{ name }}"
+                aria-pressed="{{ 'true' if name == color else 'false' }}"
+                title="{{ name | capitalize }}">
+          <span class="sr-only">{{ name }}</span>
+        </button>
+      {% endfor %}
+      <button type="button" class="lm-swatch lm-swatch-none{% if not color %} is-on{% endif %}"
+              data-role="lm-color-clear" aria-pressed="{{ 'true' if not color else 'false' }}"
+              title="No colour">
+        <span class="sr-only">No colour</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="lm-field">
+    <span class="lm-label">In the sidebar</span>
+    <div class="segmented">
+      {% for value, option in visibilities %}
+        <label class="segment">
+          <input type="radio" name="visibility" value="{{ value }}"
+                 data-role="lm-visibility"{% if value == visibility %} checked{% endif %}>
+          <span class="segment-face">{{ option }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="lm-field">
+    <label class="lm-label" for="lm-parent">Nested under</label>
+    {# The label's own subtree is *not* filtered out of this list. RFC 8621
+       §2 makes the server the authority on what a cycle is, and
+       `mailosh.services.labels.nest_label` deliberately does not re-derive
+       that check — a local filter here could disagree with it, and the
+       disagreement would show up as a move the UI silently refuses for a
+       reason nobody can see. What the reader gets instead is the server's
+       refusal, in English: "A label can't be nested inside itself." #}
+    <select id="lm-parent" class="lm-select" data-role="lm-nest">
+      <option value=""{% if not current_parent %} selected{% endif %}>Top level</option>
+      {% for parent in parents %}
+        <option value="{{ parent.id }}"{% if parent.id == current_parent %} selected{% endif %}>
+          {{ "— " * parent.depth }}{{ parent.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="lm-danger">
+    {# The confirmation says what will happen, and it says it about *this*
+       label's real mail. `plan.messages` is `Mailbox.total_emails`, already
+       on the mailbox this render fetched, so the number costs no extra
+       request.
+
+       The sentence about messages that are only in this label is the whole
+       point of the confirmation (design spec §10: "conversations keep their
+       other labels"). Deleting a label removes it from every message and
+       destroys nothing: a message that has other mailboxes simply loses one,
+       and a message that has none left moves to Archive rather than being
+       left in no mailbox at all — which RFC 8621 §4.1 forbids, and which
+       would be the one way a label delete could lose mail. #}
+    {% if plan.children %}
+      <p class="lm-note">
+        “{{ plan.name }}” has {{ plan.children | length }}
+        nested label{{ '' if plan.children | length == 1 else 's' }}
+        ({{ plan.children | join(', ') }}). Delete or move {{ 'it' if plan.children | length == 1 else 'them' }}
+        before deleting this one.
+      </p>
+      <button type="button" class="lp-btn is-danger" disabled aria-disabled="true">Delete label</button>
+    {% else %}
+      <p class="lm-note">
+        {% if plan.messages %}
+          Deleting removes this label from
+          {{ plan.messages }} message{{ '' if plan.messages == 1 else 's' }};
+          they keep their other labels. Any message left with none moves to Archive.
+        {% else %}
+          Nothing is filed under this label.
+        {% endif %}
+        No mail is deleted. This can't be undone.
+      </p>
+      <button type="button" class="lp-btn is-danger" data-role="lm-delete">Delete label</button>
+    {% endif %}
+  </div>
+</div>

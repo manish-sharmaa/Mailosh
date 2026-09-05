@@ -1,0 +1,9 @@
+# Everything hidden at the context root: .env, .git, .venv, caches, and
+# whatever local scratch or editor working directories happen to exist.
+# Nothing the image needs is hidden, so excluding the lot is both smaller
+# and safer than maintaining a list that has to be remembered every time a
+# new tool drops a dotfile here.
+.*
+
+__pycache__/
+*.pyc

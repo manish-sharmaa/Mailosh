@@ -1,0 +1,46 @@
+{% extends layout %}
+
+{# The results page (spec §10). One template, two shapes — `layout` is
+   `layouts/app.html` for a full navigation and `layouts/fragment.html`
+   when htmx asked for the `#main` fragment — exactly as `list/page.html`
+   works, so the markup exists once.
+
+   Below the chips and the hints it is the list, unchanged: same `#list`
+   grid, same `mail:changed` self-refresh, same skeleton indicator, same
+   rows. The only difference from a mailbox view is which URL `#list`
+   re-GETs, which is the one thing a search genuinely has that a mailbox
+   does not. #}
+
+{% block title %}{% if q %}{{ q }} — Search{% else %}Search{% endif %} — Mailosh{% endblock %}
+{% block topbar %}{% include "shell/topbar.html" %}{% endblock %}
+{% block nav %}{% include "shell/nav.html" %}{% endblock %}
+
+{% block main %}
+  {# `data-search-query` is `static/js/search.js`'s only input: after a
+     swap it records the query in this browser's recent searches and puts
+     it back in the pill, which the swap did not touch (the top bar lives
+     outside `#main`). Carrying it in the DOM rather than in a header
+     means it survives every route that renders this page — the pager,
+     the chips, `refine` and `build` alike. #}
+  <div class="search-head" data-search-query="{{ q }}">
+    {% include "search/chips.html" %}
+    {% include "search/hints.html" %}
+  </div>
+  {% include "search/toolbar.html" %}
+  <div class="list-body">
+    <div id="list"
+         class="list"
+         role="grid"
+         aria-multiselectable="true"
+         aria-label="Search results"
+         hx-get="/search/rows?q={{ q | urlencode }}&position={{ page.position }}&limit={{ page.limit }}"
+         hx-trigger="mail:changed from:body"
+         hx-swap="morph:innerHTML show:none"
+         hx-indicator="#list-skeleton">
+      {% include "search/rows.html" %}
+    </div>
+    {% include "list/skeleton.html" %}
+  </div>
+{% endblock %}
+
+{% block oob %}{% with oob = true %}{% include "shell/nav.html" %}{% endwith %}{% endblock %}

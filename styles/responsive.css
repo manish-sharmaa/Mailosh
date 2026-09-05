@@ -1,0 +1,508 @@
+/* Responsive and touch (design spec §11, breakpoints per §4.3).
+
+   Every breakpoint override lives here rather than beside its component, so
+   the mobile layout can be read, reviewed and changed as one thing instead
+   of being reconstructed from forty scattered media queries. Ordinary
+   component rules stay in `input.css`; this file only ever narrows them.
+
+   `@import`ed into `input.css` and compiled by the same `make css`, so every
+   theme token and density variable is in scope. Touch affordances are keyed
+   on `(pointer: coarse)`, never on width — a narrow window on a desktop is
+   not a phone.
+
+   ---------------------------------------------------------------------
+   Why nothing here is inside `@layer components`
+
+   `input.css` starts with `@import "tailwindcss"`, which declares
+   `@layer theme, base, components, utilities` — and an *unlayered* rule
+   beats every layered one no matter how specific the layered one is. So
+   the rules below win over `.row`, `.nav-item`, `.compose` and over
+   Tailwind's own `grid-cols-[224px_1fr]` without a single `!important`
+   and without inflating a selector to outrank anything. They are all
+   inside media queries, so at widths they do not claim they contribute
+   nothing at all.
+
+   The three shapes (spec §4.3):
+
+     >= 1100px   nav 224px + main. The layout the app is designed at; it
+                 is written as utilities in `layouts/app.html` and this
+                 file says nothing about it.
+      < 1100px   nav collapses to a 64px icon rail. Layout only — every
+                 item keeps its accessible name.
+      < 768px    nav becomes a drawer over the list, list and conversation
+                 are separate screens, compose is full-screen, the
+                 selection's action bar sticks to the bottom, and touch
+                 targets are 44px.
+
+   ...and one axis that is not a width at all: `(pointer: coarse)` removes
+   the affordances a finger cannot perform and enlarges the ones it must
+   hit, at any width, because a tablet at 1024px is a touch device and a
+   600px window on a laptop is not.
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   Frame plumbing that is true at every width
+   ------------------------------------------------------------------------- */
+
+/* Safe areas (spec §11). `layouts/app.html` ships `viewport-fit=cover`, so
+   on a notched phone the page owns the whole screen and these insets are
+   what keep the frame out from under the cutout, the rounded corners and
+   the home indicator. The bottom is deliberately NOT paid here: surfaces
+   that touch the bottom edge (the drawer, the bottom action bar, the
+   full-screen dock, the list's own scroll end) pay it themselves, so their
+   background extends under the indicator instead of stopping short of it.
+
+   Every one of these resolves to `0px` on hardware with no cutout — which
+   is every desktop and most phones — so this adds no dead space anywhere.
+   The explicit `0px` fallback is not decoration either: `env()` with no
+   fallback makes the whole declaration invalid where the function is
+   unknown, which would drop the padding *and* whatever it was written
+   beside. */
+.app-grid {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+/* `shell/nav.html` sends a nested label's depth as a number rather than as
+   inline `padding-left`, because an inline style outranks every stylesheet
+   including this one — the icon rail below could not have un-indented it.
+   This is the rule that turns the number back into the 14px-per-level
+   indent the 224px sidebar has always had. */
+.nav-row {
+  padding-left: calc(var(--nav-depth, 0) * 14px);
+}
+
+/* The drawer's three parts are inert markup until 768px: hidden, holding no
+   space, taking no focus. `visibility` rather than `display` on the panel
+   itself is what lets it animate, and is also what keeps a closed drawer
+   out of the tab order — a `translateX(-100%)` panel is off screen but
+   still focusable, which would put the whole nav between the top bar and
+   the list for a Tab user who cannot see any of it. */
+.nav-drawer-toggle,
+.nav-drawer-head {
+  display: none;
+}
+.nav-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  visibility: hidden;
+  opacity: 0;
+  background: rgb(0 0 0 / 45%);
+}
+
+/* -------------------------------------------------------------------------
+   < 1100px — the 64px icon rail (spec §4.3)
+   ------------------------------------------------------------------------- */
+
+@media (min-width: 768px) and (max-width: 1099.98px) {
+  /* `minmax(0, 1fr)`, never a bare `1fr`. A `1fr` track is
+     `minmax(auto, 1fr)`, and that `auto` floor is the track's *min-content*
+     — so the whole grid grows past the viewport if any item in it refuses
+     to shrink. The top bar is exactly such an item: it is a nowrap flex
+     row whose search `<input>` contributes an intrinsic width of its own,
+     which measured 519px of min-content against a 500px window and pushed
+     the list, its rows and the avatar off the right edge with the viewport
+     clipping rather than scrolling (so nothing looked broken — the date
+     column was simply gone). Explicitly flooring the track at 0 is what
+     lets the search pill shrink instead. */
+  .app-grid {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  /* Visually hidden, not hidden. `display: none` on these would strip the
+     accessible name off every nav item at once — the icons are all
+     `aria-hidden` (spec §4.2), so the label *is* the name, and a rail of
+     eleven unnamed links is what "collapses to an icon rail" must never
+     mean. Clipped instead: still rendered, still read, zero pixels. The
+     `title` `shell/nav.html` adds is the pointer's half of the same
+     answer. */
+  .nav-label,
+  .nav-heading,
+  .compose-btn .kbd {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .app-nav {
+    padding-right: 8px;
+    padding-left: calc(8px + env(safe-area-inset-left, 0px));
+  }
+
+  .compose-btn {
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    margin: 2px auto 12px;
+    padding: 0;
+  }
+
+  .nav-item {
+    position: relative;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  /* Indentation is meaningless once the name is gone, and it would push
+     the one thing still visible — the colour dot — off centre by 14px per
+     level. */
+  .nav-row {
+    padding-left: 0;
+  }
+
+  /* The ⋮ is a hover affordance that needs a name beside it to make sense
+     and 24px of row it no longer has. The label menu is still on `l`, in
+     ⌘K and on the labels settings page. */
+  .nav-menu {
+    display: none;
+  }
+
+  /* The unread count becomes a badge over the icon's top-right corner.
+     `--accent` rather than `--accent-soft`: the active item is already
+     painted `--accent-soft`, so a soft badge on it would be invisible. */
+  .nav-count {
+    position: absolute;
+    top: -1px;
+    right: 4px;
+    min-width: 16px;
+    margin: 0;
+    padding: 0 4px;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 10px;
+    line-height: 16px;
+    text-align: center;
+  }
+
+  .nav-heading-row {
+    justify-content: center;
+    padding: 14px 0 4px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   < 768px — drawer nav, one screen at a time, thumb-sized targets
+   ------------------------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+  /* One column. The header and the offline banner carry `col-span-2`, which
+     on a one-column explicit grid would conjure an implicit second column
+     rather than span the width, so both are pinned to the full track list
+     instead. */
+  .app-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app-header,
+  .app-banner {
+    grid-column: 1 / -1;
+  }
+
+  /* The nav leaves the grid entirely: `position: fixed` takes it out of
+     flow, so `main` gets the whole column with no second track to size. */
+  .app-nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 46;
+    width: min(300px, 84vw);
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    padding-right: 8px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(8px + env(safe-area-inset-left, 0px));
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    box-shadow: var(--shadow-3);
+    visibility: hidden;
+    transform: translateX(-100%);
+    /* Visibility flips at the *end* of the close, so the panel is still
+       painted while it slides out — and at the *start* of the open, so it
+       is focusable the moment nav.js moves focus into it. */
+    transition:
+      transform var(--dur-3) var(--ease),
+      visibility 0s linear var(--dur-3);
+  }
+  .app-nav:focus {
+    outline: none;
+  }
+
+  :root[data-drawer=open] .app-nav {
+    visibility: visible;
+    transform: none;
+    transition:
+      transform var(--dur-3) var(--ease),
+      visibility 0s;
+  }
+  :root[data-drawer=open] .nav-scrim {
+    visibility: visible;
+    opacity: 1;
+    transition:
+      opacity var(--dur-3) var(--ease),
+      visibility 0s;
+  }
+  .nav-scrim {
+    transition:
+      opacity var(--dur-3) var(--ease),
+      visibility 0s linear var(--dur-3);
+  }
+
+  .nav-drawer-toggle {
+    display: inline-flex;
+  }
+  .nav-drawer-head {
+    display: flex;
+    flex: none;
+    justify-content: flex-end;
+    padding-bottom: 4px;
+  }
+
+  /* `shell/topbar.html`'s menu button is an `aria-disabled` placeholder for
+     spec §5.1's desktop rail toggle, which is a different feature and not
+     this pass's. It is hidden here so the phone frame never shows two
+     hamburgers, one of which does nothing. */
+  .app-header > button[aria-disabled=true] {
+    display: none;
+  }
+
+  /* The wordmark keeps its mark and loses its word: "Mailosh" is a bare
+     text node inside the link (not an element that could be hidden), so
+     the text is zeroed on the anchor and the image, which carries explicit
+     width/height attributes, is unaffected. The accessible name survives
+     in full. */
+  .app-header > a[href="/mail/inbox"] {
+    margin-right: 0;
+    font-size: 0;
+  }
+
+  /* Single pane: with no sidebar beside it, main's left border and its
+     top-left radius are drawing a seam that is not there. */
+  .app-main {
+    border-left: 0;
+    border-top-left-radius: 0;
+  }
+
+  /* Spec §4.3's "conversation slides over". `#main` is never replaced —
+     only its contents are morphed — so there is no new element to animate;
+     the animation is started by the selector *beginning to match* when a
+     conversation's `.thread-scroll` lands in it, and it is removed again on
+     the way back to the list. `@layer base`'s reduced-motion block zeroes
+     it with `!important`, so it needs no guard of its own. */
+  #main:has(> .thread-scroll) {
+    animation: screen-over var(--dur-3) var(--ease);
+  }
+
+  /* The list's last row must be able to clear the home indicator. */
+  .list {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Toolbars wrap rather than overflow. Eleven controls at 44px do not fit
+     390px in one line, and a bar that scrolls sideways hides actions with
+     no affordance saying so — a second row says it by existing. */
+  .list-toolbar {
+    height: auto;
+    min-height: 44px;
+    flex-wrap: wrap;
+    align-content: center;
+    padding-left: 8px;
+    row-gap: 2px;
+  }
+  /* Vertical rules between groups that no longer sit on one line. */
+  .toolbar-sep {
+    display: none;
+  }
+
+  /* Spec §11's bottom action bar. `list/toolbar.html` renders both bars and
+     Alpine shows one; the one with the actions in it is the second, and
+     under 768px it is re-ordered past the list to the bottom edge — where
+     a thumb is, and where the triage a selection exists for happens. The
+     safe-area padding is its own, so its surface runs under the home
+     indicator instead of stopping above it. */
+  #main > .list-body {
+    order: 1;
+  }
+  #main > .list-toolbar + .list-toolbar {
+    order: 2;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid var(--line);
+    border-bottom: 0;
+    background: var(--surface);
+  }
+
+  /* ---- 44px touch targets (spec §11) ---------------------------------- */
+
+  .btn-icon,
+  .nav-add,
+  .check-box {
+    width: 44px;
+    height: 44px;
+  }
+  .check-box svg {
+    width: 18px;
+    height: 18px;
+  }
+  .nav-item,
+  .compose-btn {
+    height: 44px;
+  }
+  .nav-menu {
+    width: 44px;
+    height: 44px;
+  }
+  .search-pill {
+    height: 44px;
+  }
+  /* The dock's own chrome. Send is a text button and the three head
+     controls are `.compose-head-btn`, so neither is reached by the
+     `.btn-icon` rule above — and on a phone the dock is the whole screen,
+     which makes these the only controls on it. */
+  .compose-send {
+    min-height: 44px;
+  }
+  .compose-head-btn {
+    width: 44px;
+    height: 44px;
+  }
+  /* ...except "Full screen", which under 768px is a button that cannot
+     change anything: the dock is already `inset: 0` at every `data-state`
+     but `minimized`, and this block's own rules are what make it so. A
+     control that provably does nothing is worse than one that is absent,
+     and it is 44px of a 390px bar. */
+  .compose[data-surface=dock] .compose-head-btn[data-role=expand] {
+    display: none;
+  }
+
+  /* The row's two controls are the exception: the checkbox draws a 16px
+     square that must stay 16px (a 44px checkbox reads as a button, not a
+     checkbox) and the row is only ~66px tall. So the checkbox keeps its
+     box and takes a 44px hit area from a pseudo-element — which hit-tests
+     as the button itself — while the star, which draws no box at all,
+     simply becomes 44px.
+
+     The 14px gap is measured, not guessed. The row's 14px left padding
+     puts the 16px checkbox at 14…30, so its 44px hit area centred on it
+     spans 0…44 — from the row's very edge. 14px of gap then starts the
+     star's own 44px box at exactly 44. The two areas tile with no overlap
+     and no gap, which `elementFromPoint` at ±21px around each centre
+     confirms; at 12px they overlapped by 2px and the star won the seam. */
+  .row-controls {
+    gap: 14px;
+  }
+  .row-check::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  .row-star {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+  }
+
+  /* ---- The row itself -------------------------------------------------- */
+
+  /* One line cannot hold sender + subject + snippet + date at 390px, so the
+     row becomes a two-line grid: controls down the left, sender and date on
+     the first line, subject/snippet across the second. `--row-h` stays the
+     floor rather than the height, so all three densities still differ —
+     Comfortable's second text line simply makes it taller. */
+  .row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "controls from meta"
+      "controls text text";
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 1px;
+    height: auto;
+    min-height: var(--row-h);
+    padding: 6px 12px 6px 14px;
+  }
+  .row-controls {
+    grid-area: controls;
+  }
+  .row-from {
+    grid-area: from;
+    width: auto;
+  }
+  .row-text {
+    grid-area: text;
+  }
+  .row-meta {
+    grid-area: meta;
+  }
+  /* Two chips plus a sender plus a date do not fit; the conversation shows
+     every label it has, one tap away. */
+  .row-chips {
+    display: none;
+  }
+}
+
+/* Declared outside `@layer` for the reason input.css's own keyframes are:
+   `@keyframes` is not a style rule and takes no part in the cascade, so a
+   layer would only hide it from a reader looking for it. */
+@keyframes screen-over {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+/* -------------------------------------------------------------------------
+   (pointer: coarse) — touch, at any width
+   ------------------------------------------------------------------------- */
+
+@media (pointer: coarse) {
+  /* The row's hover actions are revealed by `:hover`/`:focus-within` and
+     replace the date while they show. On a touch screen there is no hover
+     to reveal them with and nothing inside a `display: none` subtree can be
+     tapped to focus it, so they are not "hidden until hover" there — they
+     are unreachable, and the only thing the rule achieves is a date that
+     blinks out under a fingertip. Every one of those actions is on the row
+     when it is selected, in the conversation, and in ⌘K. */
+  .row:hover .row-actions,
+  .row:focus-within .row-actions {
+    display: none;
+  }
+  .row:hover .row-date,
+  .row:focus-within .row-date {
+    display: inline;
+  }
+
+  /* Keyboard hints in the chrome, on a device with no keyboard. Scoped to
+     the three places that advertise a shortcut beside a control — never
+     `.kbd` wholesale, which would empty the `?` overlay and the palette's
+     shortcut column, the two surfaces whose entire content is key chips. */
+  .compose-btn .kbd,
+  .list-toolbar .kbd,
+  .search-kbd {
+    display: none;
+  }
+
+  /* A tablet at 1024px is a touch device; a 600px window on a laptop is
+     not. Both of these are keyed here rather than on width for that
+     reason — the finger comes with the pointer, not with the viewport. */
+  .btn-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .nav-item {
+    height: 44px;
+  }
+}

@@ -1,0 +1,85 @@
+{# List toolbar, 44px (spec §5.3, mockup layout.html `.om-lbar`): tri-state
+   select-all, refresh, overflow, then the range and the pager.
+
+   **Two bars, one at a time.** With a selection the toolbar becomes the
+   selection's (`list/toolbar_selected.html`); with none it is this one.
+   Both are in the document and Alpine's `x-show` picks between them,
+   rather than htmx swapping one in: the swap would be a round trip for a
+   state the browser already knows, and it would fight the selection it was
+   rendering — every checkbox click would replace the toolbar under the
+   reader's pointer.
+
+   `x-show` reads `$store.list.count`, a plain number app.js writes in
+   `render()`, not `selected.size`. It is also written this way round on
+   purpose: this bar is the *default*, so it carries no `x-cloak` and is
+   visible before Alpine starts (and on a page whose Alpine never starts at
+   all), while the selection bar is cloaked and only ever appears once
+   there is something to show it for.
+
+   **The bare `x-data` is load-bearing.** Alpine only initializes trees
+   rooted at `[x-data]`/`[x-init]` — `start()` walks
+   `document.querySelectorAll(allSelectors())`, not the whole body — so a
+   standalone `x-show` is never evaluated at all. It does not warn and it
+   does not throw: the element simply keeps whatever the stylesheet gave
+   it, which for the cloaked bar means invisible forever. Checked in the
+   browser, where it was already failing exactly that quietly. Empty is the
+   right value: this bar's state lives in a store, not in a component, and
+   the CSP build allows no inline methods in `x-data` anyway. #}
+<div class="list-toolbar" x-data x-show="$store.list.count === 0">
+  {# Tri-state: both glyphs ship, CSS shows the one `aria-checked` calls for
+     (nothing at "false", a dash at "mixed", a tick at "true"). app.js's
+     `render()` sets the attribute on every `[data-role="select-all"]` in
+     the document — this one and the selection bar's — and a delegated
+     listener there turns a click into select-all/clear. #}
+  <button type="button" class="check-box" role="checkbox" aria-checked="false"
+          data-role="select-all" aria-label="Select all conversations">
+    {{ icon("check", class_="size-3 check-all") }}
+    {{ icon("minus", class_="size-3 check-some") }}
+  </button>
+
+  {# `data-role="refresh"` is app.js's hook for the same endless-scroll limit
+     bookkeeping it does for `#list` (review finding B3): once the sentinel
+     has appended past one page, re-fetching `limit=50` would morph the list
+     back to a single page under the reader. #}
+  <button type="button" class="btn-icon size-7" data-role="refresh"
+          title="Refresh"
+          hx-get="/mail/{{ key }}/rows?position={{ page.position }}&limit={{ page.limit }}"
+          hx-target="#list"
+          hx-swap="morph:innerHTML show:none"
+          hx-indicator="#list-skeleton">
+    {{ icon("refresh-cw", class_="size-4", label="Refresh") }}
+  </button>
+
+  <button type="button" class="btn-icon size-7" aria-disabled="true"
+          title="More list actions arrive with the command palette">
+    {{ icon("ellipsis-vertical", class_="size-4", label="More actions") }}
+  </button>
+
+  {# Its own file because `list/rows.html` renders it a second time, out of
+     band, to keep it honest after a swap that only replaced `#list`. #}
+  {% include "list/range.html" %}
+
+  {% if prev_position is not none %}
+    <a class="btn-icon size-7" title="Newer" rel="prev"
+       href="/mail/{{ key }}?position={{ prev_position }}"
+       hx-get="/mail/{{ key }}?position={{ prev_position }}&limit={{ page.limit }}"
+       hx-target="#main" hx-swap="morph:innerHTML show:none" hx-push-url="true"
+       hx-indicator="#list-skeleton">{{ icon("chevron-left", class_="size-4", label="Newer") }}</a>
+  {% else %}
+    {# `aria-disabled` rather than a compounding `opacity-40`: the disabled
+       treatment is a token colour now (polish v2 §2), so stacking opacity on
+       top of it would put the glyph back under 3:1. #}
+    <span class="btn-icon size-7" aria-disabled="true" aria-hidden="true">{{ icon("chevron-left", class_="size-4") }}</span>
+  {% endif %}
+  {% if next_position is not none %}
+    <a class="btn-icon size-7" title="Older" rel="next"
+       href="/mail/{{ key }}?position={{ next_position }}"
+       hx-get="/mail/{{ key }}?position={{ next_position }}&limit={{ page.limit }}"
+       hx-target="#main" hx-swap="morph:innerHTML show:none" hx-push-url="true"
+       hx-indicator="#list-skeleton">{{ icon("chevron-right", class_="size-4", label="Older") }}</a>
+  {% else %}
+    <span class="btn-icon size-7" aria-disabled="true" aria-hidden="true">{{ icon("chevron-right", class_="size-4") }}</span>
+  {% endif %}
+</div>
+
+{% include "list/toolbar_selected.html" %}

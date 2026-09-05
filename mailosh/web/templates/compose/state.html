@@ -1,0 +1,44 @@
+{# `POST /compose/draft`'s whole answer (design spec §8's autosave).
+
+   Two elements, and the second one is the point. JMAP bodies are
+   immutable, so each save is an `Email/set` create plus a destroy of the
+   previous draft — which means every save hands back a *new* id, and the
+   form has to be carrying it before the next save fires or the Drafts
+   folder fills up with one copy per keystroke pause.
+
+   The state chip is the swap target (`hx-target="#{dom_id}-state"`,
+   `hx-swap="outerHTML"`); the hidden input rides along as an out-of-band
+   swap matched by its own id. So the round trip closes with no JavaScript
+   in it at all — no `HX-Trigger` to listen for, no handler that can be
+   missed, nothing to go wrong in a dock whose module failed to load.
+
+   All three words are always in the markup and CSS picks one
+   (`.compose-state` in styles/input.css reads `data-state` here and
+   `.htmx-request` on the form): a readout driven by class toggles from a
+   listener is a readout that can be left saying "Saving…" forever when a
+   response never arrives.
+
+   **The error state exists because autosave fires every two seconds.** A
+   half-typed address is the normal condition of a To field, not an
+   exceptional one, so `mailosh.services.compose.InvalidAddress` reaching
+   this route is routine and must never be a 500 or a toast. It is a
+   sentence in the toolbar where "Saved" would be, plus `data-error-field`
+   and `data-error-address` — which is what lets `static/js/compose.js`
+   mark the one chip that is wrong instead of leaving the reader to find
+   it. The status is `200` for the same reason: htmx swaps a `2xx`, and
+   this fragment *is* how the reader is told. #}
+<span id="{{ dom_id }}-state" class="compose-state" data-state="{{ state }}"
+      {% if draft_id %}data-draft-id="{{ draft_id }}"{% endif %}
+      {% if problem and problem.field %}data-error-field="{{ problem.field }}"{% endif %}
+      {% if problem and problem.address %}data-error-address="{{ problem.address }}"{% endif %}
+      role="status" aria-live="polite">
+  <span class="compose-state-saving">Saving…</span>
+  <span class="compose-state-saved">Saved</span>
+  {% if problem %}
+    <span class="compose-state-error" title="{{ problem.message }}">{{ problem.message }}</span>
+  {% endif %}
+</span>
+{% if draft_id %}
+  <input type="hidden" id="{{ dom_id }}-draft" name="draft_id" value="{{ draft_id }}"
+         hx-swap-oob="true">
+{% endif %}

@@ -1,0 +1,66 @@
+{# The `to me ▾` recipient disclosure (spec §7), rendered per message.
+
+   A native `<details>`, like every other disclosure in this app: no JS, no
+   CSP exception under `script-src 'self'` (Alpine's CSP build would reject
+   the expression this needed anyway), and it opens with Enter/Space for
+   free. It sits *inside* the message card's expanded body rather than in
+   the `<summary>` that folds the card — nesting one disclosure inside
+   another's summary is invalid HTML, and a click meant for this popover
+   would have collapsed the whole message instead.
+
+   Rows are omitted, never blanked. `mailed_by` exists only when the message
+   carried a `Return-Path`, and `signed_by` only when its
+   `Authentication-Results` recorded a DKIM signature that *passed* — an
+   empty "signed-by —" row would be worse than no row, and a row built off a
+   `dkim=fail` would be a claim the message does not support. Cc/Bcc go the
+   same way. #}
+
+{% macro person(addr) -%}
+  {%- if addr.email | lower == me | lower -%}
+    me
+  {%- elif addr.name -%}
+    {{ addr.name }} &lt;{{ addr.email }}&gt;
+  {%- else -%}
+    {{ addr.email }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro people(addrs) -%}
+  {%- for addr in addrs -%}{{ person(addr) }}{{ ", " if not loop.last }}{%- endfor -%}
+{%- endmacro %}
+
+<details class="msg-details">
+  <summary class="msg-details-toggle">
+    {% if message.to %}
+      to {{ people(message.to) }}
+    {% else %}
+      {# A Bcc-only message really does arrive with an empty `to`. Saying so
+         is more honest than printing "to —" or hiding the disclosure that
+         holds the rest of the headers. #}
+      to undisclosed recipients
+    {% endif %}
+    {{ icon("chevron-down", class_="msg-details-chev") }}
+  </summary>
+  <dl class="msg-details-panel">
+    <div class="msg-details-row">
+      <dt>from</dt>
+      <dd>{{ message.from_name }}{% if message.from_email and message.from_email != message.from_name %} &lt;{{ message.from_email }}&gt;{% endif %}</dd>
+    </div>
+    {% if message.to %}
+      <div class="msg-details-row"><dt>to</dt><dd>{{ people(message.to) }}</dd></div>
+    {% endif %}
+    {% if message.cc %}
+      <div class="msg-details-row"><dt>cc</dt><dd>{{ people(message.cc) }}</dd></div>
+    {% endif %}
+    {% if message.bcc %}
+      <div class="msg-details-row"><dt>bcc</dt><dd>{{ people(message.bcc) }}</dd></div>
+    {% endif %}
+    <div class="msg-details-row"><dt>date</dt><dd>{{ message.date_full }}</dd></div>
+    {% if message.mailed_by %}
+      <div class="msg-details-row"><dt>mailed-by</dt><dd>{{ message.mailed_by }}</dd></div>
+    {% endif %}
+    {% if message.signed_by %}
+      <div class="msg-details-row"><dt>signed-by</dt><dd>{{ message.signed_by }}</dd></div>
+    {% endif %}
+  </dl>
+</details>

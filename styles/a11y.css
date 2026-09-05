@@ -1,0 +1,245 @@
+/* Accessibility (design spec §11, WCAG 2.2 AA).
+
+   Focus rings, the skip link, forced-colors support and any contrast
+   correction that is a rule rather than a token. Token changes belong in
+   `input.css` next to the palette they are part of — a colour defined in
+   two files is a colour that will disagree with itself.
+
+   `@import`ed into `input.css` and compiled by the same `make css`.
+
+   Everything here is deliberately **unlayered**. `input.css` puts its
+   design system in `@layer base`/`@layer components` and Tailwind puts its
+   utilities in `@layer utilities`; an unlayered rule outranks all of them
+   regardless of specificity, which is the behaviour an accessibility
+   override wants — these rules exist precisely to win against a component
+   that painted an affordance in a way a reader cannot perceive. */
+
+/* The skip link is NOT here. `layouts/app.html` owns it — markup and the
+   `.skip-link` utilities that position and reveal it — and its own comment
+   makes the point this file's header makes: a skip link defined in two
+   places is a skip link that will disagree with itself. A rule here would
+   also win by default, since everything in this file is unlayered and its
+   classes are Tailwind utilities. Audited and correct as it stands: the
+   link is the first focusable element, `<main>` carries `id="main"` and
+   `tabindex="-1"` so activating it moves focus rather than only scrolling,
+   and the focused state is a transform, so it no longer joins the flow of
+   an `overflow: hidden` body and pushes the app grid off the bottom. */
+
+/* ==========================================================================
+   Forced colors / Windows High Contrast (spec §11's "nothing disappears")
+
+   In forced-colors mode the UA overwrites `color`, `background-color`,
+   `border-color`, `outline-color`, `fill` and `stroke` with the user's
+   own palette and forces `box-shadow` to `none`. Every affordance this app
+   draws with a background wash, a `box-shadow` bar or a hue alone
+   therefore stops existing: the keyboard cursor on a row, the selected
+   row, the open conversation, hover and press on every icon button, the
+   accent buttons, the star, the nav pill, label chips, the palette's
+   active option, the segmented controls and the settings switch.
+
+   The fix is the same shape everywhere — re-draw the state with something
+   forced-colors keeps (an `outline`, a `border`, or an explicit system
+   colour, all of which authors are allowed to set in this mode) rather
+   than with the fill that is about to be thrown away. `Highlight` is the
+   user's own selection colour, so it is what a state marker should be.
+   ========================================================================== */
+@media (forced-colors: active) {
+  /* The ring itself. `--focus` is forced to CanvasText, which is legible
+     but is also the text colour; Highlight is what the platform uses for
+     "this is where you are". */
+  :focus-visible {
+    outline-color: Highlight;
+  }
+
+  /* --- Rows: keyboard cursor, selection, open conversation -------------
+     All three are `box-shadow` bars and/or background washes today, and
+     all three vanish. An outline survives, and `-2px` keeps it inside
+     `.list`'s scrollport exactly as the sighted ring does. */
+  .row.is-focused,
+  .row.is-selected,
+  .row[aria-current="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  /* Focused *and* selected has to stay distinguishable from either alone,
+     so selection keeps the outline and focus adds a second, inner edge. */
+  .row.is-focused.is-selected {
+    outline-style: double;
+    outline-width: 4px;
+  }
+  /* `.row:hover`'s only cue is `--shadow-1`. */
+  .row:hover {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+
+  /* --- Icon buttons: hover, press, disabled --------------------------- */
+  .btn-icon:hover,
+  .btn-icon:active,
+  .chip-btn:hover,
+  .attach-x:hover {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+  /* Disabled is `color: var(--fg-disabled)` / `opacity`, both of which
+     flatten to the same ink as an enabled control. GrayText is the one
+     system colour that still reads as unavailable. */
+  [aria-disabled="true"],
+  [aria-disabled="true"] svg,
+  .btn-icon[aria-disabled="true"]:hover,
+  .btn-icon[aria-disabled="true"]:active,
+  :disabled {
+    color: GrayText;
+    forced-color-adjust: none;
+  }
+
+  /* --- Filled buttons -------------------------------------------------
+     Six borderless accent/danger buttons all flatten to a Canvas
+     rectangle indistinguishable from the cancel next to them. */
+  .compose-btn,
+  .compose-send,
+  .auth-submit,
+  .search-submit,
+  .confirm-go,
+  .lp-btn.is-accent {
+    border: 1px solid ButtonBorder;
+  }
+  .lp-btn.is-danger,
+  .menu-item-danger {
+    border: 1px dashed ButtonBorder;
+  }
+
+  /* --- Text fields whose only focus cue is a border/shadow swap -------
+     `.search-input`, `.auth-input` and the compose rows all set
+     `outline: none` and substitute a border-colour change plus a
+     `box-shadow`. Both halves are gone here, leaving the resting and
+     focused states pixel-identical. */
+  .search-pill:focus-within,
+  .compose-row:focus-within,
+  .auth-input:focus,
+  .auth-input:focus-visible,
+  .lp-input:focus-visible,
+  .palette-input:focus-visible,
+  .compose-editor:focus-visible,
+  .compose-plain:focus-visible,
+  .compose-subject:focus-visible,
+  .chip-entry:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /* --- The star ------------------------------------------------------
+     `.row-star.is-on svg` paints `fill: var(--star)` with a contrasting
+     stroke; forced colors gives fill and stroke the same value, so a
+     starred row looks exactly like an unstarred one. An explicit system
+     colour is honoured, and an unstarred Lucide star is `fill: none`, so
+     solid-vs-outline carries the state. */
+  .row-star.is-on svg,
+  .msg-star.is-on svg {
+    fill: Highlight;
+    stroke: Highlight;
+    forced-color-adjust: none;
+  }
+
+  /* --- Nav ------------------------------------------------------------ */
+  .nav-item[aria-current="page"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .nav-item:hover,
+  .nav-item[aria-current="page"]:hover {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+
+  /* --- Label chips and colour dots ------------------------------------
+     Twelve label colours collapse to one. The hue is unrecoverable here
+     and the label's *name* is still its identity, so the job is only to
+     keep the chip and the dot from disappearing into the row. */
+  .chip,
+  .schip {
+    border: 1px solid CanvasText;
+  }
+  .schip.is-on {
+    border-color: Highlight;
+    outline: 1px solid Highlight;
+    outline-offset: -2px;
+  }
+  .nav-dot,
+  .palette-dot,
+  .lp-dot,
+  .lm-swatch {
+    border: 1px solid CanvasText;
+  }
+  .lm-swatch.is-on {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  /* --- Floating surfaces that rely on a shadow for their edge --------- */
+  .toast {
+    border: 1px solid CanvasText;
+  }
+
+  /* --- "Active option" states, all of them fill-only ------------------ */
+  .palette-option.is-active,
+  .lp-option.is-active,
+  .menu-item:hover,
+  .menu-item:focus-visible,
+  .menu-item.is-current,
+  .search-pop-item:hover,
+  .search-pop-item:focus-visible,
+  .segment input:checked + .segment-face,
+  .search-adv[open] .search-adv-toggle {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /* --- The settings switch -------------------------------------------
+     Track and knob are background-only, so on and off are identical. */
+  .switch {
+    border: 1px solid ButtonBorder;
+    forced-color-adjust: none;
+    background: Canvas;
+  }
+  .switch::after {
+    background: CanvasText;
+  }
+  .switch:checked {
+    background: Highlight;
+  }
+  .switch:checked::after {
+    background: HighlightText;
+  }
+
+  /* --- Remaining single-purpose marks --------------------------------- */
+  /* Unread message bar (`box-shadow: inset 2px 0 0`). */
+  .msg.is-unread {
+    border-left: 2px solid Highlight;
+  }
+  /* 1px dividers drawn as a background on a zero-border element. */
+  .toolbar-sep,
+  .fmt-sep {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  /* Search-hit highlighting is a `color-mix` wash on transparent. */
+  .row mark {
+    forced-color-adjust: none;
+    background: Mark;
+    color: MarkText;
+  }
+  /* Recipient validity is border-colour alone; dashed survives. */
+  .recipient.is-invalid {
+    border-style: dashed;
+    border-width: 2px;
+  }
+  .recipient.is-external {
+    border-style: dotted;
+  }
+  /* Attachment upload progress is an accent bar with no box of its own. */
+  .attach-bar {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+}

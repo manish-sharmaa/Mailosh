@@ -1,0 +1,35 @@
+{% extends layout %}
+
+{# The mailbox view. One template, two shapes: `layout` is
+   `layouts/app.html` for a full navigation and `layouts/fragment.html` when
+   htmx asked for the `#main` fragment (mailosh.web.mail._is_fragment), so
+   the list markup exists exactly once.
+
+   `#list` re-GETs *itself* on `mail:changed` (the body event
+   static/js/sse.js fires for every live update) and morphs the result in,
+   so new mail appears in place with focus, scroll and selection intact —
+   spec §6.5's "no 'load new mail' pill". #}
+
+{% block title %}{% if view_unread %}({{ view_unread }}) {% endif %}{{ view_label }} — Mailosh{% endblock %}
+{% block topbar %}{% include "shell/topbar.html" %}{% endblock %}
+{% block nav %}{% include "shell/nav.html" %}{% endblock %}
+
+{% block main %}
+  {% include "list/toolbar.html" %}
+  <div class="list-body">
+    <div id="list"
+         class="list"
+         role="grid"
+         aria-multiselectable="true"
+         aria-label="{{ view_label }} conversations"
+         hx-get="/mail/{{ key }}/rows?position={{ page.position }}&limit={{ page.limit }}"
+         hx-trigger="mail:changed from:body"
+         hx-swap="morph:innerHTML show:none"
+         hx-indicator="#list-skeleton">
+      {% include "list/rows.html" %}
+    </div>
+    {% include "list/skeleton.html" %}
+  </div>
+{% endblock %}
+
+{% block oob %}{% with oob = true %}{% include "shell/nav.html" %}{% endwith %}{% endblock %}

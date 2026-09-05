@@ -1,0 +1,74 @@
+{# Attachment chips (spec §7), one per downloadable part of `message`.
+
+   Context: `message`, a `mailosh.services.conversation.MessageView`. It
+   self-guards on `message.attachments`, so a message with nothing attached
+   renders nothing at all — not an empty row with a border on it.
+
+   `MessageView.attachments` has already dropped the parts that are not
+   attachments: a part with a `cid` is the sender's inline logo, referenced
+   by their own HTML, and a part with no `blobId` cannot be fetched. Neither
+   decision is re-made here; this file draws what that list contains.
+
+   ---------------------------------------------------------------------
+   Two real controls, not one hover affordance
+
+   Download and Open are `<a>` elements that are in the tab order at all
+   times. `.chip-actions` fades them in on `:hover` AND on `:focus-within`
+   (styles/input.css), which is the whole reason the reveal is `opacity`
+   rather than `display: none` — a control removed from the box tree cannot
+   be focused, so it could never bring itself into view, and spec §11 is
+   explicit that a hover action has to be keyboard-operable. 1A fixed
+   exactly this bug on list rows.
+
+   Each carries one accessible name, in one place: a `.sr-only` span, with
+   the glyph left `aria-hidden` by `icon()`. Deliberately not *also* a
+   `title` — two copies of "Download spec.pdf" is two things to keep in
+   step, and a screen reader that reads both announces the file twice.
+
+   ---------------------------------------------------------------------
+   Open is offered only for what the server will actually show
+
+   `AttachmentView.preview` is non-`None` exactly for the types
+   `GET /m/{id}/att/{blob}?inline=1` serves with their real `Content-Type`
+   (`conversation.PREVIEW_KIND`, held identical to
+   `frames.PREVIEW_TYPES` by a test). Everything else — `.zip`, and
+   `text/html` and `image/svg+xml` above all — that route quietly downgrades
+   to a download, so an "Open" on one of those would be a button whose label
+   is a lie about what it does.
+
+   It opens in a new tab rather than the preview dialog spec §7 describes.
+   The dialog is a singleton fed by an `hx-get`, and the fragment route that
+   would answer that GET does not exist yet; a link to a URL that already
+   works is the version of this control that is real today. The response
+   carries `Content-Security-Policy: default-src 'none'; sandbox`,
+   `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`, so
+   the new tab is inert whatever the sender attached, and `rel="noopener
+   noreferrer"` keeps it from reaching back through `window.opener`. #}
+{% if message.attachments %}
+  <ul class="attachments">
+    {% for attachment in message.attachments %}
+      {% set href = "/m/" ~ (message.id | urlencode) ~ "/att/" ~ (attachment.blob_id | urlencode) %}
+      <li class="attachment-chip">
+        {{ icon(attachment.icon, class_="size-4 chip-glyph") }}
+        <span class="chip-name">{{ attachment.name }}</span>
+        <span class="chip-size">{{ attachment.size_display }}</span>
+
+        <span class="chip-actions">
+          {# `download` names the file for the save dialog. The response's
+             own `Content-Disposition` says the same thing and wins where
+             the two ever disagree; this attribute is what keeps the intent
+             legible in the markup. #}
+          <a class="btn-icon chip-btn" href="{{ href }}" download="{{ attachment.name }}">
+            {{ icon("download", class_="size-4") }}<span class="sr-only">Download {{ attachment.name }}</span>
+          </a>
+          {% if attachment.preview %}
+            <a class="btn-icon chip-btn" href="{{ href }}?inline=1"
+               target="_blank" rel="noopener noreferrer">
+              {{ icon("maximize-2", class_="size-4") }}<span class="sr-only">Open {{ attachment.name }}</span>
+            </a>
+          {% endif %}
+        </span>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}

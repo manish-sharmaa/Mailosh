@@ -1,0 +1,148 @@
+{% extends layout %}
+
+{# The conversation view (spec §7, mockup key-moments.html §1): back arrow
+   with its `u` hint, the same action bar as the list, then the messages
+   oldest -> newest as cards.
+
+   Everything a card shows is decided by
+   `mailosh.services.conversation.build_conversation` and rendered by
+   `thread/message.html`; this file is the shell around them. The action
+   bar's `— of —` and its prev/next controls still wait on the list query
+   that would give a conversation its position, which this route does not
+   make.
+
+   Reply, reply all and forward are Phase 1C's, and are absent rather than
+   present-and-dead (spec §3). #}
+
+{% block title %}{{ view.subject }} — Mailosh{% endblock %}
+{% block topbar %}{% include "shell/topbar.html" %}{% endblock %}
+{% block nav %}{% include "shell/nav.html" %}{% endblock %}
+
+{% block main %}
+  <div class="list-toolbar">
+    {# `data-role="back"` is static/js/actions.js's hook: archiving or
+       deleting the conversation you are reading has to leave it, and the way
+       out is this control's own htmx swap rather than a second, divergent
+       idea of where "back" goes. #}
+    <a class="btn-icon size-7" href="{{ back_url }}" title="Back to the list (u)"
+       data-role="back"
+       hx-get="{{ back_url }}" hx-target="#main" hx-swap="morph:innerHTML show:none"
+       hx-push-url="true" hx-indicator="#list-skeleton">
+      {{ icon("arrow-left", class_="size-4", label="Back to the list") }}
+    </a>
+    {{ kbd("u") }}
+    <span class="toolbar-sep"></span>
+    <button type="button" class="btn-icon size-7" data-action="archive" title="Archive (e)">
+      {{ icon("archive", class_="size-4", label="Archive") }}
+    </button>
+    <button type="button" class="btn-icon size-7" data-action="delete" title="Delete (#)">
+      {{ icon("trash-2", class_="size-4", label="Delete") }}
+    </button>
+    <button type="button" class="btn-icon size-7" data-action="unread" title="Mark as unread (Shift+U)">
+      {{ icon("mail", class_="size-4", label="Mark as unread") }}
+    </button>
+    <span class="toolbar-sep"></span>
+    {# The same three actions `r` / `a` / `f` run, through the same
+       `compose.js` surface — so the inline card lands in the same slot and
+       counts against the same limit whichever way it was asked for. #}
+    <button type="button" class="btn-icon size-7" data-compose-reply="reply" title="Reply (r)">
+      {{ icon("reply", class_="size-4", label="Reply") }}
+    </button>
+    <button type="button" class="btn-icon size-7" data-compose-reply="reply_all" title="Reply all (a)">
+      {{ icon("reply-all", class_="size-4", label="Reply all") }}
+    </button>
+    <button type="button" class="btn-icon size-7" data-compose-reply="forward" title="Forward (f)">
+      {{ icon("forward", class_="size-4", label="Forward") }}
+    </button>
+    {# Spec §7's "4 of 1,284" with ‹ ›, in the action bar the mockup puts it
+       in (key-moments.html §1's `.bar`) — the same shape, in the same
+       place, as the list's own range and pager.
+
+       `place` is `None` whenever the caller could not say where this
+       conversation sits (the palette, a pasted link, a history restore):
+       the readout and both arrows are then absent rather than rendered
+       empty, because a "— of —" beside two dead controls is exactly the
+       present-and-dead UI spec §3 forbids.
+
+       An arrow with nowhere to go is a disabled `<span>` rather than a
+       missing one, so the control keeps its place instead of shifting the
+       one beside it — `list/toolbar.html` renders its own pager the same
+       way, and for the same reason.
+
+       `/mail/{key}/at/{n}` resolves the position and renders the
+       conversation in one round trip, so an arrow is one request rather
+       than a redirect into `/t/{id}`. #}
+    {% if place %}
+      <span class="ml-auto tabular-nums text-[12px] text-fg-2">{{ place.label }}</span>
+      {% if place.prev_url %}
+        <a class="btn-icon size-7" title="Newer conversation" rel="prev"
+           href="{{ place.prev_url }}"
+           hx-get="{{ place.prev_url }}" hx-target="#main"
+           hx-swap="morph:innerHTML show:none" hx-push-url="true">
+          {{ icon("chevron-left", class_="size-4", label="Newer conversation") }}
+        </a>
+      {% else %}
+        <span class="btn-icon size-7" aria-disabled="true" aria-hidden="true">{{ icon("chevron-left", class_="size-4") }}</span>
+      {% endif %}
+      {% if place.next_url %}
+        <a class="btn-icon size-7" title="Older conversation" rel="next"
+           href="{{ place.next_url }}"
+           hx-get="{{ place.next_url }}" hx-target="#main"
+           hx-swap="morph:innerHTML show:none" hx-push-url="true">
+          {{ icon("chevron-right", class_="size-4", label="Older conversation") }}
+        </a>
+      {% else %}
+        <span class="btn-icon size-7" aria-disabled="true" aria-hidden="true">{{ icon("chevron-right", class_="size-4") }}</span>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  {# `data-email-ids` is what makes the action bar above real. The routes in
+     mailosh/web/actions.py take *message* ids; `data-thread-id` is not one,
+     so a page carrying only that gave static/js/actions.js nothing to post
+     and its three buttons did nothing at all. Same attribute name, same
+     comma-separated shape and same meaning as `list/row.html`'s — the whole
+     conversation, which is what an action on it operates on — so the one
+     delegated listener reads a row and a thread the same way.
+
+     `data-unread-ids` is the subset the mark-read-on-open POST has work to
+     do on — the whole conversation would be a wider write than the reader
+     asked for, and a noisier `Email/set` for the server.
+
+     The scroll target is marked on the card itself (`data-first-unread`),
+     not named again here: one attribute, one reader, no way for the two to
+     disagree about which message the conversation opens at.
+
+     `data-mark-read-delay` is the reader's own setting in seconds, and
+     static/js/actions.js arms one timer from it on settle — `0` marks on
+     arrival, `-1` never marks at all. It sits on this element rather than
+     on the body because that handler keys the timer off *which
+     conversation* is on screen (`data-thread-id`, beside it): one element
+     carrying both is what stops a timer armed for the conversation you
+     just left from firing against the one you are now reading.
+
+     `data-advance-url` is where archiving or deleting this conversation
+     lands (spec §10's `auto_advance`), resolved by the route because only
+     it knows this conversation's neighbours. One finished URL, so the
+     client reads an attribute instead of re-deriving a decision from the
+     readout above. #}
+  <div class="thread-scroll" data-thread-id="{{ view.thread_id }}"
+       data-email-ids="{{ view.email_ids | join(',') }}"
+       data-unread-ids="{{ view.unread_ids | join(',') }}"
+       data-mark-read-delay="{{ mark_read_delay }}"
+       data-advance-url="{{ advance_url }}">
+
+    {% include "thread/header.html" %}
+
+    {% for message in view.messages %}
+      {# `later_ids` is this message and every message after it — what "mark
+         unread from here" acts on. Computed here because this loop is the
+         only place that knows where a card sits in the conversation. #}
+      {% with later_ids = view.messages[loop.index0:] | map(attribute="id") | list %}
+        {% include "thread/message.html" %}
+      {% endwith %}
+    {% endfor %}
+  </div>
+{% endblock %}
+
+{% block oob %}{% with oob = true %}{% include "shell/nav.html" %}{% endwith %}{% endblock %}

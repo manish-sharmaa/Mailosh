@@ -1,0 +1,27 @@
+<!-- family: inline event handlers.
+     Every one of these is a real, working payload in a browser. They are here
+     because "no on* attribute survives" is an allow-list property, not a
+     deny-list one: nh3 never sees the word "onerror", it simply never finds
+     "onerror" in ALLOWED_ATTRIBUTES. A test that only greps the output for
+     "alert" would pass on a sanitiser that kept `onerror` but happened to
+     mangle the payload, so the assertions parse the tree instead. -->
+<img src=x onerror=alert(1)>
+<img src=x OnErRoR=alert(1)>
+<img src="x" onerror = "alert(1)">
+<img src=x onerror=alert&#40;1&#41;>
+<div onmouseover="alert(1)">hover me</div>
+<div onpointerover="alert(1)">point at me</div>
+<body onload=alert(1)>
+<p onfocus=alert(1) autofocus tabindex=1>focus</p>
+<details open ontoggle=alert(1)>x</details>
+<a href="https://ok.test/" onclick="alert(1)">click</a>
+<table background="x" onerror="alert(1)"><tr><td onclick=alert(1)>cell</td></tr></table>
+<input onfocus=alert(1) autofocus>
+<select onchange=alert(1)><option>a</option></select>
+<video onerror=alert(1)><source onerror=alert(1)></video>
+<style onload=alert(1)></style>
+<isindex action=javascript:alert(1) type=image>
+<img src=1 href=1 onerror="javascript:alert(1)">
+<span onanimationstart=alert(1) style="animation-name:x;animation-duration:1s">anim</span>
+<p ONMOUSEENTER=alert(1)>upper-case handler</p>
+<p on&#x6d;ouseover=alert(1)>entity-split handler name</p>

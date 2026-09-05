@@ -1,0 +1,153 @@
+Mailosh
+========
+
+Mailosh itself is licensed under the GNU Affero General Public License,
+version 3 or later (AGPL-3.0-or-later). See LICENSE.
+
+This file lists the third-party JavaScript/font assets the webmail UI
+vendors into `mailosh/web/static/vendor/`, `.../icons/`, `.../fonts/`
+(fetched/built by `make vendor icons fonts`, pinned in the top-level
+Makefile). Those files are gitignored — not committed to this repository —
+but they ARE copied into the built Docker image (see
+`docker/mailosh.Dockerfile`), so this is a record of what's actually
+distributed, not just what's in source control. Versions/licenses below
+were verified directly against each package's own published metadata and
+LICENSE file on the date noted per entry.
+
+Two of the entries below — Squire and DOMPurify — are vendored and shipped
+in the image but are not yet loaded by any page: both belong to the compose
+editor (Phase 1C), which has not landed. Squire is the editor itself and
+DOMPurify sanitises what a user pastes into it, in the browser. Neither has
+anything to do with reading mail: the Phase 1B sanitiser that renders an
+incoming message is entirely server-side Python — `nh3` (the Rust `ammonia`
+binding) for tags, attributes and URL policy, `tinycss2` for CSS — and it
+loads no JavaScript library at all. They are listed anyway, because the
+image distributes them and this file records what is distributed.
+
+Re-verified 2026-09-03: every file in `mailosh/web/static/vendor/`, plus
+`static/fonts/InterVariable.woff2`, is byte-for-byte identical to the pinned
+upstream URL in the Makefile (sha256 compared directly), and
+`command-score.js` is byte-for-byte the pinned upstream commit with only the
+one documented export-line rewrite applied. Every version and license below
+was re-checked against upstream package metadata and LICENSE files on the
+same date; nothing needed correcting.
+
+Vendored libraries
+-------------------
+
+* htmx 2.0.10
+  https://htmx.org/  (https://github.com/bigskysoftware/htmx)
+  License: 0BSD
+
+* idiomorph 0.7.4 (`hx-ext="morph"` swap strategy; Task 2)
+  https://github.com/bigskysoftware/idiomorph
+  License: 0BSD (checked directly against the repository's own LICENSE
+  file, 2026-09-02)
+
+* htmx-ext-preload 2.1.2 (`hx-ext="preload"`; Task 2)
+  https://github.com/bigskysoftware/htmx-extensions (src/preload/)
+  License: 0BSD — this specific extension carries its own `src/preload/
+  LICENSE` file within the `htmx-extensions` monorepo (checked directly,
+  2026-09-02: "BSD Zero Clause License", copyright 2024 Alexander Petros
+  and Mariss Tubelis); `src/preload/package.json` itself has no `license`
+  field and neither the monorepo's root nor GitHub's own repository-level
+  license detection shows one for `htmx-extensions` as a whole — the
+  per-extension LICENSE file is the actual source of truth here, the same
+  pattern this NOTICE already relied on for idiomorph below.
+
+* command-score 0.5.0, pinned to commit a192b81315c6c4836918e6af87b2d80bf0afa9c1
+  (⌘K palette fuzzy matcher; Task 2)
+  https://github.com/superhuman/command-score
+  License: MIT (Copyright (c) 2016 Superhuman; from the repository's own
+  `LICENSE.md`, checked directly 2026-09-02)
+  Pin: this package has no built dist/, no git tags, and no GitHub
+  releases (checked directly against the GitHub API, 2026-09-02: both the
+  tags and releases endpoints return an empty list) — there is no
+  version-numbered ref to fetch, so the Makefile pins the full commit SHA
+  above (the tip of `master` at vendor time, 2023-01-25) instead of the
+  floating `master` branch a plain branch URL would re-resolve on every
+  `make vendor` run (review finding: a future upstream push could
+  otherwise silently change what ships without this NOTICE entry, or a
+  review of this diff, ever being touched). `0.5.0` is that same commit's
+  own `package.json` version field, recorded here for a human-readable
+  version even though upstream never tagged it as such.
+  Modified: vendored from the upstream CommonJS source
+  (`raw.githubusercontent.com/superhuman/command-score/<pinned SHA
+  above>/index.js`) with its one `module.exports = commandScore;` line
+  rewritten to `export default commandScore;` — a true ES module rather
+  than a `window`-global-attaching shim, so it can be `import`ed by this
+  app's own `type="module"` scripts. No other line changed.
+
+* Alpine.js 3.17.1 — the **CSP build**, `@alpinejs/csp`, vendored as
+  `vendor/alpine.min.js`
+  https://alpinejs.dev/advanced/csp
+  (https://github.com/alpinejs/alpine, `packages/csp`)
+  License: MIT (from the package's own published metadata, checked
+  directly against registry.npmjs.org, 2026-09-02)
+  Build: this is deliberately NOT the standard `alpinejs` distribution.
+  The webmail serves `script-src 'self'` with no `'unsafe-eval'`, and the
+  standard build evaluates every template expression through
+  `new AsyncFunction` — which fails at *runtime*, the first time a
+  directive is evaluated, not at build time. The CSP build ships its own
+  parser instead of that constructor, and contains no
+  `Function`/`AsyncFunction` constructor call at all — verified directly
+  against the vendored bytes. That parser accepts a real expression
+  grammar (property paths, computed access, method calls with arguments,
+  ternaries, arithmetic, comparison, object/array literals) and rejects
+  template literals, out-of-scope globals, multi-statement expressions,
+  spread/destructuring and inline function definitions.
+  Pin: exact version, replacing the floating `alpinejs@3` this previously
+  carried, so a new upstream 3.x cannot change what ships without this
+  file and the Makefile being touched — the same discipline the
+  command-score and Inter entries below/above already record.
+
+* Squire 2.4.8 (the compose editor's rich-text surface; Phase 1C)
+  https://github.com/neilj/Squire
+  License: MIT
+
+* DOMPurify 3.4.14 (resolved from the Makefile's `dompurify@3` pin;
+  client-side sanitising of pasted HTML in the compose editor, Phase 1C —
+  not part of the server-side pipeline that renders received mail)
+  https://github.com/cure53/DOMPurify
+  License: Apache-2.0 OR MPL-2.0 (dual-licensed; recipient's choice —
+  confirmed both from the library's own embedded `@license` banner and its
+  published package metadata)
+
+* Lucide 1.39.0 (`lucide-static`; inlined per-icon SVGs, Task 2)
+  https://lucide.dev/  (https://github.com/lucide-icons/lucide)
+  License: ISC (checked directly against `lucide-static`'s own LICENSE
+  file, 2026-09-02) — each vendored `.svg` carries Lucide's own
+  `@license lucide-static v1.39.0 - ISC` comment.
+
+* Inter 4.1, pinned to tag v4.1 (`InterVariable.woff2`, self-hosted,
+  subset to `mailosh/web/static/fonts/inter-latin.woff2` by `make fonts`;
+  Task 2)
+  https://rsms.me/inter/  (https://github.com/rsms/inter)
+  License: SIL Open Font License 1.1 (checked directly against the
+  upstream repository's own `LICENSE.txt`, 2026-09-02; also GitHub's own
+  license detection for the repository: `ofl-1.1`)
+  Pin: `rsms.me/inter/font-files/InterVariable.woff2` (the project's own
+  advertised download URL) is unversioned — always whatever's currently
+  published — so the Makefile instead fetches
+  `raw.githubusercontent.com/rsms/inter/v4.1/docs/font-files/
+  InterVariable.woff2`: the same file, byte-for-byte (sha256 verified
+  identical, 2026-09-02), checked into the repository tree at the `v4.1`
+  release tag, giving an immutable pin without adding any new tooling
+  (review finding).
+
+REMOVED (Task 2): htmx-ext-sse 2.2.4 — superseded by this app's own SSE
+client (`mailosh/web/static/js/sse.js`, an `EventSource` -> single
+coalesced `mail:changed` htmx body event, against the per-user
+`mailosh.sse.HubRegistry`/`GET /events` server side landed in Task 7)
+rather than the htmx extension; no longer vendored. (The
+"NOT SPECIFIED upstream" note this entry previously carried does not
+survive re-checking: `bigskysoftware/htmx-extensions` has a per-extension
+`src/sse/LICENSE` — 0BSD, present since 2024-03-01 — following the same
+per-extension-license pattern as idiomorph/htmx-ext-preload above; it was
+just missed by only checking the monorepo's root. Left as a correction
+here rather than silently dropped, since this file is otherwise removed
+entirely.)
+
+Full license texts for MIT/0BSD/ISC/Apache-2.0/MPL-2.0/OFL-1.1 are standard
+and are not reproduced here; consult each project's own repository (linked
+above) for its exact LICENSE file.

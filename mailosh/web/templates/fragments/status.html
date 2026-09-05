@@ -1,0 +1,12 @@
+{# Out-of-band replacement for layouts/app.html's permanent `#status` live
+   region. Any route's fragment response can `{% include "fragments/
+   status.html" %}` alongside its real (in-band) content, with a
+   `message` string in context, to announce a side effect to screen
+   readers -- e.g. "3 conversations archived" -- via HTMX's
+   `hx-swap-oob="true"` (matches by `id` and swaps in place, regardless of
+   what the response's *main* swap target is) rather than that route
+   needing to make `#status` its own explicit target. `class="sr-only"`
+   matches the layout's own initial `#status` div exactly, so a swap never
+   itself changes whether the region is visible. No route renders this in
+   Task 2 (design system only) -- Tasks 5-8 are its first callers. #}
+<div id="status" role="status" aria-live="polite" aria-atomic="true" hx-swap-oob="true" class="sr-only">{{ message | default("") }}</div>

@@ -1,0 +1,42 @@
+# Development overlay. Use via `make dev`, which is
+# `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`.
+#
+# Why this file exists: docker-compose.yml serves the image built by
+# mailosh.Dockerfile, which bakes the source in with `COPY . /app`. That
+# is right for a self-hosted deployment and wrong for developing against,
+# because every edit needs a rebuild -- or a `docker cp` into the running
+# container, which is what people were actually doing.
+#
+# Two changes, both scoped to the `mailosh` service:
+#
+#   1. Bind-mount the working tree over /app, so the container serves the
+#      files you are editing. The image's `pip install -e .` records an
+#      __editable__ path pointing at /app in site-packages (outside /app,
+#      so the mount does not shadow it) -- the editable install therefore
+#      keeps resolving, now to your tree instead of the baked copy.
+#
+#   2. MAILOSH_RELOAD=1, which docker/entrypoint.sh turns into uvicorn's
+#      `--reload --reload-dir /app/mailosh`. Templates, routes and static
+#      files all take effect on save. Note that `styles/input.css` still
+#      needs `make css` -- the app serves the compiled app.css, and
+#      compiling it is Tailwind's job, not uvicorn's.
+#
+#   3. WATCHFILES_FORCE_POLLING=1. This is not belt-and-braces, it is
+#      load-bearing on macOS and Windows: uvicorn's reloader (WatchFiles)
+#      uses inotify, and inotify events do not cross a Docker Desktop
+#      bind mount. Verified here rather than assumed -- with the mount in
+#      place and polling off, the container reads an edit immediately
+#      (`docker compose exec mailosh tail` showed it) while the reloader
+#      never fired, for both `touch` and a real content change. Polling
+#      costs a periodic stat sweep of /app/mailosh and is what makes
+#      reload work at all on a Mac.
+#
+# Not mounted anywhere: stalwart and postgres are unchanged, so their data
+# volumes and health checks behave exactly as in the default stack.
+services:
+  mailosh:
+    volumes:
+      - .:/app
+    environment:
+      - MAILOSH_RELOAD=1
+      - WATCHFILES_FORCE_POLLING=1

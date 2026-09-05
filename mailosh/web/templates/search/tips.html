@@ -1,0 +1,32 @@
+{# The operator reference card (spec §10's "operator hints"), rendered in
+   two places: the pill's focus popover and the results page's empty state.
+   One file, because a grammar written down twice is a grammar that gets
+   half-updated.
+
+   Every row here is a real operator of the grammar
+   `mailosh.services.search_query` implements — nothing aspirational, and
+   nothing spelled differently from what the parser accepts. `filename:` is
+   deliberately absent: it is *approximated* through free text rather than
+   implemented, and the parser says so with a hint at the moment a reader
+   uses it, which is the honest place to say it. Advertising it here would
+   read as a promise.
+
+   Inert markup, on purpose. These rows take no focus and carry no
+   handler: they are a reference card sitting inside a popover that is
+   held open by `:focus-within`, so a row that could be clicked would be a
+   row that closes the panel by taking the focus holding it open. #}
+<ul class="search-tips">
+  <li><code>from:priya</code><span>Sender</span></li>
+  <li><code>to:me</code><span>Recipient</span></li>
+  <li><code>subject:roadmap</code><span>Subject line</span></li>
+  <li><code>"exact phrase"</code><span>Words together, in order</span></li>
+  <li><code>-invoice</code><span>Exclude a term</span></li>
+  <li><code>budget OR forecast</code><span>Either term</span></li>
+  <li><code>has:attachment</code><span>Has a file attached</span></li>
+  <li><code>is:unread</code><span>Also <code>is:read</code>, <code>is:starred</code></span></li>
+  <li><code>in:anywhere</code><span>Include Spam and Trash</span></li>
+  <li><code>label:Clients</code><span>Carries that label</span></li>
+  <li><code>newer_than:7d</code><span>Also <code>older_than:</code> (<code>d w m y</code>)</span></li>
+  <li><code>after:2026-01-31</code><span>Also <code>before:</code></span></li>
+  <li><code>larger:5m</code><span>Also <code>smaller:</code> (<code>k m g</code>)</span></li>
+</ul>

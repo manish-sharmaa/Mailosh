@@ -1,0 +1,61 @@
+{# One page of search results — `list/rows.html` with search's own
+   addresses, and `list/row.html` itself for every row.
+
+   The row is the component being reused, deliberately and completely: the
+   same `data-id`/`data-email-ids`/`data-count` contract actions.js and
+   keys.js bind to, the same grid semantics, the same star, the same hover
+   actions, the same chips. A search result behaves exactly like an inbox
+   row because it *is* one — archiving from a result set is the same POST,
+   the same optimistic collapse and the same undo.
+
+   `key` is `""` here (the base context's own default). A search has no
+   mailbox, so the row's `?key=&pos=` link carries no position and the
+   conversation opens without the header's `<`/`>` arrows — right, since
+   "the next one" in a result set is not a place in any mailbox that
+   `/mail/{key}/at/{n}` can name.
+
+   The sentinel is rendered only when `ThreadPage.next_position` is not
+   None, for the reason `list/rows.html` spells out: an unconditional one
+   re-arms itself forever at the bottom of the last page. The empty state
+   belongs to the first page only — page 2 coming back empty is a race,
+   not an empty result set, and replacing the rows already on screen with
+   "No results" would be a lie. #}
+{% if standalone %}
+  <title>{% if q %}{{ q }} — Search{% else %}Search{% endif %} — Mailosh</title>
+{% endif %}
+
+{% for row in page.rows %}{% with pos = page.position + loop.index0 %}{% include "list/row.html" %}{% endwith %}{% endfor %}
+
+{# `#list` is `role="grid"`, whose only permitted children are rows (and
+   rowgroups). A bare `<div>` sitting beside the rows is an owned element
+   with no role the grid pattern allows, and a screen reader is entitled to
+   drop it or to stop reporting the grid's shape at that point — so both
+   the empty state and the endless-scroll sentinel are given a row/gridcell
+   skin. The empty state gets a wrapper (nothing ever swaps it, so an extra
+   element is free); the sentinel gets the roles on itself, because its
+   `hx-swap="outerHTML"` replaces *it* with the next page of rows and a
+   wrapper would leave those rows nested one level inside a `role="row"`. #}
+{% if not page.rows and page.position == 0 %}
+  <div role="row">
+    <div role="gridcell">{% include "search/empty.html" %}</div>
+  </div>
+{% endif %}
+
+{% if page.next_position is not none %}
+  <div class="row-sentinel"
+       hx-get="/search/rows?q={{ q | urlencode }}&position={{ page.next_position }}&limit={{ page.limit }}&start={{ start }}"
+       hx-trigger="intersect once root:#list"
+       hx-swap="outerHTML"
+       hx-indicator="this"
+       role="row">
+    <span class="sentinel-cell" role="gridcell">
+      <span class="sentinel-spinner" aria-hidden="true"></span>
+      <span class="sr-only">Loading more results</span>
+    </span>
+  </div>
+{% endif %}
+
+{% if standalone %}
+  {% with oob = true %}{% include "list/range.html" %}{% endwith %}
+  {% with oob = true %}{% include "shell/nav.html" %}{% endwith %}
+{% endif %}

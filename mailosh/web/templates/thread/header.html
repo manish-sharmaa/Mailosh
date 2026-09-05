@@ -1,0 +1,25 @@
+{# The conversation's own heading (spec §7: "Subject + label chips",
+   mockup key-moments.html §1's `.th`).
+
+   The chips come from `ConversationView.chips`, which is
+   `mailosh.services.thread_list._chips_for` — the same function, over the
+   same nav, that gave the row this conversation was opened from its chips.
+   That is the whole reason it is shared rather than reimplemented: a label
+   cannot be one colour in the list and another colour here.
+
+   `--chip` is handed to CSS as a custom property rather than a finished
+   background/colour pair, exactly as `list/row.html` does it: `.chip` mixes
+   it against the surface so the label text clears its own wash. The colour
+   name goes through the `label_color` filter first, so nothing a user typed
+   into `LabelMeta.color` can reach the stylesheet. #}
+<header class="thread-head">
+  <h1 class="thread-subject">{{ view.subject }}</h1>
+  {% if view.chips %}
+    <span class="thread-chips">
+      {% for chip in view.chips %}
+        {% set color = chip.color | label_color(chip.mailbox_id) %}
+        <span class="chip" style="--chip: var(--label-{{ color }}); --chip-ink: var(--label-{{ color }}-ink)">{{ chip.name }}</span>
+      {% endfor %}
+    </span>
+  {% endif %}
+</header>
