@@ -701,9 +701,20 @@ function upload(root, file) {
     chip.style.setProperty("--pct", Math.round((event.loaded / event.total) * 100) + "%");
   });
   request.addEventListener("load", () => {
-    if (request.status < 200 || request.status >= 300) {
+    // `mailosh/web/app.py` answers a JMAP failure app-wide with a **200**,
+    // an empty body and an `om:error` trigger — the failure contract every
+    // `fetch` in this app already checks. Treating that 200 as success
+    // swapped the chip for nothing: no file attached, and nothing said.
+    const raw = request.getResponseHeader("HX-Trigger") ?? "";
+    if (request.status < 200 || request.status >= 300 || raw.includes("om:error")) {
       chip.remove();
-      toast(request.status === 413 ? "That file is too large to attach" : "Couldn't attach that file");
+      let why = request.status === 413 ? "That file is too large to attach" : "Couldn't attach that file";
+      try {
+        why = JSON.parse(raw)["om:error"]?.toast ?? why;
+      } catch {
+        // Not JSON, or not ours: the generic line above stands.
+      }
+      toast(why);
       return;
     }
     // Our own origin's HTML, rendered by `compose/attachment.html` with
@@ -782,11 +793,23 @@ function removeCompose(root) {
   reflow();
 }
 
+/** Stop an autosave that is in flight right now. Every path below that
+ *  reads `draft_id` and then posts against it — save-and-close, discard,
+ *  pop-out — raced that request: both carried the same old id, the server
+ *  created a draft for each and destroyed the old one twice, and the
+ *  reader found two copies in Drafts (or, after a discard, one that came
+ *  back). */
+function abortAutosave(root) {
+  const form = formOf(root);
+  if (form !== null) window.htmx?.trigger?.(form, "htmx:abort");
+}
+
 /** Close: the draft is kept. Spec §8's `Esc` "close (draft kept)", and
  *  the header's × says "Save & close" for the same reason — a control
  *  that throws mail away must be a different control, and it is (the
  *  trash, below). */
 function close(root) {
+  abortAutosave(root);
   const empty = isEmpty(root);
   if (!empty) saveNow(root);
   removeCompose(root);
@@ -794,6 +817,7 @@ function close(root) {
 }
 
 function discard(root) {
+  abortAutosave(root);
   const params = new URLSearchParams();
   const id = draftId(root);
   if (id) params.append("draft_id", id);
@@ -850,6 +874,12 @@ function flush(root, options = {}) {
   if (!sending.has(root)) return;
   sending.delete(root);
   const params = record?.body ?? body(root);
+  // The snapshot's `draft_id` is ten seconds old. An autosave armed by the
+  // last keystroke (`input delay:2s`) can land in that window, and it
+  // *replaces* the draft — a new id is swapped into the still-present form
+  // and the old one is destroyed. Sending the old id then destroyed
+  // nothing and left the new draft behind as a copy of the sent mail.
+  params.set("draft_id", draftId(root));
   if (options.keepalive) {
     post("/compose/send", params, { keepalive: true });
     return;
@@ -1022,6 +1052,7 @@ function popOut(root) {
     toast("Three drafts are already open");
     return;
   }
+  abortAutosave(root);
   saveNow(root).then((id) => {
     if (!id) {
       toast("Couldn't open that in a window");

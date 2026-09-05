@@ -989,6 +989,22 @@ async def test_the_allow_route_404s_for_a_message_this_account_does_not_have(aut
     assert response.status_code == 404
 
 
+async def test_a_sender_mismatch_is_not_reported_as_a_stale_csrf_token(authed, fake, csrf):
+    """The app translates a CSRF 403 on an HX request into the "signed out
+    elsewhere, reload" toast. That translation used to key on the status
+    alone, so *this* 403 -- a valid token, a sender that is not the
+    message's own -- told the reader to reload a page that was fine."""
+    fake.message("E1", html=TRACKED, sender="news@t.test")
+    response = await authed.post(
+        "/m/E1/images/allow",
+        data={"sender": "someone-else@t.test"},
+        headers={**csrf, "HX-Request": "true"},
+    )
+    assert response.status_code == 403
+    assert "hx-trigger" not in response.headers
+    assert "hx-reswap" not in response.headers
+
+
 # ---------------------------------------------------------------------------
 # GET /img — the four route tests Task 6 could not write
 # ---------------------------------------------------------------------------

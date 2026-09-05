@@ -751,7 +751,9 @@ def test_marking_read_on_open_is_armed_by_a_settle_and_dropped_on_leaving():
     # The timer posts through the same action layer everything else does,
     # with the ids the page already carries for it.
     armed = _block_at(body, body.index("setTimeout"))[2]
-    assert 'om.act("read", ids)' in armed
+    # Silent: the page reading itself is not the reader acting, so no toast
+    # and no claim on the undo slot `z` reads.
+    assert 'om.act("read", ids, { silent: true })' in armed
     assert "dataset.unreadIds" in body
 
 

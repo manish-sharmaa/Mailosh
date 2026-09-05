@@ -240,7 +240,11 @@ function afterRender() {
   const panel = dialog.querySelector(".lp");
   if (panel !== null) {
     const options = dialog.querySelectorAll(".lp-option:not(.lp-create)").length;
-    panel.querySelector(".lp-field").hidden = options < SEARCH_FROM;
+    // Move mode only. In label mode the field is also where type-to-create
+    // lives (`filter()` offers "Create …" for a name with no match), and
+    // hiding it under SEARCH_FROM meant a reader with fewer than seven
+    // labels — every new account — had no way to make one from here.
+    panel.querySelector(".lp-field").hidden = options < SEARCH_FROM && panel.dataset.mode === "move";
     setHint();
     filter();
   }
@@ -435,11 +439,11 @@ async function send(url, values) {
     return;
   }
   const done = trigger(response, "om:done");
-  if (done !== null) {
-    window.htmx?.trigger?.(document.body, "om:done", done);
-    if (done.refresh) refresh();
-  }
-  if (trigger(response, "om:labels") !== null) refresh();
+  if (done !== null) window.htmx?.trigger?.(document.body, "om:done", done);
+  // One refresh. `web/labels.py`'s `_changed()` sets both `refresh: true`
+  // and `om:labels` on the same reply, and answering each separately sent
+  // two `#list` GETs and two nav swaps for every rename or colour change.
+  if (done?.refresh === true || trigger(response, "om:labels") !== null) refresh();
 }
 
 // ---------------------------------------------------------------------
@@ -575,9 +579,16 @@ function onSubmit(event) {
     return;
   }
   if (form?.dataset?.role === "lm-create") {
+    // `ids` is the selection the picker was opened on, still held in
+    // `pending` because `open()` does not clear it — only `close()` does,
+    // and `send()` calls that *after* these values are read. Type-to-create
+    // used to post the name alone: the label appeared, the five selected
+    // threads it was typed for stayed unlabelled, and the toast said
+    // "Created" as if that were the whole job.
     send("/labels", {
       name: form.querySelector('[name="name"]').value,
       parent_id: form.querySelector('[name="parent_id"]')?.value ?? "",
+      ids: pending,
     });
   }
 }

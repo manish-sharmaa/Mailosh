@@ -66,8 +66,23 @@ def is_cross_site(request: Request) -> bool:
     return request.headers.get("sec-fetch-site") == "cross-site"
 
 
+class CsrfError(HTTPException):
+    """The 403 this module raises, and only this module.
+
+    A distinct type rather than a bare `HTTPException(403)` so the app's
+    error handler can recognise *this* refusal -- a stale token after a
+    sign-out elsewhere, which has a specific explanation worth showing --
+    without also claiming every other 403 in the app (a sender that does
+    not match the message it was posted for, a forged frame capability)
+    was the same thing. Matching on the status alone did exactly that.
+    """
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(status_code=403, detail=detail)
+
+
 def validate(request: Request, session_token: str, form_token: str | None = None) -> None:
-    """Raise `HTTPException(403)` unless `request` is safe to act on.
+    """Raise `CsrfError` (a 403) unless `request` is safe to act on.
 
     - `GET`/`HEAD`/`OPTIONS` are exempt outright — CSRF only guards
       state-changing requests.
@@ -80,7 +95,7 @@ def validate(request: Request, session_token: str, form_token: str | None = None
     if request.method in _SAFE_METHODS:
         return
     if is_cross_site(request):
-        raise HTTPException(status_code=403, detail="cross-site request rejected")
+        raise CsrfError("cross-site request rejected")
     token = request.headers.get("x-csrf-token") or form_token
     if not token or not secrets.compare_digest(token, session_token):
-        raise HTTPException(status_code=403, detail="missing or invalid CSRF token")
+        raise CsrfError("missing or invalid CSRF token")

@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -253,7 +253,7 @@ async def login_submit(
     # this Fetch Metadata check plus rate limiting instead (module
     # docstring / design spec §9).
     if csrf.is_cross_site(request):
-        raise HTTPException(status_code=403, detail="cross-site request rejected")
+        raise csrf.CsrfError("cross-site request rejected")
 
     wait = await _limiter.retry_after(db, ip=ip, account=username)
     if wait > 0:

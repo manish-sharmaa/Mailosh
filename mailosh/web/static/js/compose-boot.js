@@ -64,10 +64,24 @@ function ensure() {
       .then((module) => {
         loaded = true;
         return module;
+      })
+      .catch((error) => {
+        // A failed load is not a permanent one. Left set, `pending` would
+        // hand the same rejected promise to every later click and `c`,
+        // each swallowed by the listener below — compose dead until a
+        // reload, and nothing said. Cleared, the next attempt dials again;
+        // said, the reader knows why this one did nothing.
+        pending = null;
+        window.Alpine?.store?.("ui")?.toast?.("Couldn't open compose. Check your connection and try again.");
+        throw error;
       });
   }
   return pending;
 }
+
+/** The rejection is already reported inside `ensure()`; a caller has
+ *  nothing to add, and an unhandled one would only echo into the console. */
+const reported = () => {};
 
 // Capture phase, and only until `compose.js` arrives: after that its own
 // handler is the one that should run, and a second listener here would open
@@ -85,7 +99,7 @@ document.body.addEventListener(
     event.stopPropagation();
     // Replay the click once the module is in, so the decision about what
     // this control means stays in exactly one place.
-    ensure().then(() => trigger.click());
+    ensure().then(() => trigger.click(), reported);
   },
   true,
 );
@@ -97,11 +111,11 @@ document.body.addEventListener(
 // the browser and type a "c" into the page.
 registerCompose({
   open: (draftId) => {
-    ensure().then((module) => module.surface.open(draftId));
+    ensure().then((module) => module.surface.open(draftId), reported);
     return true;
   },
   reply: (mode) => {
-    ensure().then((module) => module.surface.reply(mode));
+    ensure().then((module) => module.surface.reply(mode), reported);
     return true;
   },
   // Only reachable with a dock already open, which means the module is in.

@@ -52,6 +52,9 @@ let coalesceTimer = null;
 let offlineTimer = null;
 let pollTimer = null;
 let pending = null;
+// The last `id:` the stream delivered — the JMAP state a catch-up refetch
+// carries so a consumer can ask for changes since it, not since forever.
+let lastId = null;
 
 function setOffline(value) {
   const store = window.Alpine?.store?.("ui");
@@ -88,7 +91,8 @@ function onMail(event) {
   // EventSource tracks the last `id:` it saw and replays it as
   // Last-Event-ID on reconnect; carrying it in the detail lets a consumer
   // pass the JMAP state along too.
-  pending.id = event.lastEventId || pending.id;
+  if (event.lastEventId) lastId = event.lastEventId;
+  pending.id = lastId ?? pending.id;
   coalesceTimer ??= setTimeout(flush, COALESCE_MS);
 }
 
@@ -103,7 +107,10 @@ function onOpen() {
   // One refetch on every open (including the first, right after page
   // load) is the cheap, always-correct answer — it morphs, so a page that
   // was already current does not visibly change.
-  fire({ types: [...ALL_TYPES], id: source?.lastEventId || null, catchup: true });
+  // `lastId`, not `source.lastEventId`: that property lives on the
+  // `MessageEvent`, not on the `EventSource`, so reading it here was always
+  // `undefined` and every catch-up went out with `id: null`.
+  fire({ types: [...ALL_TYPES], id: lastId, catchup: true });
 }
 
 // A browser only retries a stream it lost mid-flight. One the server
@@ -128,9 +135,19 @@ function onOffline() {
 }
 
 function onError() {
-  // Don't react yet: EventSource is probably already reconnecting, and
-  // `open` cancels this timer if it succeeds in time. Never stack a
-  // second timer, and never restart the clock once polling has begun.
+  // A stream the server *refused* (readyState CLOSED — a non-2xx, which is
+  // what `/events` answers once the session was signed out in another
+  // tab) will never reopen on its own, and is not a lost connection. One
+  // refetch now sends `#list`'s GET, whose 401 carries `HX-Redirect` to
+  // the login page; waiting for the poll tick instead showed "connection
+  // lost" for up to two minutes to a reader who was simply signed out.
+  if (source !== null && source.readyState === EventSource.CLOSED) {
+    fire({ types: [...ALL_TYPES], id: lastId, catchup: true });
+  }
+  // Otherwise don't react yet: EventSource is probably already
+  // reconnecting, and `open` cancels this timer if it succeeds in time.
+  // Never stack a second timer, and never restart the clock once polling
+  // has begun.
   if (offlineTimer === null && pollTimer === null) {
     offlineTimer = setTimeout(onOffline, OFFLINE_AFTER_MS);
   }

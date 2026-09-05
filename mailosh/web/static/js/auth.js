@@ -86,6 +86,17 @@ function armSubmit() {
     form.classList.add("is-busy");
     form.setAttribute("aria-busy", "true");
   });
+
+  // Back to a page restored from the bfcache brings its JavaScript state
+  // with it — including a `submitting` latched by the sign-in that just
+  // succeeded, which would then refuse every further attempt on a form
+  // that looks perfectly idle.
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    submitting = false;
+    form.classList.remove("is-busy");
+    form.removeAttribute("aria-busy");
+  });
 }
 
 armReveal();

@@ -333,6 +333,34 @@ def test_create_nested_sets_the_parent(app, fake):
     assert created.parent_id == "m-work"
 
 
+def test_create_with_ids_is_the_pickers_type_to_create_and_applies_the_label(app, fake):
+    """Select threads, press `l`, type a name that does not exist, Enter:
+    the label is created *and* put on the selection in one reply, with the
+    apply's undo token. It used to create the label and leave the selection
+    untouched while the toast said "Created"."""
+    client = _login(app)
+    r = _post(client, "/labels", {"name": "Taxes", "ids": ["e2"]})
+    assert r.status_code == 204
+    created = next(m for m in fake.mailboxes if m.name == "Taxes")
+    assert fake.placement["e2"] == {"mb-inbox", created.id}
+    done = _trigger(r, "om:done")
+    assert done["undo"] is not None
+    assert _trigger(r, "om:labels") == {"changed": True}
+
+    undone = _post(client, "/a/undo", {"token": done["undo"]})
+    assert undone.status_code == 204
+    assert fake.placement["e2"] == {"mb-inbox"}
+
+
+def test_create_without_ids_only_creates(app, fake):
+    client = _login(app)
+    before = {k: set(v) for k, v in fake.placement.items()}
+    r = _post(client, "/labels", {"name": "Taxes"})
+    assert r.status_code == 204
+    assert _trigger(r, "om:done")["toast"] == "Created “Taxes”"
+    assert {k: set(v) for k, v in fake.placement.items()} == before
+
+
 def test_a_duplicate_name_is_a_readable_toast_not_a_500(app):
     client = _login(app)
     r = _post(client, "/labels", {"name": "Work"})

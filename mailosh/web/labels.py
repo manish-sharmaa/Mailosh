@@ -406,17 +406,45 @@ async def menu(
 
 @router.post("")
 async def create(
+    request: Request,
     client: ClientDep,
+    user: UserDep,
+    db: DbDep,
     name: Annotated[str, Form()],
     parent_id: Annotated[str, Form()] = "",
+    ids: OptionalIdsForm = None,
 ) -> Response:
-    """Create a label (spec §10), optionally nested under `parent_id`."""
+    """Create a label (spec §10), optionally nested under `parent_id`.
+
+    With `ids`, also put the new label on those messages. That is the
+    picker's type-to-create: a reader who selects five threads, presses `l`
+    and types a name that does not exist yet is naming the label they want
+    *on that selection*, so the two are one gesture and one reply — with
+    the apply's own undo token, so `z` takes the label back off. Without
+    `ids` (the nav's "+ New label") it is just the create.
+    """
     try:
         clean = service.clean_name(name)
-        await service.create_label(client, clean, parent_id=parent_id or None)
+        new_id = await service.create_label(client, clean, parent_id=parent_id or None)
     except LabelError as exc:
         return _error(str(exc))
-    return _changed(f"Created “{clean}”")
+    if not ids:
+        return _changed(f"Created “{clean}”")
+    nav = await _nav_for(client, db, user)
+    names = {node.mailbox_id: node.name for node, _depth in _flatten(nav.labels)}
+    try:
+        result = await service.apply_labels(client, nav, ids, add=[new_id], remove=[], names=names)
+    except LabelError as exc:
+        # The label exists now even though the apply did not land, so the
+        # nav has to be re-read either way.
+        return _error(str(exc), refresh=True)
+    except PartialApply as partial:
+        return _error(
+            f"Created “{clean}”, but only {partial.applied} of {partial.total} messages "
+            "could be updated.",
+            refresh=True,
+        )
+    return _done(request, client, result, labels_changed=True)
 
 
 @router.post("/{mailbox_id}/rename")

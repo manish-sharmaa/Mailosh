@@ -461,6 +461,10 @@ const list = {
   //: i.e. the reader is inside a conversation. Read once on the way back to
   //: decide whether to restore their scroll position.
   away: false,
+  //: The row ids as they were on the swap that took the list away — what
+  //: `ensureFocus` measures the cursor's old position against on the way
+  //: back, since the swap that brings the list back has no rows before it.
+  awayIds: null,
   //: The list's scroll offset as it was before the most recent swap.
   scrollTop: 0,
   count: 0,
@@ -600,6 +604,9 @@ const list = {
     // (`u` re-renders the same page of the same mailbox), and the clause
     // below then finds them all present and drops nothing.
     if (document.querySelector(LIST) === null) {
+      // Only the swap that removed the list saw rows before it; any later
+      // swap while away sees none and must not overwrite that snapshot.
+      if (this.away !== true) this.awayIds = previousIds;
       this.away = true;
       this.render();
       return;
@@ -637,11 +644,18 @@ const list = {
       this.render();
       return;
     }
+    // Coming back from a conversation, `previousIds` is empty — the list was
+    // not there before this swap — so the row set from the moment of leaving
+    // stands in for it. Without that, archiving the open conversation and
+    // pressing `u` restored the viewport deep in the list and put the cursor
+    // on row 1, so the next `j` yanked the reader back to the top.
     let index = 0;
-    if (previousIds !== null && this.focusId !== null) {
-      const was = previousIds.indexOf(this.focusId);
+    const before = returning ? this.awayIds : previousIds;
+    if (before !== null && this.focusId !== null) {
+      const was = before.indexOf(this.focusId);
       if (was !== -1) index = Math.min(was, ids.length - 1);
     }
+    if (returning) this.awayIds = null;
     this.focusId = ids[index];
     // Only take real DOM focus if the list already had it — a background
     // refresh must never steal the caret out of an input.

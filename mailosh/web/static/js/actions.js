@@ -391,10 +391,21 @@ function collapseRows(elements) {
   const gone = live.map((el) => el.dataset.id);
   for (const el of live) el.classList.add("is-leaving");
   setTimeout(() => {
-    if (generation !== listGeneration) return;
-    for (const el of live) el.remove();
+    // A settle in the meantime may have morphed the list, and idiomorph
+    // reuses a row node whose id survived — but the server's copy carries
+    // no `.is-leaving`, so a row that still wears the class was not one the
+    // server kept. Only those go. Bailing out entirely, which is what this
+    // did first, left them in the grid at zero height: still in `ids()`,
+    // still focusable by `j`/`k`, still counted by select-all, and still
+    // the target of the next `e` — mail archived twice.
+    const stale = generation !== listGeneration;
+    const doomed = stale
+      ? live.filter((el) => el.isConnected && el.classList.contains("is-leaving"))
+      : live;
+    if (doomed.length === 0) return;
+    for (const el of doomed) el.remove();
     if (list) {
-      for (const id of gone) list.selected.delete(id);
+      for (const el of doomed) list.selected.delete(el.dataset.id);
       list.ensureFocus(previous);
     }
     // The empty state, and how many rows a page should hold, are the
@@ -778,9 +789,14 @@ function conversationSettled() {
   const ids = (page.dataset.unreadIds ?? "").split(",").filter((id) => id !== "");
   const delay = Number.parseInt(page.dataset.markReadDelay ?? "-1", 10);
   if (ids.length === 0 || !Number.isFinite(delay) || delay < 0) return;
+  // Silent: this is the page reading itself, not the reader acting. A
+  // "Marked as read" toast on every conversation open is noise, and the
+  // response's undo token replacing `lastUndo` meant `z` pressed while an
+  // "Archived · Undo" toast was still on screen un-read the *next*
+  // conversation instead of un-archiving the last one.
   markReadTimer = window.setTimeout(() => {
     markReadTimer = null;
-    om.act("read", ids);
+    om.act("read", ids, { silent: true });
   }, delay * 1000);
 }
 
@@ -793,15 +809,23 @@ document.addEventListener("DOMContentLoaded", conversationSettled);
 
 /** Consume an `om:done` payload: the rows, the badges, the undo token and
  *  the toast. Every field is optional — see the shape table at the top. */
-function applyDone(done) {
+function applyDone(done, { silent = false } = {}) {
   if (done === null) return;
   removeThreads(done.removed ?? []);
   applyCounts(done.counts ?? {});
   if (done.refresh) refreshList();
+  // `silent`: the rows, counts and refresh are still the server's word and
+  // still land; the toast and the undo slot are the reader's, and an action
+  // the reader did not take may claim neither.
+  if (silent) return;
 
   const token = done.undo ?? null;
-  lastUndo = token;
-  lastUndoAt = Date.now();
+  // Only a reply that *carries* a token takes the slot. A "no change" reply
+  // used to null it, so `z` stopped working for a toast still on screen.
+  if (token !== null) {
+    lastUndo = token;
+    lastUndoAt = Date.now();
+  }
   // Key presence, not `=== null`: `undo_unavailable` is absent whenever
   // undo is present. `no_change` resolves to nothing on purpose.
   const note = UNDO_UNAVAILABLE_NOTE.get(done.undo_unavailable) ?? null;
@@ -810,7 +834,7 @@ function applyDone(done) {
 
 /** Run one action. `elements` are the rows to paint optimistically (empty
  *  is fine — the response still reconciles everything). */
-async function run(kind, elements, ids, confirmed = false) {
+async function run(kind, elements, ids, confirmed = false, options = null) {
   if (!Object.hasOwn(ROUTES, kind) || ids.length === 0) return;
 
   const values = { ids: ids };
@@ -839,7 +863,7 @@ async function run(kind, elements, ids, confirmed = false) {
     refreshList();
     const ask = trigger(response, "om:confirm");
     if (ask === null) return;
-    if (await confirmBulk(kind, ask)) await run(kind, [], ids, true);
+    if (await confirmBulk(kind, ask)) await run(kind, [], ids, true, options);
     return;
   }
 
@@ -855,7 +879,7 @@ async function run(kind, elements, ids, confirmed = false) {
     return;
   }
 
-  applyDone(trigger(response, "om:done"));
+  applyDone(trigger(response, "om:done"), options ?? {});
   // Reading a conversation that is no longer in this mailbox: leave, now
   // that the toast (and its Undo) is up. Reachable only past the guard
   // above, which is the whole point of where it sits: a failed archive
@@ -1035,8 +1059,8 @@ document.body.addEventListener("click", onClick);
  *  explicitly skips the optimistic paint (there are no rows to paint), and
  *  the response reconciles the list on its own. */
 const om = {
-  act(kind, ids = null) {
-    if (Array.isArray(ids)) return run(kind, [], ids);
+  act(kind, ids = null, options = null) {
+    if (Array.isArray(ids)) return run(kind, [], ids, false, options);
     const elements = defaultTargets();
     return run(kind, elements, emailIds(elements));
   },

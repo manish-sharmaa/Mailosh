@@ -83,6 +83,7 @@ from mailosh.db.notify import NotifyBus, PostgresNotifyBus, asyncpg_dsn
 from mailosh.db.session import make_engine, make_sessionmaker
 from mailosh.jmap.errors import JmapError, TransportError
 from mailosh.jmap.pool import ClientPool
+from mailosh.security.csrf import CsrfError
 from mailosh.services.mailbox_tree import hidden_in_nav
 from mailosh.sse import HubRegistry
 from mailosh.stalwart_admin import StalwartAdmin
@@ -545,9 +546,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         Every other `HTTPException` keeps FastAPI's own behaviour: this
         re-raises into the default handler rather than inventing a response
-        for statuses it knows nothing about.
+        for statuses it knows nothing about -- *including other 403s*. The
+        match is on `CsrfError`, not on the status: `frames.py` answers 403
+        when the sender posted with "always show images from this sender"
+        is not the message's own, and that is not a stale token.
         """
-        if exc.status_code == 403 and _is_htmx(request):
+        if isinstance(exc, CsrfError) and _is_htmx(request):
             return _error_toast(toast=_STALE_CSRF_TOAST, retry=False)
         return await http_exception_handler(request, exc)
 

@@ -288,8 +288,13 @@ function targets() {
   return typeof resolve === "function" ? resolve() : [];
 }
 
+/** Whether a target is starred all the way through. A list row carries one
+ *  `.row-star`; the open conversation carries a `.msg-star` per message,
+ *  and checking only the row's class there meant `s` in a conversation
+ *  could star but never unstar. */
 function starred(el) {
-  return el.querySelector(".row-star")?.classList.contains("is-on") === true;
+  const stars = el.querySelectorAll(".row-star, .msg-star");
+  return stars.length > 0 && Array.from(stars).every((star) => star.classList.contains("is-on"));
 }
 
 /** Run one of `actions.js`'s six mutations against the current target, or

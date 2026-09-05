@@ -197,7 +197,23 @@ function load(force = false) {
 // on showing the old list.
 document.body.addEventListener("mail:changed", () => {
   loadedAt = 0;
-  if (isOpen()) load(true).then(render);
+  if (!isOpen()) return;
+  // Keep the cursor on the *same command* across the re-render. `render()`
+  // resets it to the top, so mail landing while a reader arrowed down to
+  // "Go to Work" made their Enter run the first action instead. Group
+  // and id together: ids are unique within a group, not across them.
+  const held = results[state.active] ?? null;
+  const key = held === null ? null : held.group + " " + held.id;
+  load(true).then(() => {
+    // Closed while the load was in flight: nothing to draw into, and
+    // repopulating `results` for a dialog that is gone would only leave
+    // stale state for the next open.
+    if (!isOpen()) return;
+    render();
+    if (key === null) return;
+    const at = results.findIndex((candidate) => candidate.group + " " + candidate.id === key);
+    if (at > 0) setActive(at);
+  });
 });
 
 // ---------------------------------------------------------------------
