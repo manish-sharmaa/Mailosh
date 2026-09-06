@@ -531,3 +531,112 @@ def test_the_labels_page_refuses_a_colour_that_is_not_one(app):
     assert r.status_code == 200
     assert "isn't a label colour" in r.headers["HX-Trigger"]
     assert "chartreuse" not in client.get("/settings/labels").text
+
+
+# ---------------------------------------------------------------------------
+# Account
+# ---------------------------------------------------------------------------
+
+
+def test_account_shows_the_address_as_text_not_as_a_field(app):
+    client = _login(app)
+    body = client.get("/settings/account").text
+    assert ME in body
+    assert 'name="display_name"' in body
+    assert 'name="email"' not in body
+    for field in ("current_password", "new_password", "confirm_password"):
+        assert f'name="{field}"' in body
+
+
+def test_a_display_name_reaches_stalwart_before_the_local_row(app):
+    client = _login(app)
+    r = _post(client, "/settings/account/name", {"display_name": "Dee Ess"})
+    assert r.status_code == 204, r.text
+    assert app.state.admin.names == [(ME, "Dee Ess")]
+    assert "Dee Ess" in client.get("/settings/account").text
+
+
+def test_a_display_name_past_the_ceiling_is_refused_and_never_sent(app):
+    client = _login(app)
+    r = _post(client, "/settings/account/name", {"display_name": "x" * 200})
+    assert r.status_code == 200
+    assert "too long" in r.headers["HX-Trigger"]
+    assert app.state.admin.names == []
+
+
+def test_a_password_change_verifies_the_current_one_against_stalwart(app):
+    """A session proves somebody logged in once; it does not prove the
+    person at the keyboard knows the password."""
+    client = _login(app)
+    r = _post(
+        client,
+        "/settings/account/password",
+        {
+            "current_password": "wrong",
+            "new_password": "a-longer-secret",
+            "confirm_password": "a-longer-secret",
+        },
+    )
+    assert r.status_code == 200
+    assert "isn't your current password" in r.headers["HX-Trigger"]
+    assert app.state.admin.passwords == []
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (
+            {"new_password": "a-longer-secret", "confirm_password": "different-secret"},
+            "don't match",
+        ),
+        ({"new_password": "short", "confirm_password": "short"}, "at least"),
+        ({"new_password": "right", "confirm_password": "right"}, "already have"),
+    ],
+)
+def test_a_password_change_is_refused_before_anything_is_sent(app, data, expected):
+    client = _login(app)
+    r = _post(client, "/settings/account/password", {"current_password": "right", **data})
+    assert r.status_code == 200
+    assert expected in r.headers["HX-Trigger"]
+    assert app.state.admin.passwords == []
+
+
+def test_a_password_change_signs_every_other_session_out_and_says_so(app):
+    first = _login(app)
+    second = _login(app)
+    assert second.get("/settings/account").status_code == 200
+
+    r = _post(
+        first,
+        "/settings/account/password",
+        {
+            "current_password": "right",
+            "new_password": "a-longer-secret",
+            "confirm_password": "a-longer-secret",
+        },
+    )
+    assert r.status_code == 204, r.text
+    assert app.state.admin.passwords == [(ME, "a-longer-secret")]
+    toast = json.loads(r.headers["HX-Trigger"])["om:done"]["toast"]
+    assert "1 other session signed out" in toast
+    # The other browser is gone; this one is still signed in.
+    assert second.get("/settings/account", follow_redirects=False).status_code == 303
+    assert first.get("/settings/account").status_code == 200
+
+
+def test_a_mail_server_that_refuses_the_change_leaves_every_session_alone(app):
+    first = _login(app)
+    second = _login(app)
+    app.state.admin.fail_password = True
+    r = _post(
+        first,
+        "/settings/account/password",
+        {
+            "current_password": "right",
+            "new_password": "a-longer-secret",
+            "confirm_password": "a-longer-secret",
+        },
+    )
+    assert r.status_code == 200
+    assert "wouldn't accept" in r.headers["HX-Trigger"]
+    assert second.get("/settings/account").status_code == 200

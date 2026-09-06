@@ -41,12 +41,16 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mailosh.db import repo
 from mailosh.db.models import AppUser, SessionRow, UiPref, Visibility
 from mailosh.jmap.client import JmapClient
+from mailosh.jmap.errors import JmapError, TransportError
 from mailosh.jmap.models import Identity
+from mailosh.security import sessions
+from mailosh.security.exchange import verify_password
 from mailosh.services.compose import clean_signature, list_identities
 from mailosh.services.mailbox_tree import NavModel, build_nav
 from mailosh.ui.format import LABEL_COLORS
@@ -457,6 +461,148 @@ async def _labels_page(
             }
         )
     return {"labels": rows, "colors": LABEL_COLORS, "visibilities": VISIBILITIES}
+
+
+# ---------------------------------------------------------------------------
+# Account
+# ---------------------------------------------------------------------------
+
+#: The shortest password this page will set. Stalwart itself imposes no
+#: minimum, so if this one did not exist the page would happily accept a
+#: single character — and the reader would have no way of knowing the
+#: server did not have an opinion about it.
+MIN_PASSWORD_CHARS = 10
+
+#: Longest display name accepted. `AppUser.display_name` is `String(255)`
+#: and Stalwart's `description` is free text; the ceiling is here so a
+#: paste of an entire document is refused with a sentence rather than by a
+#: database error.
+MAX_DISPLAY_NAME_CHARS = 120
+
+
+async def _revoke_other_sessions(
+    request: Request, db: AsyncSession, user: AppUser, keep: str
+) -> int:
+    """Sign every *other* browser of `user`'s out, and return how many.
+
+    Called after a password change, which is the one moment where "sign out
+    everywhere" is not a separate thing the reader might also want: a
+    password is changed either because it is being rotated or because
+    somebody else may have it, and both answers are the same.
+
+    Not `sessions.revoke_all`, which would take this session down too and
+    bounce the reader to /login the instant their change succeeded. The
+    Stalwart API key every session of theirs shares is deliberately left
+    alone for the same reason `mailosh.web.auth._destroy_key_if_last_session`
+    leaves it alone while any session remains: this one is still using it.
+    """
+    rows = (
+        (await db.execute(select(SessionRow).where(SessionRow.user_id == user.id))).scalars().all()
+    )
+    pool = request.app.state.pool
+    revoked = 0
+    for row in rows:
+        if row.id == keep:
+            continue
+        await sessions.revoke_session(db, row.id)
+        await pool.drop(row.id)
+        revoked += 1
+    return revoked
+
+
+@router.post("/account/name")
+async def save_display_name(
+    request: Request,
+    user: UserDep,
+    db: DbDep,
+    display_name: Annotated[str, Form()] = "",
+) -> Response:
+    """Set the human label shown for this account, on the mail server and
+    on the `AppUser` row that renders the avatar and the account menu.
+
+    Stalwart first, and the local row only once that returned: the mail
+    server is where the name is *published* (it is what appears in the From
+    of everything sent), so a local row updated ahead of a failed remote
+    call would show a name nobody receiving mail would ever see.
+    """
+    name = display_name.strip()
+    if len(name) > MAX_DISPLAY_NAME_CHARS:
+        return _refused(f"That name is too long (limit {MAX_DISPLAY_NAME_CHARS} characters).")
+    admin = request.app.state.admin
+    try:
+        await admin.set_display_name(user.stalwart_username, name)
+    except TransportError:
+        return _refused("Can't reach the mail server right now.")
+    except JmapError:
+        logger.warning("settings: could not set display name for %s", user.id, exc_info=True)
+        return _refused("The mail server wouldn't accept that name.")
+    user.display_name = name or None
+    await db.commit()
+    return _saved("Name saved")
+
+
+@router.post("/account/password")
+async def change_password(
+    request: Request,
+    session: SessionDep,
+    user: UserDep,
+    db: DbDep,
+    current_password: Annotated[str, Form()],
+    new_password: Annotated[str, Form()],
+    confirm_password: Annotated[str, Form()],
+) -> Response:
+    """Change this account's mailbox password.
+
+    **The current password is verified the way logging in verifies one** —
+    `mailosh.security.exchange.verify_password`, a real credential check
+    against Stalwart itself — rather than by trusting the session cookie.
+    A session is proof that somebody logged in as this user at some point;
+    it is not proof that the person at the keyboard right now knows the
+    password, and a borrowed laptop is exactly the case this stops.
+
+    On success every *other* session of this user's is revoked and the
+    response says how many. That is not a courtesy: the two reasons anyone
+    changes a password are rotation and suspicion, and leaving a session
+    someone else opened alive would defeat the second one silently.
+
+    A `TransportError` is reported as "can't reach the mail server", never
+    as a wrong password — the same distinction `mailosh.web.auth.
+    login_submit` draws, and for the same reason: an unreachable server
+    says nothing about the credential.
+    """
+    settings = request.app.state.settings
+    if new_password != confirm_password:
+        return _refused("Those two passwords don't match.")
+    if new_password == current_password:
+        return _refused("That is the password you already have.")
+    if len(new_password) < MIN_PASSWORD_CHARS:
+        return _refused(f"Use at least {MIN_PASSWORD_CHARS} characters.")
+
+    try:
+        verified = await verify_password(
+            settings.stalwart_url, user.stalwart_username, current_password
+        )
+    except TransportError:
+        return _refused("Can't reach the mail server right now.")
+    if verified is None:
+        await repo.audit(db, user.id, "password.fail", {"reason": "bad_current"}, None)
+        return _refused("That isn't your current password.")
+
+    admin = request.app.state.admin
+    try:
+        await admin.set_password(user.stalwart_username, new_password)
+    except TransportError:
+        return _refused("Can't reach the mail server right now.")
+    except JmapError:
+        logger.warning("settings: could not set password for %s", user.id, exc_info=True)
+        return _refused("The mail server wouldn't accept that password.")
+
+    revoked = await _revoke_other_sessions(request, db, user, keep=session.id)
+    await repo.audit(db, user.id, "password.change", {"sessions_revoked": revoked}, None)
+    if revoked:
+        others = "session" if revoked == 1 else "sessions"
+        return _saved(f"Password changed — {revoked} other {others} signed out")
+    return _saved("Password changed")
 
 
 #: Per-page context loaders — `page` -> coroutine returning that page's

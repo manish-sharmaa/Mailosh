@@ -1,0 +1,63 @@
+{# Account (spec §10): the name people see, and the password.
+
+   Two forms, because they are two entirely different acts. Saving a name
+   is a preference; changing a password is a credential change that
+   verifies the current one against Stalwart and signs every other browser
+   out. Putting them in one form would have made the second one reachable
+   by accident from the first.
+
+   The address itself is text, not a field: this app cannot rename a
+   mailbox, and an input for something nothing can change is exactly the
+   promise spec §3 forbids. #}
+{% from "settings/_controls.html" import actions %}
+<form class="settings-form" method="post" action="/settings/account/name"
+      hx-post="/settings/account/name" hx-swap="none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="settings-field">
+    <label class="settings-label" for="display-name">Name</label>
+    <p class="settings-help">Shown on everything you send, and in your own account menu.</p>
+    <input class="settings-input" id="display-name" name="display_name" type="text"
+           value="{{ user.display_name or '' }}" maxlength="120" autocomplete="name"
+           placeholder="{{ user.email }}">
+  </div>
+
+  <div class="settings-field">
+    <span class="settings-label">Email address</span>
+    <p class="settings-note">{{ user.email }}</p>
+  </div>
+
+  {{ actions() }}
+</form>
+
+<section class="settings-section" aria-labelledby="password-title">
+  <h3 id="password-title" class="settings-section-title">Password</h3>
+  <p class="settings-help">
+    Changing it signs out every other browser and phone you are signed in
+    on. This one stays signed in.
+  </p>
+  {# `autocomplete` is spelled out on all three so a password manager
+     offers to update the stored entry rather than filling the new field
+     with the old value. #}
+  <form class="settings-form" method="post" action="/settings/account/password"
+        hx-post="/settings/account/password" hx-swap="none">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="settings-field">
+      <label class="settings-label" for="current-password">Current password</label>
+      <input class="settings-input" id="current-password" name="current_password"
+             type="password" autocomplete="current-password" required>
+    </div>
+    <div class="settings-field">
+      <label class="settings-label" for="new-password">New password</label>
+      <p class="settings-help">At least 10 characters.</p>
+      <input class="settings-input" id="new-password" name="new_password"
+             type="password" autocomplete="new-password" minlength="10" required>
+    </div>
+    <div class="settings-field">
+      <label class="settings-label" for="confirm-password">New password again</label>
+      <input class="settings-input" id="confirm-password" name="confirm_password"
+             type="password" autocomplete="new-password" minlength="10" required>
+    </div>
+    {{ actions("Change password") }}
+  </form>
+</section>
