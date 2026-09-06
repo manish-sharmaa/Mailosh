@@ -1,0 +1,25 @@
+{# How this app writes a recipient, and the only place it decides.
+
+   Macros only — this template renders nothing on its own, which is what
+   makes it importable. `thread/details.html` used to hold them, and it
+   also renders a `<details>` element off a `message` in scope: importing
+   *that* runs its body, so the print page asking for its macros raised
+   `'message' is undefined`. A file with no body has nothing to run.
+
+   Both callers import them `with context`, because `person()` compares
+   against `me` — the viewer's own address, which the route puts in the
+   context and which is the whole reason "to me" reads the way it does. #}
+
+{% macro person(addr) -%}
+  {%- if addr.email | lower == me | lower -%}
+    me
+  {%- elif addr.name -%}
+    {{ addr.name }} &lt;{{ addr.email }}&gt;
+  {%- else -%}
+    {{ addr.email }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro people(addrs) -%}
+  {%- for addr in addrs -%}{{ person(addr) }}{{ ", " if not loop.last }}{%- endfor -%}
+{%- endmacro %}

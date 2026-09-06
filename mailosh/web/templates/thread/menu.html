@@ -10,8 +10,8 @@
    static/js/actions.js's capture listener turns that name into the focus
    `compose.js` reads — before compose's own handler runs — so the reply
    quotes the message the menu was opened on, whichever card was last
-   touched. Print stays absent until the route behind it exists (spec §3:
-   nothing present-and-dead).
+   touched. Print is the exception and is the conversation's — see its own
+   note below.
 
    A native `<details>` again — same reasoning as `thread/details.html`: the
    CSP forbids the inline handler an Alpine or htmx-`hx-on:` menu would
@@ -75,6 +75,24 @@
        recording the amendment. #}
     <a class="menu-item" href="/m/{{ message.id }}/source" target="_blank" rel="noopener noreferrer">
       {{ icon("file-text", class_="size-4") }}View source
+    </a>
+
+    {# Print is the conversation's, not this card's — the only item here
+       that is. A printout of one message out of a thread is a page that
+       omits the half of the exchange that gives it meaning, and every mail
+       client that offers Print offers it over the conversation; the reply
+       items above are per-message because a reply *to* a thread is not a
+       thing you can send.
+
+       A plain link to `GET /t/{id}/print`, opened in a new tab: it is a
+       different document at its own address, so it is reachable, linkable
+       and back-buttonable, and a reader can print a conversation without
+       first opening it. That page calls `window.print()` itself from
+       `static/js/print.js` — the CSP forbids the inline `onload` that
+       would otherwise do it, and it has to wait for every message frame to
+       load in any case. #}
+    <a class="menu-item" href="/t/{{ view.thread_id }}/print" target="_blank" rel="noopener noreferrer">
+      {{ icon("printer", class_="size-4") }}Print
     </a>
 
     <form class="menu-form" hx-post="/a/delete" hx-target="#msg-{{ message.id }}" hx-swap="delete">
