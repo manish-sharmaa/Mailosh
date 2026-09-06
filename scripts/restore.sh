@@ -34,9 +34,20 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Usage
 # ---------------------------------------------------------------------------
-#   scripts/restore.sh --check BACKUP_DIR    verify the archive only; changes nothing
-#   scripts/restore.sh BACKUP_DIR            restore (asks for confirmation)
-#   scripts/restore.sh --yes BACKUP_DIR      restore without asking (scripts/cron)
+#   scripts/restore.sh --check BACKUP        verify the archive only; changes nothing
+#   scripts/restore.sh BACKUP                restore (asks for confirmation)
+#   scripts/restore.sh --yes BACKUP          restore without asking (scripts/cron)
+#   scripts/restore.sh --identity KEYFILE [--check] BACKUP.tar.age
+#                                            an encrypted backup (backup.sh
+#                                            --encrypt-to); KEYFILE is the age
+#                                            identity, or set MAILOSH_AGE_IDENTITY
+#
+#   BACKUP is a mailosh-<stamp> directory, or the mailosh-<stamp>.tar.age file
+#   backup.sh --encrypt-to produces. The .tar.age is decrypted into a private
+#   temporary directory (removed on exit) and then treated exactly like the
+#   directory -- so `--check` on an encrypted backup also proves that the
+#   identity you hold actually decrypts it, which is the one thing a checksum
+#   cannot tell you.
 #
 # See docs/operations.md.
 
@@ -55,14 +66,19 @@ need_cmd() {
 CHECK_ONLY=no
 ASSUME_YES=no
 BACKUP=""
+IDENTITY="${MAILOSH_AGE_IDENTITY:-}"
 while [ $# -gt 0 ]; do
 	case "$1" in
 		-h|--help) usage 0 ;;
 		--check) CHECK_ONLY=yes; shift ;;
 		-y|--yes) ASSUME_YES=yes; shift ;;
+		--identity|-i)
+			[ $# -ge 2 ] || die "--identity needs a file (the age identity that decrypts the backup)"
+			IDENTITY="$2"; shift 2 ;;
+		--identity=*) IDENTITY="${1#--identity=}"; shift ;;
 		-*) die "unknown option '$1' (try --help)" ;;
 		*)
-			[ -z "$BACKUP" ] || die "more than one backup directory given ('$BACKUP' and '$1')"
+			[ -z "$BACKUP" ] || die "more than one backup given ('$BACKUP' and '$1')"
 			BACKUP="$1"; shift
 			;;
 	esac
@@ -74,7 +90,31 @@ BACKUP_ARG="$BACKUP"
 case "$BACKUP_ARG" in
 	*.partial) die "'$BACKUP_ARG' is an interrupted backup (.partial). It is incomplete by definition; do not restore it." ;;
 esac
-BACKUP="$(cd "$BACKUP_ARG" 2>/dev/null && pwd)" || die "backup directory '$BACKUP_ARG' does not exist."
+
+# An encrypted backup is decrypted into a temporary directory first, and the
+# rest of this script never knows the difference. The directory is private
+# (mktemp -d gives 0700) and removed on exit -- including on `die` -- so a
+# decrypted copy of everyone's mail does not outlive the run.
+WORK=""
+case "$BACKUP_ARG" in
+	*.tar.age)
+		need_cmd age "It decrypts a backup made with backup.sh --encrypt-to. https://age-encryption.org"
+		[ -f "$BACKUP_ARG" ] || die "encrypted backup '$BACKUP_ARG' does not exist."
+		[ -n "$IDENTITY" ] || die "'$BACKUP_ARG' is encrypted; pass --identity KEYFILE (the age identity whose public key it was encrypted to), or set MAILOSH_AGE_IDENTITY."
+		[ -f "$IDENTITY" ] || die "identity file '$IDENTITY' does not exist."
+		WORK="$(mktemp -d "${TMPDIR:-/tmp}/mailosh-restore.XXXXXX")"
+		trap 'rm -rf "$WORK"' EXIT
+		log "decrypting $BACKUP_ARG"
+		age -d -i "$IDENTITY" "$BACKUP_ARG" | tar -xf - -C "$WORK" \
+			|| die "could not decrypt '$BACKUP_ARG' with '$IDENTITY'. Wrong identity, or a damaged archive -- nothing was changed."
+		BACKUP="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d -name 'mailosh-*' | head -1)"
+		[ -n "$BACKUP" ] || die "'$BACKUP_ARG' decrypted, but holds no mailosh-<stamp> directory -- not an archive made by scripts/backup.sh."
+		;;
+	*)
+		[ -z "$IDENTITY" ] || [ -d "$BACKUP_ARG" ] || die "--identity was given but '$BACKUP_ARG' is not a .tar.age archive."
+		BACKUP="$(cd "$BACKUP_ARG" 2>/dev/null && pwd)" || die "backup directory '$BACKUP_ARG' does not exist."
+		;;
+esac
 cd "$REPO_ROOT"
 
 # ---------------------------------------------------------------------------
@@ -128,7 +168,8 @@ BACKUP_STALWART_IMAGE="$(sed -n 's/^  stalwart_image *: *//p' "$BACKUP/MANIFEST.
 
 log "archive OK: $PG_TABLES tables in the SQL dump, $STALWART_ENTRIES files in the mail store"
 if [ "$CHECK_ONLY" = yes ]; then
-	printf '\n%s\n' "$BACKUP is intact and restorable-looking."
+	printf '\n%s\n' "$BACKUP_ARG is intact and restorable-looking."
+	[ -z "$WORK" ] || printf '%s\n' "  decrypted : yes, with $IDENTITY"
 	printf '%s\n' "  taken     : ${BACKUP_CREATED:-unknown} from project '${BACKUP_PROJECT:-unknown}'"
 	printf '%s\n' "  stalwart  : ${BACKUP_STALWART_IMAGE:-unknown}"
 	printf '%s\n' "  mail store: $STALWART_ENTRIES files"

@@ -75,18 +75,38 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Usage
 # ---------------------------------------------------------------------------
-#   scripts/backup.sh [DEST_DIR] [--keep N]
+#   scripts/backup.sh [DEST_DIR] [--keep N] [--encrypt-to RECIPIENT]...
+#                     [--rclone-remote REMOTE:PATH]
 #
 #   DEST_DIR    where to write (default: ./backups, or $MAILOSH_BACKUP_DIR).
 #   --keep N    after a successful backup, delete all but the N newest
-#               backups in DEST_DIR. Default 0 = never delete anything.
+#               backups in DEST_DIR (directories and .tar.age archives
+#               alike). Default 14. 0 = never delete anything.
+#   --encrypt-to RECIPIENT
+#               pack the finished backup into a single
+#               mailosh-<stamp>.tar.age encrypted to this age recipient
+#               (an `age1...` public key, or an `ssh-ed25519 ...`/`ssh-rsa
+#               ...` public key), and remove the plaintext directory.
+#               Repeat the flag for more than one recipient. Needs `age`
+#               on PATH (https://age-encryption.org -- `apt install age`,
+#               `brew install age`). Only the PUBLIC key is needed here;
+#               keep the matching identity (private key) somewhere a
+#               backup does not reach, because restore needs it:
+#                 scripts/restore.sh --identity KEYFILE backups/mailosh-<stamp>.tar.age
+#   --rclone-remote REMOTE:PATH
+#               after everything above succeeded, `rclone copy` the result
+#               (the .tar.age file, or the whole directory) to that rclone
+#               remote. Needs `rclone` configured on PATH. A failed upload
+#               exits 1 so cron notices, but the local backup is complete
+#               and intact regardless.
 #
 # Which stack it acts on is chosen with Compose's own environment variables,
 # not with flags of our own:
 #
 #   COMPOSE_PROJECT_NAME=other COMPOSE_FILE=/path/other.yml scripts/backup.sh
 #
-# Restore with scripts/restore.sh. See docs/operations.md.
+# Restore with scripts/restore.sh. Schedule with scripts/backup-timer.sh
+# (a systemd timer). See docs/operations.md.
 
 usage() {
 	sed -n '/^# Usage$/,/^$/p' "$0" | sed 's/^# \{0,1\}//' | grep -v '^-\{10,\}$'
@@ -104,7 +124,17 @@ need_cmd() {
 # Arguments
 # ---------------------------------------------------------------------------
 DEST="${MAILOSH_BACKUP_DIR:-}"
-KEEP=0
+# 14 daily backups is the "defensible default" docs/operations.md already
+# recommends; it used to be 0 (keep everything), which on a cron fills the
+# disk at exactly the rate the mail store grows. 0 still means "never
+# delete", for anyone who prunes some other way.
+KEEP=14
+# age recipients, one `-r VALUE` pair per entry. A plain string rather than
+# an array so this keeps running under macOS's bash 3.2 without `declare -a`
+# gymnastics; recipients are public keys with no whitespace, so
+# whitespace-splitting is safe.
+ENCRYPT_TO=""
+RCLONE_REMOTE=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 		-h|--help) usage 0 ;;
@@ -117,6 +147,16 @@ while [ $# -gt 0 ]; do
 			KEEP="${1#--keep=}"; shift
 			case "$KEEP" in (''|*[!0-9]*) die "--keep must be a non-negative integer" ;; esac
 			;;
+		--encrypt-to)
+			[ $# -ge 2 ] || die "--encrypt-to needs an age recipient (age1... or an ssh public key)"
+			ENCRYPT_TO="$ENCRYPT_TO -r $2"; shift 2 ;;
+		--encrypt-to=*)
+			ENCRYPT_TO="$ENCRYPT_TO -r ${1#--encrypt-to=}"; shift ;;
+		--rclone-remote)
+			[ $# -ge 2 ] || die "--rclone-remote needs a value like myremote:mailosh-backups"
+			RCLONE_REMOTE="$2"; shift 2 ;;
+		--rclone-remote=*)
+			RCLONE_REMOTE="${1#--rclone-remote=}"; shift ;;
 		-*) die "unknown option '$1' (try --help)" ;;
 		*)
 			[ -z "$DEST" ] || die "more than one destination given ('$DEST' and '$1')"
@@ -139,6 +179,23 @@ DEST="${DEST:-$REPO_ROOT/backups}"
 need_cmd docker "Install Docker Desktop or the docker engine."
 need_cmd gzip   "It is part of every base system; check your PATH."
 need_cmd python3 "It reads the project name out of 'docker compose config --format json'."
+# Both optional tools are checked before a byte is written, for the same
+# reason as everything else in this section: discovering that `age` is not
+# installed *after* Stalwart has been stopped and restarted is the wrong
+# moment.
+if [ -n "$ENCRYPT_TO" ]; then
+	need_cmd age "Install it from https://age-encryption.org (apt install age / brew install age), or drop --encrypt-to."
+	case "$ENCRYPT_TO" in
+		*" -r AGE-SECRET-KEY-"*) die "--encrypt-to was given an age SECRET key. Pass the public key (age1...) -- the secret one is what restore.sh --identity needs, and it must never go on a command line." ;;
+	esac
+fi
+if [ -n "$RCLONE_REMOTE" ]; then
+	need_cmd rclone "Install it from https://rclone.org and configure a remote with 'rclone config', or drop --rclone-remote."
+	case "$RCLONE_REMOTE" in
+		*:*) ;;
+		*) die "--rclone-remote '$RCLONE_REMOTE' has no ':' -- rclone destinations look like myremote:bucket/path." ;;
+	esac
+fi
 
 docker compose version >/dev/null 2>&1 || die "'docker compose' (v2) is required; 'docker-compose' v1 is not supported."
 docker info >/dev/null 2>&1 || die "the Docker daemon is not reachable. Start Docker and retry."
@@ -411,7 +468,13 @@ PG_SERVER_VERSION="$(docker compose exec -T postgres psql -U "$PG_USER" -d "$PG_
 	echo "  skew directions cost at most a re-login."
 	echo
 	echo "RESTORE"
-	echo "  scripts/restore.sh $OUT"
+	if [ -n "$ENCRYPT_TO" ]; then
+		echo "  This directory was packed into $OUT.tar.age (age, recipients:$ENCRYPT_TO)."
+		echo "  Restore needs the matching age identity (private key):"
+		echo "    scripts/restore.sh --identity KEYFILE $OUT.tar.age"
+	else
+		echo "  scripts/restore.sh $OUT"
+	fi
 	echo "  Restoring into a *different* stack (a drill, or a new host):"
 	echo "    COMPOSE_PROJECT_NAME=mailosh-drill COMPOSE_FILE=/path/to/compose.yml \\"
 	echo "      scripts/restore.sh $OUT"
@@ -430,15 +493,49 @@ restart_stalwart
 log "backup complete: $OUT ($(du -sh "$OUT" | awk '{print $1}'))"
 
 # ---------------------------------------------------------------------------
-# 4. Retention.
+# 4. Encryption (optional). One .tar.age file instead of the directory.
 # ---------------------------------------------------------------------------
-# Only ever deletes directories that match this script's own naming pattern,
-# so pointing --keep at a directory that also holds something else cannot
-# eat it.
+# The directory is complete and checksummed before this runs, so an
+# encryption failure leaves a valid plaintext backup behind rather than
+# nothing -- and says so. The plaintext directory is removed only after the
+# archive has been written and renamed into place; a `.partial` here means
+# the same thing it means for the directory, and restore.sh refuses it.
+#
+# Why age and not gpg: one small binary, one recipient string, no keyring,
+# no agent, no trust model to configure on a fresh host at 3 a.m. -- and the
+# identity file that decrypts is a single line you can keep in a password
+# manager.
+RESULT="$OUT"
+VERIFY_CMD="scripts/restore.sh --check $OUT"
+if [ -n "$ENCRYPT_TO" ]; then
+	ARCHIVE="$OUT.tar.age"
+	log "encrypting to $ARCHIVE"
+	# shellcheck disable=SC2086  # ENCRYPT_TO is a deliberately unquoted "-r KEY -r KEY" list
+	if ! ( cd "$DEST" && tar -cf - "$(basename "$OUT")" | age $ENCRYPT_TO -o "$ARCHIVE.partial" ); then
+		rm -f "$ARCHIVE.partial"
+		die "age failed; the PLAINTEXT backup at $OUT is complete and intact, and was NOT removed. Nothing was uploaded."
+	fi
+	mv "$ARCHIVE.partial" "$ARCHIVE"
+	rm -rf "$OUT"
+	RESULT="$ARCHIVE"
+	VERIFY_CMD="scripts/restore.sh --check --identity KEYFILE $ARCHIVE"
+	log "encrypted: $ARCHIVE ($(du -sh "$ARCHIVE" | awk '{print $1}')); plaintext directory removed"
+fi
+
+# ---------------------------------------------------------------------------
+# 5. Retention.
+# ---------------------------------------------------------------------------
+# Only ever deletes entries that match this script's own naming pattern --
+# the plain directory or its .tar.age form -- so pointing --keep at a
+# directory that also holds something else cannot eat it. Both forms are
+# pruned in one list, ordered by the timestamp in the name (the same stamp
+# sorts identically with or without the suffix), so switching --encrypt-to
+# on or off mid-rota does not exempt the older shape from pruning.
 if [ "$KEEP" -gt 0 ]; then
 	# No `mapfile`/process substitution: this has to keep working under the
 	# bash 3.2 that ships with macOS, where neither exists.
-	find "$DEST" -maxdepth 1 -type d -name 'mailosh-????????T??????Z' \
+	find "$DEST" -maxdepth 1 \
+		\( -type d -name 'mailosh-????????T??????Z' -o -type f -name 'mailosh-????????T??????Z.tar.age' \) \
 		| sort -r | tail -n +$((KEEP + 1)) > "$DEST/.retention.$$" || true
 	while IFS= read -r old; do
 		[ -n "$old" ] || continue
@@ -449,4 +546,27 @@ if [ "$KEEP" -gt 0 ]; then
 	log "retention: kept the $KEEP most recent backup(s) in $DEST"
 fi
 
-printf '\n%s\n' "Next: verify it.  scripts/restore.sh --check $OUT"
+# ---------------------------------------------------------------------------
+# 6. Off-host copy (optional).
+# ---------------------------------------------------------------------------
+# `rclone copy` is idempotent (it skips files already present with the same
+# size and modtime) and never deletes on the remote, so remote retention is
+# a separate decision -- most object stores do it with a lifecycle rule. An
+# unencrypted directory goes up under its own name; a .tar.age file goes up
+# as a file. Either way, a plaintext upload holds everyone's mail in the
+# clear at the destination -- docs/operations.md says so; this line does too.
+if [ -n "$RCLONE_REMOTE" ]; then
+	[ -n "$ENCRYPT_TO" ] || log "WARNING: uploading an UNENCRYPTED backup to $RCLONE_REMOTE -- it contains every message in the clear."
+	if [ -d "$RESULT" ]; then
+		log "uploading $RESULT to $RCLONE_REMOTE/$(basename "$RESULT")"
+		rclone copy "$RESULT" "$RCLONE_REMOTE/$(basename "$RESULT")" \
+			|| die "rclone copy to $RCLONE_REMOTE failed. The local backup at $RESULT is complete and intact; re-run the upload by hand."
+	else
+		log "uploading $RESULT to $RCLONE_REMOTE"
+		rclone copy "$RESULT" "$RCLONE_REMOTE" \
+			|| die "rclone copy to $RCLONE_REMOTE failed. The local backup at $RESULT is complete and intact; re-run the upload by hand."
+	fi
+	log "uploaded to $RCLONE_REMOTE"
+fi
+
+printf '\n%s\n' "Next: verify it.  $VERIFY_CMD"

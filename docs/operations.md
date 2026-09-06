@@ -549,25 +549,108 @@ completion marker sits several lines above. Checking only `tail -3` reports a
 perfectly good dump as truncated. That happened here, and is why the check reads
 the last 20 lines.
 
-### Running it from cron
+### Running it on a schedule
 
-`scripts/backup.sh` is the interface; `make backup` is a convenience. A daily
-backup at 03:15 keeping two weeks, from the directory holding your
-`docker-compose.yml`:
+`scripts/backup.sh` is the interface; `make backup` is a convenience. The
+supported scheduler is a **systemd timer**, installed by
+`scripts/backup-timer.sh`. From the checkout, as root, with the same
+`COMPOSE_FILE` you deploy with:
 
-```cron
-15 3 * * *  cd /srv/mailosh && ./scripts/backup.sh /srv/backups --keep 14 >> /var/log/mailosh-backup.log 2>&1
+```
+sudo COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml \
+  scripts/backup-timer.sh --dest /srv/mailosh-backups --keep 14 --user deploy
 ```
 
-Two things this does not do for you:
+It prints the two units before writing them (`--print` prints and stops), then
+`daemon-reload`s and `enable --now`s `mailosh-backup.timer`: daily at 03:15
+local time (`--calendar` takes any `OnCalendar=` spec), `Persistent=true` so a
+box that was off at 03:15 runs the backup at boot, and a 10-minute randomised
+delay. Afterwards:
 
-- **It does not copy the backup off the machine.** A backup on the same disk as
-  the data protects you from `rm -rf` and a bad upgrade, and from nothing else.
-  Sync `/srv/backups` somewhere else — `rclone`, `restic`, `rsync` to another
-  host, an object bucket. Whatever you choose, it now holds everyone's mail in
-  the clear, so encrypt it or trust the destination completely.
-- **It does not encrypt.** The tars are plain gzip. If the destination is not
-  trusted, wrap it (`age`, `gpg`, `restic`'s own encryption).
+```
+systemctl list-timers mailosh-backup.timer     # next and last run
+sudo systemctl start mailosh-backup.service    # one run now, to prove it
+journalctl -u mailosh-backup.service -n 50     # what the last run said
+sudo scripts/backup-timer.sh --uninstall
+```
+
+Why a host timer and not a compose sidecar: a backup container would need the
+Docker socket mounted into it to stop Stalwart and exec `pg_dump`, and a
+container holding `/var/run/docker.sock` is root on the host. It would be the
+most privileged thing in the stack, running all day to do ten seconds of work.
+The host already has docker access, the checkout, the `.env`, and a scheduler
+with logs and catch-up. If you have no systemd, the old cron line still works:
+
+```cron
+15 3 * * *  cd /srv/mailosh && ./scripts/backup.sh /srv/backups >> /var/log/mailosh-backup.log 2>&1
+```
+
+`--keep` now defaults to **14**; pass `--keep 0` to never prune.
+
+### Encryption and off-host copies
+
+Two flags, both optional, both off by default — a plain `scripts/backup.sh`
+still writes a plaintext directory to `./backups` exactly as before.
+
+**`--encrypt-to RECIPIENT`** packs the finished, checksummed directory into a
+single `mailosh-<stamp>.tar.age` and removes the plaintext. It needs
+[`age`](https://age-encryption.org) on the host (`apt install age`,
+`brew install age`). Make a key once, and keep the identity file *outside*
+anything the backup reaches — a password manager is the right place, since it
+is one line:
+
+```
+age-keygen -o ~/.config/mailosh/backup-identity.txt
+#   Public key: age1...        <- this is what --encrypt-to takes
+```
+
+Repeat `--encrypt-to` for a second recipient (a colleague's key, or an
+`ssh-ed25519 ...` public key). The script refuses an `AGE-SECRET-KEY-` on the
+command line. Restore needs the identity:
+
+```
+scripts/restore.sh --check --identity ~/.config/mailosh/backup-identity.txt \
+    /srv/mailosh-backups/mailosh-20260906T070700Z.tar.age
+```
+
+`--check` on an encrypted backup decrypts into a private temporary directory
+(removed on exit, including on failure) and then runs every check the
+directory form gets — so it also proves the identity you hold actually
+decrypts it. A wrong identity fails as `age: error: no identity matched any of
+the recipients` with nothing changed. Retention prunes directories and
+`.tar.age` files in one list, by the timestamp in the name, so turning
+encryption on mid-rota does not exempt the older shape.
+
+**`--rclone-remote REMOTE:PATH`** runs `rclone copy` of the result (the
+`.tar.age`, or the whole directory) after everything else succeeded. `rclone`
+must be configured on the host (`rclone config`). `rclone copy` never deletes
+on the remote, so remote retention is a separate decision — a bucket lifecycle
+rule is the usual answer. A failed upload exits 1 (so the timer shows failed
+and `journalctl` says why) but the local backup is complete and intact. An
+unencrypted upload is logged with a warning: it holds everyone's mail in the
+clear at the destination.
+
+Both were exercised on 2026-09-06 against the dev stack: `--encrypt-to
+--rclone-remote :local:... --keep 1` produced a 1.9 MB `.tar.age`, removed the
+plaintext, pruned three seeded older entries (two directories, one `.tar.age`)
+and left an unrelated directory alone, uploaded, and `restore.sh --check
+--identity` on the result decrypted and verified it (42 store files, 10
+tables). `age` and `rclone` ran from a container on that machine (neither is
+installed on the host), invoked through PATH shims — the scripts themselves
+are unaware of the difference.
+
+### The routine verification
+
+After every backup, and in the same timer if you like a belt with your braces:
+
+```
+scripts/restore.sh --check BACKUP            # a mailosh-<stamp> directory
+scripts/restore.sh --check --identity KEYFILE BACKUP.tar.age
+```
+
+`backup.sh` prints the exact command for the backup it just made as its last
+line (`Next: verify it.  ...`). `make backup-check` runs it against the newest
+directory.
 
 ### Retention advice
 
@@ -607,6 +690,8 @@ make backup-check                        # same, on the newest backup
 
 scripts/restore.sh BACKUP_DIR            # DESTRUCTIVE; asks first
 make restore BACKUP=backups/mailosh-...
+
+scripts/restore.sh --identity KEYFILE [--check] BACKUP.tar.age   # encrypted backup
 ```
 
 ### `--check` first
@@ -993,9 +1078,10 @@ Stated plainly, because the gaps matter more than the coverage:
   messages and a 7.9 MB database. The approach is size-independent; the
   *numbers* are not. A large mailbox means a longer stop window, and nothing here
   tells you how long.
-- **Off-host copies and encryption.** Not implemented, not wrapped, not tested.
-  The scripts write plaintext gzip to a local path. Getting it off the machine
-  and protecting it there is yours.
+- **Off-host copies and encryption** are optional flags (`--encrypt-to`,
+  `--rclone-remote`, §2), exercised against the dev stack with a local rclone
+  remote. They were not exercised against a real object store, and nothing
+  manages remote retention for you.
 - **Stalwart version upgrades.** Never exercised. Only `v0.16.20` was run.
 - **`stalwart --export` / `--import`.** Confirmed to exist and confirmed to need
   the server stopped. Never used for a real backup or restore here.

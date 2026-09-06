@@ -416,12 +416,16 @@ BACKUP_DIR="${MAILOSH_BACKUP_DIR:-$REPO_ROOT/backups}"
 if [ -d "$BACKUP_DIR" ]; then
 	disk_check "backups $BACKUP_DIR" "$(df -P "$BACKUP_DIR" 2>/dev/null)"
 fi
-NEWEST="$(find "$BACKUP_DIR" -maxdepth 1 -type d -name 'mailosh-????????T??????Z' 2>/dev/null | sort | tail -1)"
+# Both shapes backup.sh produces: the plain directory, and the .tar.age
+# file `--encrypt-to` packs it into.
+NEWEST="$(find "$BACKUP_DIR" -maxdepth 1 \
+	\( -type d -name 'mailosh-????????T??????Z' -o -type f -name 'mailosh-????????T??????Z.tar.age' \) 2>/dev/null \
+	| sed 's/\.tar\.age$//' | sort | tail -1)"
 if [ -z "$NEWEST" ]; then
 	warn "backups" "no backup found in $BACKUP_DIR -- run scripts/backup.sh"
 else
-	# The directory name is the UTC timestamp the backup was taken at, which
-	# is more trustworthy than the mtime (copying a backup rewrites mtime).
+	# The name is the UTC timestamp the backup was taken at, which is more
+	# trustworthy than the mtime (copying a backup rewrites mtime).
 	STAMP="$(basename "$NEWEST" | sed 's/^mailosh-//')"
 	AGE_DAYS="$(python3 - "$STAMP" <<'PY'
 import datetime, sys
