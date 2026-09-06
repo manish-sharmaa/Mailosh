@@ -22,7 +22,7 @@
    `person()` reads `me`. #}
 {% from "thread/people.html" import person, people with context %}
 
-<details class="msg-details">
+<details class="msg-details" data-menu>
   <summary class="msg-details-toggle">
     {% if message.to %}
       to {{ people(message.to) }}

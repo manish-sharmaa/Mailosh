@@ -28,7 +28,7 @@
          role="button" aria-pressed="{{ 'true' if chip.active else 'false' }}">{{ chip.label }}</a>
 
     {% elif chip.kind == "menu" %}
-      <details class="schip-menu">
+      <details class="schip-menu" data-menu>
         <summary class="schip{% if chip.active %} is-on{% endif %}">
           {{ chip.label }}{{ icon("chevron-down", class_="size-3 schip-caret") }}
         </summary>
@@ -50,7 +50,7 @@
          field because the route edits *this* query rather than starting a
          new one — the pill above holds the same text, but a form posts
          what it carries, not what some other element happens to show. #}
-      <details class="schip-menu">
+      <details class="schip-menu" data-menu>
         <summary class="schip{% if chip.active %} is-on{% endif %}">
           {{ chip.label }}{{ icon("chevron-down", class_="size-3 schip-caret") }}
         </summary>

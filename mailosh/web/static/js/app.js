@@ -808,6 +808,72 @@ document.body.addEventListener("focusin", (event) => {
   if (row) (store("list") ?? list).setFocus(row.dataset.id);
 });
 
+// ---------------------------------------------------------------------
+// Menus close when you click away from them
+// ---------------------------------------------------------------------
+//
+// Every floating menu in this app is a native `<details>`: the account
+// menu, advanced search, a search chip's dropdown, a message's ⋮ and its
+// details fold. The platform gives them a disclosure, keyboard support and
+// no JavaScript — and one thing it does not give them, because a
+// `<details>` is a disclosure rather than a menu: dismissal. Opened, they
+// stayed open until the summary was clicked again, so an account menu
+// hung over the settings page while the reader clicked around behind it.
+//
+// `data-menu` marks the ones that *float*, which is what makes this
+// correct to do to them. The sidebar's "More" and a message's fold and
+// quote are `<details>` too, and deliberately carry no `data-menu`: they
+// are sections of the page, and a section that collapsed itself the moment
+// you clicked anything else would be broken, not tidy.
+//
+// Not `data-popover` — `compose.js` already owns that attribute for the
+// formatting popover it hides with `hidden`, and sharing the name would
+// have had it set `hidden` on the account menu.
+//
+// Capture phase, so a menu closes even when something deeper calls
+// `stopPropagation()`. A click on a menu's own summary is left alone: the
+// platform is already toggling that one, and closing it here first would
+// make the toggle re-open it.
+const MENU = "details[data-menu]";
+
+function closeMenus(except = null) {
+  for (const menu of document.querySelectorAll(MENU + "[open]")) {
+    if (menu !== except) menu.removeAttribute("open");
+  }
+}
+
+document.body.addEventListener(
+  "click",
+  (event) => {
+    closeMenus(event.target?.closest?.(MENU) ?? null);
+  },
+  true,
+);
+
+// Escape closes the innermost open menu and puts focus back on the control
+// that opened it — where a menu leaves you, rather than at the top of the
+// document. Handled here rather than in keys.js's registry because it must
+// win over that file's global `Escape` (which clears the selection): with a
+// menu open, Escape means "close this".
+document.body.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    const menus = document.querySelectorAll(MENU + "[open]");
+    if (menus.length === 0) return;
+    const innermost = menus[menus.length - 1];
+    event.preventDefault();
+    event.stopPropagation();
+    innermost.removeAttribute("open");
+    innermost.querySelector("summary")?.focus();
+  },
+  true,
+);
+
+// A swap can replace the markup a menu lives in while it is open; anything
+// still open after one is a menu whose page has moved on.
+document.body.addEventListener("htmx:beforeSwap", () => closeMenus());
+
 // The toolbar's tri-state box. `data-role`, not `data-action`: every
 // `data-action` in this app names one of `mailosh/web/actions.py`'s six
 // routes, and this control posts nothing at all.
