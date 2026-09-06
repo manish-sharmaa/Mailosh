@@ -1,0 +1,47 @@
+/* Outbound delivery pill (`mailosh.services.outbound`,
+   templates/fragments/outbound_pill.html) — "Queued" / "Bounced" beside a
+   Sent row's chips and beside a conversation's subject.
+
+   A separate file, `@import`ed into `input.css` and compiled by the same
+   `make css`, exactly as search.css/labels.css are: one stylesheet split
+   across files, every token defined there in scope here.
+
+   Same geometry as `.chip` so the two sit on one baseline in `.row-meta`,
+   but deliberately not a `.chip`: a chip is a label the reader chose and
+   coloured; this is a status the server reported, and it must not read as
+   one more label. Hence the outline instead of a wash, and the two fixed
+   voices — `--fg-3` for "Queued" (quiet: the message is not lost, the
+   server just still has it) and `--danger` for "Bounced" (the one state
+   that needs acting on). Both tokens are theme-swapped in input.css, so
+   nothing here needs a dark override. */
+
+@layer components {
+  .pill-outbound {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 7px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    /* The row's own hover/selected tints must not change what the pill
+       says, so it carries no background at all. */
+    background: transparent;
+    cursor: help;
+  }
+  .pill-outbound.is-queued {
+    color: var(--fg-3);
+  }
+  .pill-outbound.is-failed {
+    color: var(--danger);
+  }
+  /* In the conversation header the pill sits between the subject and the
+     chips; give it the same breathing room `.thread-chips` gets. */
+  .thread-head .pill-outbound {
+    margin-inline-start: 8px;
+    vertical-align: middle;
+  }
+}

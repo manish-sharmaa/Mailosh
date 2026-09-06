@@ -88,9 +88,13 @@ _BACKOFF_CAP = 30
 
 #: The JMAP object types a mail UI reacts to; everything else Stalwart might
 #: push (``Thread``, ``VacationResponse``, ...) is ignored. `event_stream`
-#: already asks the server for only these two, so this is a second, local
-#: guard rather than the only one.
-_MAIL_TYPES = ("Email", "Mailbox")
+#: already asks the server for only these, so this is a second, local guard
+#: rather than the only one. ``EmailSubmission`` is here for outbound
+#: delivery tracking (`mailosh.services.outbound`): the list's own
+#: ``mail:changed`` re-GET is what re-reads a Sent row's delivery pill, so
+#: a submission's state change has to reach the browser the same way a new
+#: message does.
+_MAIL_TYPES = ("Email", "Mailbox", "EmailSubmission")
 
 #: What `HubRegistry` hands `stalwart_listener` so a change it just
 #: published locally also reaches other worker processes: called with the
@@ -270,15 +274,15 @@ class SseHub:
 
 
 def is_mail_change(change: StateChange) -> bool:
-    """True if `change` includes an ``Email`` or ``Mailbox`` type change,
-    for any account.
+    """True if `change` includes an ``Email``, ``Mailbox`` or
+    ``EmailSubmission`` type change (`_MAIL_TYPES`), for any account.
 
     Kept a plain, non-underscored function specifically so it has its own
     direct unit tests (see `tests/unit/test_sse_hub.py`) covering the
     "any account" breadth separately from `stalwart_listener`'s own
     (necessarily async, stub-client-driven) test.
     """
-    return any("Email" in types or "Mailbox" in types for types in change.changed.values())
+    return any(any(wanted in types for wanted in _MAIL_TYPES) for types in change.changed.values())
 
 
 def mail_change_types(change: StateChange) -> list[str]:
@@ -508,6 +512,29 @@ class HubRegistry:
         )
         task.add_done_callback(partial(self._listener_finished, user_id))
         self._listeners[user_id] = task
+
+    def notify(self, user_id: int, types: list[str]) -> None:
+        """Tell `user_id`'s open tabs that something changed, from *this*
+        process rather than from a Stalwart push — the same ``mail`` event
+        `stalwart_listener` publishes, with the same ``{"types": [...]}``
+        body, so the browser reacts exactly as it does to live mail
+        (`static/js/sse.js` fires ``mail:changed`` and the list re-GETs).
+
+        For the server-side discoveries a push cannot announce: the
+        maintenance sweep in `mailosh.services.outbound` learns a message
+        bounced by *polling* ``EmailSubmission/get``, and the tab showing
+        Sent has to redraw that row's pill without a reload.
+
+        Publishes only into a hub that already exists — a user with no tab
+        open has nobody to tell, and creating a hub for them would only
+        give `stop_idle` something to sweep. Relayed to peer workers when a
+        fan-out bus is configured, same as a listener's own publish.
+        """
+        hub = self._hubs.get(user_id)
+        if hub is not None:
+            hub.publish("mail", json.dumps({"types": list(types)}))
+        if self._bus is not None:
+            self._relay(user_id, list(types), None)
 
     def _relay(self, user_id: int, types: list[str], state: str | None) -> None:
         """Tell peer workers about a change `user_id`'s local listener just

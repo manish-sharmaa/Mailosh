@@ -28,6 +28,7 @@ route's own reference is what a test has to replace.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
 import re
@@ -38,7 +39,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from mailosh.db.base import Base
+from mailosh.db.models import OutboundSubmission
 from mailosh.jmap.models import BodyPart, EmailBody
 from mailosh.services.compose import (
     AttachmentRef,
@@ -105,7 +110,7 @@ def _message(**overrides) -> EmailBody:
 
 
 @pytest.fixture
-def env():
+def env(tmp_path):
     """`(app, client, calls)`: the router on a bare app, the fake JMAP
     client behind it, and the recorder every patched service function
     writes into.
@@ -127,7 +132,28 @@ def env():
         theme="light", density="comfortable", shortcuts=True
     )
     app.dependency_overrides[deps.client_for] = lambda: jmap
-    return SimpleNamespace(app=app, jmap=jmap, calls=calls)
+
+    # `POST /compose/send` records the submission it produced
+    # (`mailosh.services.outbound.record`), which is the one thing in this
+    # router that touches the database. A real aiosqlite schema rather than
+    # a stub session, so that write is exercised for real and
+    # `test_send_records_the_submission_for_delivery_tracking` can read it
+    # back.
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'compose.db'}")
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _create_schema() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_create_schema())
+
+    async def get_db():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[deps.get_db] = get_db
+    return SimpleNamespace(app=app, jmap=jmap, calls=calls, sessionmaker=maker)
 
 
 @pytest.fixture
@@ -583,6 +609,26 @@ def test_send_answers_204_and_names_the_two_ids_it_produced(stub):
     trigger = json.loads(response.headers["HX-Trigger"])
     assert trigger == {"om:sent": {"submission_id": "sub-1", "email_id": "sent-1"}}
     assert stub.calls["send"][0].to[0].email == "a@x.test"
+
+
+def test_send_records_the_submission_for_delivery_tracking(stub):
+    """The send's `EmailSubmission` id used to be returned to the browser
+    and forgotten. It is now the key `mailosh.services.outbound` polls
+    delivery state by, so a successful send must leave exactly one
+    `outbound_submission` row: this user, this account, both ids, `queued`.
+    """
+    response = _post(stub.app, "/compose/send", {"to": "a@x.test", "text": "hi"})
+    assert response.status_code == 204
+
+    async def rows() -> list[OutboundSubmission]:
+        async with stub.sessionmaker() as db:
+            return list((await db.execute(select(OutboundSubmission))).scalars())
+
+    (row,) = asyncio.run(rows())
+    assert (row.user_id, row.account_id) == (1, "acct")
+    assert (row.submission_id, row.email_id) == ("sub-1", "sent-1")
+    assert row.state == "queued"
+    assert row.last_checked_at is None
 
 
 def test_a_send_with_nobody_to_send_to_is_a_400_with_copy_that_helps(stub, monkeypatch):

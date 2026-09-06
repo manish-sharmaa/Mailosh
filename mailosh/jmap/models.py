@@ -321,3 +321,56 @@ class StateChange(JmapModel):
     """A JMAP StateChange push object (RFC 8620 §7.2), as delivered over SSE/EventSource."""
 
     changed: dict[str, dict[str, str]]
+
+
+class DeliveryStatus(JmapModel):
+    """One recipient's entry in ``EmailSubmission.deliveryStatus`` (RFC 8621
+    §7, ``DeliveryStatus``).
+
+    ``delivered`` is one of ``queued``/``yes``/``no``/``unknown`` and
+    ``displayed`` one of ``unknown``/``yes``; both are kept as plain ``str``
+    rather than enums, like ``Mailbox.role``, so a server extension value
+    degrades to "unknown" in `mailosh.services.outbound.classify` instead of
+    failing the whole ``EmailSubmission/get`` response. ``smtp_reply`` is
+    the last SMTP reply the server has for that recipient — verified live
+    against Stalwart 0.16, it starts out as ``"250 2.1.5 Queued"`` for every
+    recipient the instant a message is accepted into the outbound queue,
+    and only changes once a DSN (bounce or delay notice) is processed.
+    """
+
+    smtp_reply: str = ""
+    delivered: str = "unknown"
+    displayed: str = "unknown"
+
+
+class EmailSubmission(JmapModel):
+    """A JMAP EmailSubmission (RFC 8621 §7), reduced to what outbound
+    delivery tracking reads back after `JmapClient.send_message` created it.
+
+    Shape verified live against Stalwart 0.16 (``EmailSubmission/get``):
+    ``id``, ``emailId``, ``threadId``, ``identityId``, ``envelope``,
+    ``sendAt``, ``undoStatus`` (``pending``/``final``/``canceled``),
+    ``deliveryStatus`` (a map keyed by recipient address, or ``null``),
+    ``dsnBlobIds``, ``mdnBlobIds``. ``envelope`` and ``identityId`` are not
+    modelled — nothing here reads them — and ``delivery_status`` defaults
+    to an empty map for the ``null`` case so a caller can iterate it
+    without a None check.
+    """
+
+    id: str
+    email_id: str
+    thread_id: str | None = None
+    undo_status: str = "final"
+    send_at: datetime | None = None
+    delivery_status: dict[str, DeliveryStatus] = Field(default_factory=dict)
+    dsn_blob_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("delivery_status", mode="before")
+    @classmethod
+    def _coerce_null_status(cls, v: object) -> object:
+        return {} if v is None else v
+
+    @field_validator("dsn_blob_ids", mode="before")
+    @classmethod
+    def _coerce_null_dsns(cls, v: object) -> object:
+        return _none_to_list(v)

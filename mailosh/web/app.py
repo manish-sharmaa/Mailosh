@@ -84,6 +84,7 @@ from mailosh.db.session import make_engine, make_sessionmaker
 from mailosh.jmap.errors import JmapError, TransportError
 from mailosh.jmap.pool import ClientPool
 from mailosh.security.csrf import CsrfError
+from mailosh.services import outbound
 from mailosh.services.mailbox_tree import hidden_in_nav
 from mailosh.sse import HubRegistry
 from mailosh.stalwart_admin import StalwartAdmin
@@ -296,6 +297,7 @@ async def _maintenance_loop(app: FastAPI) -> None:
             await app.state.hubs.stop_idle(_HUB_IDLE_SECONDS)
         except Exception:
             logger.exception("idle SSE listener sweep failed")
+        await outbound.sweep(app)  # never raises: see its docstring
         try:
             async with app.state.sessionmaker() as db:
                 summary = await auth.reap_expired_sessions(

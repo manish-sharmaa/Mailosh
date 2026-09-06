@@ -254,6 +254,47 @@ class SenderPref(Base):
     dark_restyle: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
 
 
+class OutboundSubmission(Base):
+    """One message this app sent, and what the mail server has said about
+    its delivery since (`mailosh.services.outbound`).
+
+    Written the moment `mailosh.web.compose.compose_send` gets an
+    ``EmailSubmission`` id back, and re-read by every Sent-list render so a
+    row can say "Queued" or "Bounced" instead of the bare "Sent" the send
+    itself reports. `state` is one of the four `OutboundState` values;
+    `detail` is the SMTP reply behind a failure (RFC 8621 §7's
+    ``DeliveryStatus.smtpReply``), shown in the pill's tooltip and the
+    bounce toast. `thread_id` is nullable because `send_message` returns no
+    thread id — the first successful ``EmailSubmission/get`` fills it in.
+
+    `last_checked_at` is when this row was last compared against the
+    server; `notified_at` is when a bounce was announced to the user (a
+    toast fires once, not on every list refresh). Rows are never deleted by
+    this app; the refresh simply stops polling those older than
+    `mailosh.services.outbound.TRACK_FOR`.
+
+    Keyed by ``(user_id, submission_id)``: a submission id is scoped to the
+    account that created it, and a user has exactly one account here.
+    """
+
+    __tablename__ = "outbound_submission"
+
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("app_user.id", ondelete="CASCADE"), primary_key=True
+    )
+    submission_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    email_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    thread_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="queued", index=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class LoginAttempt(Base):
     """A rate-limit counter keyed by an opaque `key` (e.g. `"ip:1.2.3.4"` or
     `"account:demo@mailosh.test"` — `mailosh.security.ratelimit`, Task 5,

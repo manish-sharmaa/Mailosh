@@ -121,6 +121,11 @@
   </span>
 
   <span class="row-meta" role="gridcell">
+    {# Delivery state for a message the reader sent (`mailosh.services.
+       outbound`): `outbound` is the Sent list's `{email id -> row}` map,
+       looked up once for the page, and is empty or undefined everywhere
+       else, so the include costs nothing outside Sent. #}
+    {% if outbound %}{% with pill = outbound.get(row.latest_email_id) %}{% include "fragments/outbound_pill.html" %}{% endwith %}{% endif %}
     {% if row.chips %}
       <span class="row-chips">
         {% for chip in row.chips[:2] %}

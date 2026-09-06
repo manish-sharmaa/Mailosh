@@ -14,6 +14,10 @@
    into `LabelMeta.color` can reach the stylesheet. #}
 <header class="thread-head">
   <h1 class="thread-subject">{{ view.subject }}</h1>
+  {# Delivery state, when the newest message here is the reader's own
+     (`mailosh.web.mail._outbound_pill`) — same partial, same two states,
+     as the Sent row this conversation was opened from. #}
+  {% if outbound_pill %}{% with pill = outbound_pill %}{% include "fragments/outbound_pill.html" %}{% endwith %}{% endif %}
   {% if view.chips %}
     <span class="thread-chips">
       {% for chip in view.chips %}

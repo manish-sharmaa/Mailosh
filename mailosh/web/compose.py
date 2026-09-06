@@ -68,10 +68,12 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from mailosh.db.models import AppUser, SessionRow, UiPref
 from mailosh.jmap.client import JmapClient
 from mailosh.jmap.models import Identity
+from mailosh.services import outbound
 from mailosh.services.compose import (
     AttachmentRef,
     ComposeError,
@@ -97,6 +99,7 @@ SessionDep = Annotated[SessionRow, Depends(deps.require_session)]
 UserDep = Annotated[AppUser, Depends(deps.current_user)]
 PrefsDep = Annotated[UiPref, Depends(deps.prefs_for)]
 ClientDep = Annotated[JmapClient, Depends(deps.client_for)]
+DbDep = Annotated[AsyncSession, Depends(deps.get_db)]
 
 #: What `GET /compose/reply/{id}` will build. Spelled as a `Literal` so an
 #: unknown mode is FastAPI's own 422 before this module's code runs, rather
@@ -849,8 +852,17 @@ async def compose_autosave(
 
 
 @router.post("/compose/send")
-async def compose_send(session: SessionDep, client: ClientDep, form: FormDep) -> Response:
+async def compose_send(
+    session: SessionDep, user: UserDep, client: ClientDep, db: DbDep, form: FormDep
+) -> Response:
     """Send, then say so through an `HX-Trigger` and nothing else.
+
+    The one thing kept server-side is the submission's id:
+    `mailosh.services.outbound.record` starts tracking it, so the Sent row
+    can later say "Queued" or "Bounced" instead of trusting that a `204`
+    here meant delivered. A failure to write that row is logged, not
+    surfaced — the message has already gone, and telling the reader their
+    send failed because a bookkeeping INSERT did would be a lie.
 
     `204` with no body for the same reason every route in
     `mailosh.web.actions` answers one: by the time this request is made
@@ -883,6 +895,19 @@ async def compose_send(session: SessionDep, client: ClientDep, form: FormDep) ->
                     separators=(",", ":"),
                 )
             },
+        )
+    try:
+        await outbound.record(
+            db,
+            user_id=user.id,
+            account_id=client.account_id,
+            submission_id=result.submission_id,
+            email_id=result.email_id,
+        )
+    except Exception:
+        logger.exception(
+            "compose_send: could not record submission %s for delivery tracking",
+            result.submission_id,
         )
     payload = {"submission_id": result.submission_id, "email_id": result.email_id}
     return Response(
