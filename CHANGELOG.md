@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.2 — 2026-09-06
+
+One fix, found by the first public deployment.
+
+- **The production image builds its own static assets.** The vendored
+  JavaScript, the icons, the subsetted Inter font and the compiled stylesheet
+  are not tracked in git; they are produced by `make vendor icons fonts css`.
+  The Dockerfile assumed they were already on disk, which is true on a
+  developer's machine after `make test` and false on a server that just ran
+  `git clone` — so every page answered 500 from `static()` hashing a font that
+  was never there. The image now has a build stage that runs those Makefile
+  targets and a final stage that refuses to finish without the results.
+  `docker compose up -d --build` from a bare clone works as the README says.
+
 ## 0.1.1 — 2026-09-05
 
 Bug fixes from a review of the client code. No new features; nothing in the
