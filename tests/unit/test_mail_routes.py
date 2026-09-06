@@ -420,6 +420,32 @@ def test_rows_carry_the_contract_attributes(app):
     assert 'title="Delete (#)"' in row
 
 
+def test_the_row_date_carries_the_whole_timestamp_where_a_pointer_can_reach_it(app):
+    """`Sep 2` is the column; `Wed, Sep 2, 2026, 10:00 AM` is the answer to
+    "yes, but when exactly".
+
+    It is on the `<time>`, which is where an annotation of an instant
+    belongs and is the shape `thread/message.html` gives a message card —
+    and on the cell around it as well, because `.row:hover .row-date` takes
+    the date out of the box tree to make room for the hover actions
+    (styles/input.css). A tooltip only on the element that disappears under
+    the pointer is a tooltip nobody ever sees. Same expression both times,
+    so they cannot drift.
+    """
+    row = _row_html(_login(app).get("/mail/inbox").text, "t1")
+    full = "Wed, Sep 2, 2026, 10:00 AM"
+    assert f'<span class="row-end" title="{full}">' in row
+    assert f'datetime="2026-09-02T10:00:00+00:00" title="{full}"' in row
+    # The short form is still what is printed: the tooltip adds to the
+    # column, it does not replace it.
+    assert f">{full}<" not in row
+
+    # The hover actions keep their own tooltips, which win over the cell's
+    # wherever they overlap.
+    css = INPUT_CSS.read_text()
+    assert ".row:hover .row-date,\n  .row:focus-within .row-date {\n    display: none;" in css
+
+
 def test_row_marks_unread_and_attachments(app):
     body = _login(app).get("/mail/inbox").text
     unread = _row_html(body, "t1")

@@ -140,8 +140,25 @@
       </span>
     {% endif %}
     {% if row.has_attachment %}{{ icon("paperclip", class_="size-4 text-icon-quiet", label="Has attachment") }}{% endif %}
-    <span class="row-end">
-      <time class="row-date" datetime="{{ row.received_at.isoformat() }}">{{ row.date_display }}</time>
+    {# The full timestamp, twice, and deliberately.
+
+       The `<time>` is where it belongs: `datetime` is the machine
+       reading, the text is the column, and `title` is the long form of the
+       same instant — exactly the shape `thread/message.html` gives a
+       message card's `<time>`, off the same `format_full`, so a row and
+       the conversation it opens cannot word "when" differently.
+
+       That one is unreachable with a pointer, though, and the cell is why:
+       `.row-end` holds the date *and* the hover actions in one 88px box,
+       and `.row:hover .row-date` takes the date out of the box tree to
+       make room for them (styles/input.css). By the time a pointer is over
+       the date, the date is gone. So the cell carries the tooltip too —
+       that is the copy a reader actually gets, and each of the three
+       buttons inside it has a `title` of its own that wins over this one
+       wherever they overlap. Two attributes, one Jinja expression: they
+       cannot drift. #}
+    <span class="row-end" title="{{ row.date_full }}">
+      <time class="row-date" datetime="{{ row.received_at.isoformat() }}" title="{{ row.date_full }}">{{ row.date_display }}</time>
       <span class="row-actions">
         {# Trash has its own pair: a row there is already out of every
            mailbox but Trash, so "archive" would move nothing and "delete"

@@ -27,7 +27,7 @@ from mailosh.db.models import LabelMeta
 from mailosh.jmap.client import JmapClient
 from mailosh.jmap.models import Address, BodyPart, EmailBody
 from mailosh.render.plain_text import TextLine, render_plain
-from mailosh.ui.format import avatar_color, format_date, initials
+from mailosh.ui.format import avatar_color, format_date, format_full, initials
 
 from .mailbox_tree import NavModel
 from .thread_list import _NO_SUBJECT, LabelChip, _chips_for
@@ -314,19 +314,6 @@ def _sender(message: EmailBody, me: str) -> tuple[str, str]:
     return (addr.name or "").strip() or addr.email, addr.email
 
 
-def _format_full(dt: datetime, now: datetime) -> str:
-    """The details popover's Date row: `Tue, Sep 1, 2026, 10:42 AM`.
-
-    Converted into `now`'s timezone for the same reason `format_date`
-    compares in it — the reader's "when" is their own clock's, and a
-    popover that disagrees with the timestamp beside it would be worse than
-    either being slightly wrong.
-    """
-    tz = now.tzinfo
-    local = (dt if dt.tzinfo is not None else dt.replace(tzinfo=tz)).astimezone(tz)
-    return local.strftime("%a, %b %-d, %Y, %-I:%M %p")
-
-
 def _message_view(
     message: EmailBody, *, me: str, now: datetime, expanded: bool, unread: bool, restyled: bool
 ) -> MessageView:
@@ -350,7 +337,7 @@ def _message_view(
         signed_by=_signed_by(message.auth_results),
         received_at=message.received_at,
         date_display=format_date(message.received_at, now),
-        date_full=_format_full(message.received_at, now),
+        date_full=format_full(message.received_at, now),
         # Seeded with the address, never the display name: the same person
         # writing under two display names keeps one avatar colour, and a
         # sender-less message falls back to its own id so two of them do
