@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.2.0 — 2026-09-06
+
+### Settings
+
+A real settings area at `/settings`, from the account menu or ⌘K:
+Appearance, Reading, Compose, Labels, Account and Security.
+
+- **Signatures**, one per identity, added to new messages and above the
+  quote in replies.
+- **Change your password** and display name without leaving Mailosh.
+- **Active sessions** with where and when each signed in, and a button to
+  sign any of them out.
+- Font size, undo-send window (5–30 s), and whether `r` means reply or
+  reply all.
+- Manage labels — rename, colour, nest, hide, delete — on one page.
+
+### Mail
+
+- **Trash and Spam behave properly**: Restore and Delete forever in Trash,
+  Not spam in Spam, and Empty now for both. `e`, `#` and `!` follow the
+  mailbox you are in.
+- **Delivery status on sent mail.** A message that is still queued says so,
+  and one that bounced says that with the reason the receiving server gave,
+  instead of "Sent" and silence.
+- Reply, Reply all, Forward and Print on individual messages.
+- Printing a conversation gets its own clean page.
+- Attachments preview in place — images, PDFs and text — instead of only
+  downloading.
+- Full timestamps when you hover a row.
+
+### Running it
+
+- The health check now looks at certificate expiry, disk space, Caddy, and
+  Stalwart renewal tasks that have stalled.
+- Backups keep 14 by default, can be encrypted with `age`, and can be
+  copied off the machine with rclone; there is a systemd timer for them.
+- `stalwart-bootstrap.sh` can configure an outbound relay.
+- `mailosh setup` prints both DKIM records, not just the RSA one.
+
 ## 0.1.3 — 2026-09-06
 
 - Dates and times are shown in your timezone. They were rendered in UTC,

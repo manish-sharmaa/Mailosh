@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-[![Release](https://img.shields.io/badge/release-v0.1.3-1a73e8)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.2.0-1a73e8)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-3776ab)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-passing-2ea043)](#development)
@@ -31,6 +31,9 @@ mail server. Python and HTML on the server, no Node toolchain, AGPL-3.0.
   each with a ten-second undo toast.
 - **Keyboard-first** — `j` `k` `o` `e` `#` `x` `z` `c` `r` `/` and friends,
   `g`-jumps, and a `⌘K` command palette. `?` shows them all.
+- **Settings** — appearance, reading, compose, labels, your account and
+  active sessions. Per-identity signatures, and a password you can change
+  without leaving the app.
 - **Live updates** over SSE, light and dark themes, three densities, a
   mobile layout, WCAG 2.2 AA.
 
@@ -133,8 +136,9 @@ tests/              unit/ and integration/
 
 ## Roadmap
 
-Settings pages, snooze and scheduled send, contacts and calendar, and
-multi-account are next. Design documents live in [`docs/specs`](docs/specs).
+Recipient autocomplete, snooze and scheduled send, contacts and calendar,
+and multi-account are next. Design documents live in
+[`docs/specs`](docs/specs).
 
 ## Contributing and security
 
