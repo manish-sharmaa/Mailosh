@@ -998,16 +998,23 @@ def test_setup_cli_prints_all_four_dns_record_types(monkeypatch):
         calls.append(("create_account", email, display_name, password))
         return True  # freshly created -- the fresh-account path, unchanged by FINDING 2's fix
 
-    async def fake_get_dkim_record(self, domain):
-        calls.append(("get_dkim_record", domain))
-        return DkimRecord(
-            host=f"v1-rsa-20260901._domainkey.{domain}",
-            value="v=DKIM1; k=rsa; h=sha256; p=FAKEKEYDATA",
-        )
+    async def fake_get_dkim_records(self, domain):
+        calls.append(("get_dkim_records", domain))
+        return [
+            DkimRecord(
+                host=f"v1-rsa-20260901._domainkey.{domain}",
+                value="v=DKIM1; k=rsa; h=sha256; p=FAKEKEYDATA",
+            )
+        ]
+
+    async def fake_outbound_relay_host(self):
+        calls.append(("outbound_relay_host",))
+        return None
 
     monkeypatch.setattr(StalwartAdmin, "create_domain", fake_create_domain)
     monkeypatch.setattr(StalwartAdmin, "create_account", fake_create_account)
-    monkeypatch.setattr(StalwartAdmin, "get_dkim_record", fake_get_dkim_record)
+    monkeypatch.setattr(StalwartAdmin, "get_dkim_records", fake_get_dkim_records)
+    monkeypatch.setattr(StalwartAdmin, "outbound_relay_host", fake_outbound_relay_host)
 
     from mailosh.cli import app
 
@@ -1042,7 +1049,8 @@ def test_setup_cli_prints_all_four_dns_record_types(monkeypatch):
     assert calls == [
         ("create_domain", "spike.test"),
         ("create_account", "admin@spike.test", "Admin", "test-password-123"),
-        ("get_dkim_record", "spike.test"),
+        ("get_dkim_records", "spike.test"),
+        ("outbound_relay_host",),
     ]
     # setup never mints a per-user token -- try_mint_user_token is a
     # standalone SPK-3 probe, not part of the account-setup flow.
@@ -1067,12 +1075,16 @@ def test_setup_cli_generates_and_prints_a_password_when_omitted(monkeypatch):
         seen_passwords.append(password)
         return True  # freshly created
 
-    async def fake_get_dkim_record(self, domain):
-        return DkimRecord(host="sel._domainkey.spike.test", value="v=DKIM1; k=rsa; h=sha256; p=X")
+    async def fake_get_dkim_records(self, domain):
+        return [DkimRecord(host="sel._domainkey.spike.test", value="v=DKIM1; k=rsa; h=sha256; p=X")]
+
+    async def fake_outbound_relay_host(self):
+        return None
 
     monkeypatch.setattr(StalwartAdmin, "create_domain", fake_create_domain)
     monkeypatch.setattr(StalwartAdmin, "create_account", fake_create_account)
-    monkeypatch.setattr(StalwartAdmin, "get_dkim_record", fake_get_dkim_record)
+    monkeypatch.setattr(StalwartAdmin, "get_dkim_records", fake_get_dkim_records)
+    monkeypatch.setattr(StalwartAdmin, "outbound_relay_host", fake_outbound_relay_host)
 
     from mailosh.cli import app
 
@@ -1104,12 +1116,16 @@ def test_setup_cli_warns_and_omits_password_when_account_already_existed(monkeyp
     async def fake_create_account(self, email, display_name, password):
         return False  # already existed
 
-    async def fake_get_dkim_record(self, domain):
-        return DkimRecord(host="sel._domainkey.spike.test", value="v=DKIM1; k=rsa; h=sha256; p=X")
+    async def fake_get_dkim_records(self, domain):
+        return [DkimRecord(host="sel._domainkey.spike.test", value="v=DKIM1; k=rsa; h=sha256; p=X")]
+
+    async def fake_outbound_relay_host(self):
+        return None
 
     monkeypatch.setattr(StalwartAdmin, "create_domain", fake_create_domain)
     monkeypatch.setattr(StalwartAdmin, "create_account", fake_create_account)
-    monkeypatch.setattr(StalwartAdmin, "get_dkim_record", fake_get_dkim_record)
+    monkeypatch.setattr(StalwartAdmin, "get_dkim_records", fake_get_dkim_records)
+    monkeypatch.setattr(StalwartAdmin, "outbound_relay_host", fake_outbound_relay_host)
 
     from mailosh.cli import app
 
@@ -1138,12 +1154,16 @@ def test_setup_cli_warns_when_explicit_password_given_but_account_already_existe
     async def fake_create_account(self, email, display_name, password):
         return False  # already existed -- the given --password was ignored
 
-    async def fake_get_dkim_record(self, domain):
-        return DkimRecord(host="sel._domainkey.spike.test", value="v=DKIM1; k=rsa; h=sha256; p=X")
+    async def fake_get_dkim_records(self, domain):
+        return [DkimRecord(host="sel._domainkey.spike.test", value="v=DKIM1; k=rsa; h=sha256; p=X")]
+
+    async def fake_outbound_relay_host(self):
+        return None
 
     monkeypatch.setattr(StalwartAdmin, "create_domain", fake_create_domain)
     monkeypatch.setattr(StalwartAdmin, "create_account", fake_create_account)
-    monkeypatch.setattr(StalwartAdmin, "get_dkim_record", fake_get_dkim_record)
+    monkeypatch.setattr(StalwartAdmin, "get_dkim_records", fake_get_dkim_records)
+    monkeypatch.setattr(StalwartAdmin, "outbound_relay_host", fake_outbound_relay_host)
 
     from mailosh.cli import app
 
@@ -1390,3 +1410,208 @@ def test_bootstrap_script_makes_stalwart_log_to_stdout():
     # Wired into the bootstrap path and covered by the restart that applies it.
     assert "ensure_stdout_tracer\n" in script
     assert '[ "$TRACER_CHANGED" = yes ]' in script
+
+
+# ---------------------------------------------------------------------------
+# get_dkim_records / outbound_relay_host, and the DNS block they feed
+# (ops-hardening: `mailosh setup` prints BOTH DKIM records, and the SPF
+# record that matches the server's actual outbound mode)
+# ---------------------------------------------------------------------------
+
+
+async def test_get_dkim_records_returns_both_algorithms_rsa_first(admin):
+    """Stalwart signs with both of the keys it generates; publishing only
+    the RSA record (what `get_dkim_record` alone gave the CLI) leaves the
+    Ed25519 signature failing at every verifier. Same live-shaped fixture
+    as the singular test above; the order is `_DKIM_PREFERENCE`."""
+    respx.post(f"{BASE}/jmap").mock(
+        side_effect=_route_by_first_method(
+            {"x:Domain/query": _DOMAIN_QUERY_RESPONSE, "x:DkimSignature/query": _DKIM_GET_RESPONSE}
+        )
+    )
+    records = await admin.get_dkim_records("spike.test")
+    assert [r.host for r in records] == [
+        "v1-rsa-20260901._domainkey.spike.test",
+        "v1-ed25519-20260901._domainkey.spike.test",
+    ]
+    assert records[0].value.startswith("v=DKIM1; k=rsa; h=sha256; p=MIIBIjAN")
+    assert (
+        records[1].value
+        == "v=DKIM1; k=ed25519; h=sha256; p=Kw17WZ0LB4WdimjrMQ2aKjwXIYBZHypFPsKmRPg3Cos="
+    )
+
+
+async def test_get_dkim_records_raises_when_domain_missing(admin):
+    respx.post(f"{BASE}/jmap").respond(
+        json={
+            "methodResponses": [
+                ["x:Domain/query", {"accountId": "admin-acct", "ids": []}, "q0"],
+                ["x:Domain/get", {"accountId": "admin-acct", "list": [], "notFound": []}, "g0"],
+            ],
+            "sessionState": "s1",
+        }
+    )
+    with pytest.raises(JmapError, match="does not exist"):
+        await admin.get_dkim_records("nope.test")
+
+
+#: The outbound singleton and route list exactly as the live server
+#: returned them after `scripts/stalwart-bootstrap.sh --relay-host
+#: relay.mailosh.test:587` (docs/operations.md, "Relay mode") -- the
+#: `match` map is index-keyed, the literal is single-quoted.
+_OUTBOUND_RELAY_RESPONSE = {
+    "methodResponses": [
+        [
+            "x:MtaOutboundStrategy/get",
+            {
+                "accountId": "admin-acct",
+                "list": [
+                    {
+                        "id": "singleton",
+                        "route": {
+                            "match": {
+                                "0": {"if": "is_local_domain(rcpt_domain)", "then": "'local'"}
+                            },
+                            "else": "'relay'",
+                        },
+                    }
+                ],
+            },
+            "s0",
+        ],
+        ["x:MtaRoute/query", {"accountId": "admin-acct", "ids": ["r1", "r2", "r3"]}, "q0"],
+        [
+            "x:MtaRoute/get",
+            {
+                "accountId": "admin-acct",
+                "list": [
+                    {
+                        "id": "r1",
+                        "name": "relay",
+                        "@type": "Relay",
+                        "address": "relay.mailosh.test",
+                        "port": 587,
+                    },
+                    {"id": "r2", "name": "local", "@type": "Local"},
+                    {"id": "r3", "name": "mx", "@type": "Mx"},
+                ],
+            },
+            "g0",
+        ],
+    ],
+    "sessionState": "s1",
+}
+
+
+async def test_outbound_relay_host_reads_the_relay_route_the_strategy_points_at(admin):
+    respx.post(f"{BASE}/jmap").respond(json=_OUTBOUND_RELAY_RESPONSE)
+    assert await admin.outbound_relay_host() == "relay.mailosh.test:587"
+
+
+async def test_outbound_relay_host_is_none_for_stock_direct_delivery(admin):
+    """A stock server's `else` is `'mx'`, a route of `@type: Mx` -- not a
+    relay, so `None`, and the CLI prints the direct-send SPF."""
+    stock = json.loads(json.dumps(_OUTBOUND_RELAY_RESPONSE))
+    stock["methodResponses"][0][1]["list"][0]["route"]["else"] = "'mx'"
+    respx.post(f"{BASE}/jmap").respond(json=stock)
+    assert await admin.outbound_relay_host() is None
+
+
+async def test_outbound_relay_host_is_none_when_nothing_is_recognisable(admin):
+    """No singleton at all (an older or oddly-configured server) must not
+    break `setup` -- the DNS hint degrades to the direct-send default."""
+    respx.post(f"{BASE}/jmap").respond(
+        json={
+            "methodResponses": [
+                ["x:MtaOutboundStrategy/get", {"accountId": "admin-acct", "list": []}, "s0"],
+                ["x:MtaRoute/query", {"accountId": "admin-acct", "ids": []}, "q0"],
+                ["x:MtaRoute/get", {"accountId": "admin-acct", "list": []}, "g0"],
+            ],
+            "sessionState": "s1",
+        }
+    )
+    assert await admin.outbound_relay_host() is None
+
+
+def test_dns_block_prints_every_dkim_record_and_says_both_are_needed():
+    from mailosh.cli import _format_dns_block
+
+    out = _format_dns_block(
+        "mailosh.com",
+        [
+            DkimRecord(host="v1-rsa-2026._domainkey.mailosh.com", value="v=DKIM1; k=rsa; p=R"),
+            DkimRecord(
+                host="v1-ed25519-2026._domainkey.mailosh.com", value="v=DKIM1; k=ed25519; p=E"
+            ),
+        ],
+    )
+    assert "v1-rsa-2026._domainkey.mailosh.com" in out
+    assert "v=DKIM1; k=rsa; p=R" in out
+    assert "v1-ed25519-2026._domainkey.mailosh.com" in out
+    assert "v=DKIM1; k=ed25519; p=E" in out
+    assert "2 of them" in out
+    assert "signs every message with BOTH keys" in out
+    # RSA first: the record every verifier supports is the one an operator
+    # pastes first if they only paste one.
+    assert out.index("k=rsa") < out.index("k=ed25519")
+
+
+def test_dns_block_switches_spf_to_the_relay_include_when_relaying():
+    """With a relay configured, `v=spf1 mx ~all` is simply wrong for this
+    server, so it is not offered as the value at all; the include form is,
+    naming the relay the server actually routes through."""
+    from mailosh.cli import _format_dns_block
+
+    out = _format_dns_block(
+        "mailosh.com",
+        DkimRecord(host="sel._domainkey.mailosh.com", value="v=DKIM1; k=rsa; p=X"),
+        relay_host="email-smtp.eu-west-1.amazonaws.com:587",
+    )
+    assert "Value: v=spf1 mx ~all" not in out
+    assert "Value: v=spf1 include:<your relay's SPF include> ~all" in out
+    assert "RELAYS outbound mail through email-smtp.eu-west-1.amazonaws.com:587" in out
+    assert "include:amazonses.com" in out
+    # The direct-send paragraph (and its "if you use a relay" caveat) is
+    # not relevant to a server that already relays.
+    assert "DIRECT SEND" not in out
+
+
+def test_setup_cli_prints_both_dkim_records_and_the_relay_spf(monkeypatch):
+    """End to end through the Typer command: two records from
+    `get_dkim_records`, a relay from `outbound_relay_host`, both reflected
+    in the printed block."""
+    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "x")
+    monkeypatch.setenv("MAILOSH_DEMO_PASSWORD", "y")
+    monkeypatch.setenv("MAILOSH_SECRET_KEY", "x" * 32)
+
+    async def fake_create_domain(self, name):
+        pass
+
+    async def fake_create_account(self, email, display_name, password):
+        return True
+
+    async def fake_get_dkim_records(self, domain):
+        return [
+            DkimRecord(host=f"v1-rsa-1._domainkey.{domain}", value="v=DKIM1; k=rsa; p=R"),
+            DkimRecord(host=f"v1-ed25519-1._domainkey.{domain}", value="v=DKIM1; k=ed25519; p=E"),
+        ]
+
+    async def fake_outbound_relay_host(self):
+        return "smtp.smtp2go.com:587"
+
+    monkeypatch.setattr(StalwartAdmin, "create_domain", fake_create_domain)
+    monkeypatch.setattr(StalwartAdmin, "create_account", fake_create_account)
+    monkeypatch.setattr(StalwartAdmin, "get_dkim_records", fake_get_dkim_records)
+    monkeypatch.setattr(StalwartAdmin, "outbound_relay_host", fake_outbound_relay_host)
+
+    from mailosh.cli import app
+
+    runner = typer.testing.CliRunner()
+    result = runner.invoke(
+        app, ["setup", "--domain", "spike.test", "--email", "a@spike.test", "--password", "p"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "v1-rsa-1._domainkey.spike.test" in result.output
+    assert "v1-ed25519-1._domainkey.spike.test" in result.output
+    assert "RELAYS outbound mail through smtp.smtp2go.com:587" in result.output
+    assert "Value: v=spf1 mx ~all" not in result.output
