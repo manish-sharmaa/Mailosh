@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -53,7 +54,7 @@ from mailosh.security import sessions
 from mailosh.security.exchange import verify_password
 from mailosh.services.compose import clean_signature, list_identities
 from mailosh.services.mailbox_tree import NavModel, build_nav
-from mailosh.ui.format import LABEL_COLORS
+from mailosh.ui.format import LABEL_COLORS, format_date
 from mailosh.web import deps
 from mailosh.web.labels import VISIBILITIES
 from mailosh.web.prefs import (
@@ -119,7 +120,12 @@ def _trigger(payload: dict[str, object]) -> dict[str, str]:
     return {"HX-Trigger": json.dumps(payload, separators=(",", ":"))}
 
 
-def _saved(toast: str = "Saved", *, prefs: dict[str, object] | None = None) -> Response:
+def _saved(
+    toast: str = "Saved",
+    *,
+    prefs: dict[str, object] | None = None,
+    also: dict[str, object] | None = None,
+) -> Response:
     """`204` + `om:done` for a save with nothing to undo — a preference is
     reversible by hand, and an undo token for "set theme back" would be a
     second copy of the control that just did it.
@@ -135,6 +141,8 @@ def _saved(toast: str = "Saved", *, prefs: dict[str, object] | None = None) -> R
     }
     if prefs:
         payload["om:prefs"] = prefs
+    if also:
+        payload.update(also)
     return Response(status_code=204, headers=_trigger(payload))
 
 
@@ -605,10 +613,139 @@ async def change_password(
     return _saved("Password changed")
 
 
+# ---------------------------------------------------------------------------
+# Security
+# ---------------------------------------------------------------------------
+
+#: The browser/engine names worth naming, longest-first so `"Edg"` is not
+#: read as Chrome and `"Chrome"` is not read as Safari — every Chromium
+#: browser claims to be every browser before it, and the order is the whole
+#: of the disambiguation.
+_AGENTS: tuple[tuple[str, str], ...] = (
+    ("Edg/", "Edge"),
+    ("OPR/", "Opera"),
+    ("Firefox/", "Firefox"),
+    ("Chrome/", "Chrome"),
+    ("Safari/", "Safari"),
+)
+
+#: Platforms, same idea. `"Android"` before `"Linux"` because an Android
+#: user agent says both.
+_PLATFORMS: tuple[tuple[str, str], ...] = (
+    ("iPhone", "iPhone"),
+    ("iPad", "iPad"),
+    ("Android", "Android"),
+    ("Macintosh", "Mac"),
+    ("Windows", "Windows"),
+    ("Linux", "Linux"),
+)
+
+
+def _describe_agent(raw: str | None) -> str:
+    """A user agent as something a person can read: `"Firefox on Mac"`.
+
+    Deliberately a guess with a visible floor, not a parser. A UA string is
+    self-reported and every browser lies about being three others, so a
+    library that got this exactly right would still be describing a claim.
+    What the reader actually needs from this column is "is one of these
+    rows not me", and a browser-and-platform pair answers that. Anything
+    unrecognised falls back to the raw string, truncated — showing a
+    session as "Unknown" would hide the very detail that makes a strange
+    one recognisable.
+    """
+    if not raw:
+        return "Unknown device"
+    browser = next((label for token, label in _AGENTS if token in raw), None)
+    platform = next((label for token, label in _PLATFORMS if token in raw), None)
+    if browser and platform:
+        return f"{browser} on {platform}"
+    if browser or platform:
+        return browser or platform or ""
+    return raw[:60]
+
+
+async def _security_page(
+    request: Request, *, user: AppUser, client: JmapClient, db: AsyncSession
+) -> dict[str, object]:
+    """Every session of this user's that is still live, newest first.
+
+    Filtered through `sessions._is_live` rather than listed raw: an expired
+    row survives in the table until the reaper runs, and showing one as an
+    active sign-in — on the page whose entire job is to answer "is anyone
+    else signed in as me" — would be a false alarm with no way to act on
+    it. That helper is private to `mailosh.security.sessions` and is
+    imported anyway rather than restated here, because the alternative is a
+    second hand-written copy of the idle/absolute expiry pair, free to
+    drift from the one `load_session` enforces on every request — and a
+    drift in that direction shows a session as live that the server would
+    already refuse, which is exactly the lie this page must not tell.
+    """
+    settings = request.app.state.settings
+    now = datetime.now(UTC)
+    rows = (
+        (
+            await db.execute(
+                select(SessionRow)
+                .where(SessionRow.user_id == user.id)
+                .order_by(SessionRow.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    current = request.cookies.get(sessions.cookie_name(settings))
+    return {
+        "sessions": [
+            {
+                "id": row.id,
+                "created": format_date(row.created_at, now),
+                "last_seen": format_date(row.last_seen_at, now),
+                "agent": _describe_agent(row.user_agent),
+                "ip": row.ip or "—",
+                "current": row.id == current,
+                "remember": row.remember,
+            }
+            for row in rows
+            if sessions._is_live(row, settings, now)
+        ]
+    }
+
+
+@router.post("/security/sessions/{session_id}/revoke")
+async def revoke_one_session(
+    request: Request, session: SessionDep, user: UserDep, db: DbDep, session_id: str
+) -> Response:
+    """Sign one other browser out.
+
+    The row is looked up **by id and by `user_id`**, so a forged
+    `session_id` can only ever name one of this user's own sessions — the
+    id alone is enough to revoke a session, and this route must not be a
+    way to end a stranger's.
+
+    The current session is refused rather than revoked: signing yourself
+    out is what the account menu's Sign out is for, and doing it from a
+    row here would leave the reader looking at a settings page that had
+    already stopped being theirs. The Stalwart API key every session
+    shares is untouched for the same reason
+    `mailosh.web.auth._destroy_key_if_last_session` leaves it while any
+    session remains — this one is still using it.
+    """
+    if session_id == session.id:
+        return _refused("That's this browser. Use Sign out in the account menu.")
+    row = await db.get(SessionRow, session_id)
+    if row is None or row.user_id != user.id:
+        return _refused("That session is already signed out.")
+    await sessions.revoke_session(db, session_id)
+    await request.app.state.pool.drop(session_id)
+    await repo.audit(db, user.id, "session.revoke", {"session": session_id}, None)
+    return _saved("Signed out", also={"om:sessions": {"changed": True}})
+
+
 #: Per-page context loaders — `page` -> coroutine returning that page's
 #: extra template context. Filled in by the sections below as each page's
 #: data needs arrive; a page absent here renders from `prefs` alone.
 _LOADERS: dict[str, object] = {
     "compose": _compose_page,
     "labels": _labels_page,
+    "security": _security_page,
 }

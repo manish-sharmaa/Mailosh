@@ -640,3 +640,77 @@ def test_a_mail_server_that_refuses_the_change_leaves_every_session_alone(app):
     assert r.status_code == 200
     assert "wouldn't accept" in r.headers["HX-Trigger"]
     assert second.get("/settings/account").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Security
+# ---------------------------------------------------------------------------
+
+
+def _session_ids(body: str) -> list[str]:
+    return re.findall(r'hx-post="/settings/security/sessions/([^/]+)/revoke"', body)
+
+
+def test_security_lists_every_live_session_and_marks_this_one(app):
+    first = _login(app)
+    _login(app)
+    body = first.get(
+        "/settings/security", headers={"User-Agent": "Mozilla/5.0 (Macintosh) Firefox/1"}
+    ).text
+    assert "Signed in on 2 devices" in body
+    assert body.count("This device") == 1
+    # The current row has no Sign out button; the other one does.
+    assert len(_session_ids(body)) == 1
+
+
+def test_a_row_signs_that_session_out_and_leaves_this_one_alone(app):
+    first = _login(app)
+    second = _login(app)
+    other = _session_ids(first.get("/settings/security").text)[0]
+
+    r = _post(first, f"/settings/security/sessions/{other}/revoke")
+    assert r.status_code == 204, r.text
+    trigger = json.loads(r.headers["HX-Trigger"])
+    assert trigger["om:done"]["toast"] == "Signed out"
+    assert trigger["om:sessions"] == {"changed": True}
+
+    assert second.get("/settings/security", follow_redirects=False).status_code == 303
+    assert "Signed in on 1 device" in first.get("/settings/security").text
+
+
+def test_this_session_cannot_be_revoked_from_a_row(app):
+    client = _login(app)
+    body = client.get("/settings/security").text
+    match = re.search(r"<td>\s*[^<]*<span class=\"settings-pill\">This device", body)
+    assert match is not None
+    # Reach for it anyway, the way a forged form would.
+    current = client.cookies["sid"]
+    r = _post(client, f"/settings/security/sessions/{current}/revoke")
+    assert r.status_code == 200
+    assert "account menu" in r.headers["HX-Trigger"]
+    assert client.get("/settings/security").status_code == 200
+
+
+def test_one_user_cannot_sign_another_out(app, monkeypatch):
+    """The row is looked up by id *and* by `user_id`: a session id alone is
+    enough to end a session, and this route must not be a way to end
+    somebody else's."""
+    mine = _login(app)
+    theirs = _login(app, username="other@x")
+    stolen = theirs.cookies["sid"]
+    r = _post(mine, f"/settings/security/sessions/{stolen}/revoke")
+    assert r.status_code == 200
+    assert "already signed out" in r.headers["HX-Trigger"]
+    assert theirs.get("/settings/security").status_code == 200
+
+
+def test_the_user_agent_column_is_readable_and_never_empty(app):
+    from mailosh.web.settings import _describe_agent
+
+    assert _describe_agent("Mozilla/5.0 (Macintosh) Firefox/141.0") == "Firefox on Mac"
+    edge = "Mozilla/5.0 (Windows NT) Chrome/9 Safari/537 Edg/9"
+    assert _describe_agent(edge) == "Edge on Windows"
+    assert _describe_agent(None) == "Unknown device"
+    # Unrecognised is shown, not swallowed — a strange session is exactly
+    # the one worth reading.
+    assert _describe_agent("curl/8.7.1") == "curl/8.7.1"
