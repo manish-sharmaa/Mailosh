@@ -482,3 +482,52 @@ def test_a_default_reply_resolves_from_the_preference(stored, expected):
     # An explicit mode is never overridden by the preference.
     assert _reply_mode("forward", prefs) == "forward"
     assert _reply_mode("reply_all", SimpleNamespace(default_reply="reply")) == "reply_all"
+
+
+# ---------------------------------------------------------------------------
+# Labels
+# ---------------------------------------------------------------------------
+
+
+def test_labels_lists_every_label_and_posts_to_the_existing_routes(app):
+    """The page owns no label logic: every control targets a route
+    `mailosh/web/labels.py` already serves, so renaming here and renaming
+    from the sidebar's hover menu are one code path."""
+    client = _login(app)
+    body = client.get("/settings/labels").text
+    assert 'value="Work"' in body and 'value="Receipts"' in body
+    # System mailboxes are not labels and must not be editable here.
+    assert 'value="Inbox"' not in body and 'value="Trash"' not in body
+    for suffix in ("rename", "meta", "nest", "delete", "color/clear"):
+        assert f'hx-post="/labels/m-work/{suffix}"' in body
+    # And it refreshes itself off the trigger those routes already emit.
+    assert 'hx-trigger="om:labels from:body"' in body
+
+
+def test_a_hidden_label_is_still_listed_so_it_can_be_un_hidden(app):
+    """`build_nav` drops `hide` labels structurally — right for the nav,
+    wrong for the only page that can bring one back."""
+    client = _login(app)
+    r = _post(client, "/labels/m-work/meta", {"visibility": "hide"})
+    assert r.status_code == 204, r.text
+    body = client.get("/settings/labels").text
+    assert 'value="Work"' in body
+    picked = re.search(r'<select[^>]*id="vis-m-work".*?</select>', body, re.S)
+    assert picked is not None
+    assert re.search(r'value="hide" selected', picked.group(0))
+
+
+def test_renaming_from_the_settings_page_goes_through_the_label_route(app, fake):
+    client = _login(app)
+    r = _post(client, "/labels/m-work/rename", {"name": "Client work"})
+    assert r.status_code == 204, r.text
+    assert "Renamed" in r.headers["HX-Trigger"]
+    assert 'value="Client work"' in client.get("/settings/labels").text
+
+
+def test_the_labels_page_refuses_a_colour_that_is_not_one(app):
+    client = _login(app)
+    r = _post(client, "/labels/m-work/meta", {"color": "chartreuse"})
+    assert r.status_code == 200
+    assert "isn't a label colour" in r.headers["HX-Trigger"]
+    assert "chartreuse" not in client.get("/settings/labels").text

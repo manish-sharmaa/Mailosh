@@ -44,12 +44,14 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mailosh.db import repo
-from mailosh.db.models import AppUser, SessionRow, UiPref
+from mailosh.db.models import AppUser, SessionRow, UiPref, Visibility
 from mailosh.jmap.client import JmapClient
 from mailosh.jmap.models import Identity
 from mailosh.services.compose import clean_signature, list_identities
 from mailosh.services.mailbox_tree import NavModel, build_nav
+from mailosh.ui.format import LABEL_COLORS
 from mailosh.web import deps
+from mailosh.web.labels import VISIBILITIES
 from mailosh.web.prefs import (
     AutoAdvance,
     DefaultReply,
@@ -392,9 +394,75 @@ async def save_signature(
     return _saved("Signature saved")
 
 
+# ---------------------------------------------------------------------------
+# Labels
+# ---------------------------------------------------------------------------
+
+
+async def _labels_page(
+    request: Request, *, user: AppUser, client: JmapClient, db: AsyncSession
+) -> dict[str, object]:
+    """Every label this account has, with its colour, visibility and parent
+    — the page's whole model, in one `Mailbox/get` and one `label_meta_map`.
+
+    Built here rather than from `build_nav`, and that is the point of the
+    page. `mailosh.services.mailbox_tree._build_label_tree` drops every
+    `hide` label structurally (so a hidden label can never become a chip),
+    which is right for the nav and exactly wrong here: this is the one
+    surface that has to be able to un-hide one. Reading the mailboxes
+    directly is what keeps a hidden label reachable by the only control
+    that can bring it back.
+
+    Rows are flat and ordered by their full path, each carrying its nesting
+    `depth` for the indent — a tree of `<table>` rows would have to be
+    flattened for rendering anyway, and the depth is the only part of the
+    nesting this page draws.
+    """
+    mailboxes = await client.get_mailboxes()
+    meta = await repo.label_meta_map(db, user.id, client.account_id)
+    labels = [mailbox for mailbox in mailboxes if mailbox.role is None]
+    by_id = {mailbox.id: mailbox for mailbox in labels}
+
+    def path(mailbox: object) -> list[str]:
+        """This label's name preceded by its ancestors', lowercased.
+
+        `seen` is not defensive tidiness: `parent_id` comes from the
+        server, and a cycle in it would spin here forever rather than
+        render a page.
+        """
+        parts: list[str] = []
+        seen: set[str] = set()
+        node = mailbox
+        while node is not None and node.id not in seen:
+            seen.add(node.id)
+            parts.append(node.name.lower())
+            node = by_id.get(node.parent_id) if node.parent_id else None
+        parts.reverse()
+        return parts
+
+    rows: list[dict[str, object]] = []
+    for mailbox in sorted(labels, key=path):
+        row_meta = meta.get(mailbox.id)
+        rows.append(
+            {
+                "id": mailbox.id,
+                "name": mailbox.name,
+                "depth": len(path(mailbox)) - 1,
+                "color": row_meta.color if row_meta is not None else None,
+                "visibility": Visibility.parse(
+                    row_meta.visibility if row_meta is not None else None
+                ).value,
+                "parent_id": mailbox.parent_id or "",
+                "unread": mailbox.unread_emails,
+            }
+        )
+    return {"labels": rows, "colors": LABEL_COLORS, "visibilities": VISIBILITIES}
+
+
 #: Per-page context loaders — `page` -> coroutine returning that page's
 #: extra template context. Filled in by the sections below as each page's
 #: data needs arrive; a page absent here renders from `prefs` alone.
 _LOADERS: dict[str, object] = {
     "compose": _compose_page,
+    "labels": _labels_page,
 }

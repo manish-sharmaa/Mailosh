@@ -1,0 +1,126 @@
+{# Labels (spec §10): every label, with rename / colour / visibility /
+   nesting / delete.
+
+   **Not one line of label logic lives here.** Every control posts to a
+   route `mailosh/web/labels.py` already serves — the same ones the
+   sidebar's hover menu uses — so renaming from this page and renaming
+   from the nav are the same code path, including the name cleaning, the
+   "can't nest inside itself" refusal and the delete that keeps the mail.
+   A second implementation on a settings page is how the two surfaces end
+   up disagreeing about what a label is.
+
+   The whole table re-fetches itself on `om:labels`, the trigger every one
+   of those routes already emits: a rename answers `204` with nothing to
+   swap, so without this the row would still show the old name (and, worse,
+   a stale nesting menu) until the page was reloaded by hand.
+
+   `hx-confirm` on the delete, not a `data-confirm` handled in
+   `settings.js`: htmx owns the submit here, and `hx-confirm` is a plain
+   string handed to `window.confirm` — no evaluator, so the CSP is fine
+   with it. (`data-confirm` stays for the forms htmx does *not* own.) #}
+<div class="settings-labels"
+     hx-get="/settings/labels" hx-trigger="om:labels from:body"
+     hx-target="#main" hx-swap="morph:innerHTML show:none" hx-push-url="false">
+  {% if labels %}
+    <p class="settings-help">
+      A label is a folder your mail can be in more than one of. Deleting one
+      keeps every message it held.
+    </p>
+    <div class="settings-table-wrap">
+      <table class="settings-table">
+        <thead>
+          <tr>
+            <th scope="col">Label</th>
+            <th scope="col">Colour</th>
+            <th scope="col">Show in sidebar</th>
+            <th scope="col">Nest under</th>
+            <th scope="col"><span class="sr-only">Delete</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for label in labels %}
+            <tr>
+              <td>
+                <form class="settings-inline-form" method="post"
+                      action="/labels/{{ label.id }}/rename"
+                      hx-post="/labels/{{ label.id }}/rename" hx-swap="none">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <label class="sr-only" for="name-{{ label.id }}">Name of {{ label.name }}</label>
+                  <input class="settings-input" id="name-{{ label.id }}" name="name" type="text"
+                         value="{{ label.name }}" maxlength="255" autocomplete="off"
+                         style="margin-left: {{ label.depth * 14 }}px">
+                  <button type="submit" class="lp-btn">Rename</button>
+                </form>
+              </td>
+              <td>
+                <form class="settings-inline-form" method="post"
+                      action="/labels/{{ label.id }}/meta"
+                      hx-post="/labels/{{ label.id }}/meta" hx-swap="none">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <label class="sr-only" for="color-{{ label.id }}">Colour of {{ label.name }}</label>
+                  <select class="settings-select" id="color-{{ label.id }}" name="color">
+                    {% for name in colors %}
+                      <option value="{{ name }}"{% if name == label.color %} selected{% endif %}>{{ name | capitalize }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="lp-btn">Set</button>
+                </form>
+                {# A separate route, not `color=""` on `/meta`: "no colour"
+                   is something the reader asks for, never something an
+                   empty field means by accident. #}
+                <form class="settings-inline-form" method="post"
+                      action="/labels/{{ label.id }}/color/clear"
+                      hx-post="/labels/{{ label.id }}/color/clear" hx-swap="none">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="settings-link">Clear</button>
+                </form>
+              </td>
+              <td>
+                <form class="settings-inline-form" method="post"
+                      action="/labels/{{ label.id }}/meta"
+                      hx-post="/labels/{{ label.id }}/meta" hx-swap="none">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <label class="sr-only" for="vis-{{ label.id }}">Sidebar visibility of {{ label.name }}</label>
+                  <select class="settings-select" id="vis-{{ label.id }}" name="visibility">
+                    {% for value, text in visibilities %}
+                      <option value="{{ value }}"{% if value == label.visibility %} selected{% endif %}>{{ text }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="lp-btn">Set</button>
+                </form>
+              </td>
+              <td>
+                <form class="settings-inline-form" method="post"
+                      action="/labels/{{ label.id }}/nest"
+                      hx-post="/labels/{{ label.id }}/nest" hx-swap="none">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <label class="sr-only" for="nest-{{ label.id }}">Parent of {{ label.name }}</label>
+                  <select class="settings-select" id="nest-{{ label.id }}" name="parent_id">
+                    <option value="">Nothing</option>
+                    {% for other in labels if other.id != label.id %}
+                      <option value="{{ other.id }}"{% if other.id == label.parent_id %} selected{% endif %}>{{ other.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="lp-btn">Move</button>
+                </form>
+              </td>
+              <td>
+                <form class="settings-inline-form" method="post"
+                      action="/labels/{{ label.id }}/delete"
+                      hx-post="/labels/{{ label.id }}/delete" hx-swap="none"
+                      hx-confirm="Delete “{{ label.name }}”? Its messages are kept.">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="settings-link is-danger">Delete</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="settings-help">
+      No labels yet. Make one from the label button on any conversation.
+    </p>
+  {% endif %}
+</div>

@@ -133,6 +133,51 @@
     outline: 2px solid var(--focus);
     outline-offset: -1px;
   }
+  .settings-select {
+    height: 30px;
+    max-width: 180px;
+    padding: 0 6px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-ctl);
+    background: var(--surface);
+    color: var(--fg);
+    font-size: 12px;
+  }
+  /* A row of controls that belong to one small form: the label table's
+     rename/colour/nesting cells, where the field and its button sit on one
+     line rather than stacking the way `.settings-form` does. */
+  .settings-inline-form {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .settings-inline-form + .settings-inline-form {
+    margin-top: 4px;
+  }
+  .settings-inline-form .settings-input {
+    height: 30px;
+    max-width: 220px;
+    font-size: 12px;
+  }
+  /* A submit that reads as a link. It is a real button -- a form's own
+     control, so it works with no JavaScript -- wearing the affordance its
+     weight deserves next to the primary one beside it. */
+  .settings-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fg-2);
+    font-size: 12px;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .settings-link:hover {
+    color: var(--fg);
+  }
+  .settings-link.is-danger {
+    color: var(--danger);
+  }
   .settings-textarea {
     width: 100%;
     min-height: 120px;
