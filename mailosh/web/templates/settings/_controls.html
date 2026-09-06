@@ -1,0 +1,32 @@
+{# The two control shapes the settings partials share.
+
+   `segmented` is the quick-settings popover's own radio group — a
+   `<fieldset>` of real `<input type="radio">`s laid over their faces
+   (`.segmented`/`.segment` in styles/input.css) — with a help line under
+   the legend. Real radios, never buttons: one tab stop per group, arrows
+   to choose, and the checked state is what a plain form submit posts.
+
+   `actions` is the Save row. The button is `type="submit"` so Enter in any
+   field of the form saves it, the same as any other form on the web. #}
+
+{% macro segmented(name, legend, options, current, help=None) %}
+  <fieldset class="settings-field">
+    <legend class="settings-label">{{ legend }}</legend>
+    {% if help %}<p class="settings-help">{{ help }}</p>{% endif %}
+    <div class="segmented">
+      {% for value, label in options %}
+        <label class="segment">
+          <input type="radio" name="{{ name }}" value="{{ value }}"
+                 {% if current | string == value %}checked{% endif %}>
+          <span class="segment-face">{{ label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+{% endmacro %}
+
+{% macro actions(label="Save") %}
+  <div class="settings-actions">
+    <button type="submit" class="lp-btn is-accent">{{ label }}</button>
+  </div>
+{% endmacro %}

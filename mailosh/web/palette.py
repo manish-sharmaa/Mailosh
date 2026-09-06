@@ -92,6 +92,7 @@ from mailosh.jmap.client import JmapClient
 from mailosh.services.mailbox_tree import LabelNode, NavModel, build_nav, hidden_in_nav
 from mailosh.ui.format import label_color
 from mailosh.web import deps
+from mailosh.web.settings import PAGES as SETTINGS_PAGES
 
 router = APIRouter(prefix="/palette", tags=["palette"])
 
@@ -136,14 +137,27 @@ class PaletteLabel(BaseModel):
 
 
 class PaletteSetting(BaseModel):
-    """One "settings" result: a single POST that flips one Quick Settings
-    toggle to one concrete value (Task 12's ``POST /prefs``).
+    """One "settings" result — either of the two kinds this group holds.
+
+    A **toggle** carries ``post``/``values``: a single POST that flips one
+    Quick Settings preference to one concrete value (``POST /prefs``).
+
+    A **page** carries ``href`` instead: one of the six ``/settings/*``
+    pages, navigated to exactly the way a ``goto`` result is. Both live in
+    the same group because they are the same thing to the reader typing
+    "theme" or "signature" into ⌘K, and separating them into two groups
+    would make finding a setting depend on knowing whether it happens to
+    have a popover control.
+
+    Exactly one of the two shapes is ever filled in; ``static/js/
+    palette.js`` picks by whether ``href`` is set.
     """
 
     id: str
     label: str
-    post: str
-    values: dict[str, str | bool]
+    post: str = ""
+    values: dict[str, str | bool] = {}
+    href: str | None = None
 
 
 class PaletteIndex(BaseModel):
@@ -218,6 +232,14 @@ SETTINGS: tuple[PaletteSetting, ...] = (
         label="Keyboard shortcuts: off",
         post="/prefs",
         values={"shortcuts": False},
+    ),
+    #: The six full pages (`mailosh.web.settings.PAGES`, spec §10). Built
+    #: from that tuple rather than restated, so a seventh page is reachable
+    #: from ⌘K the moment it exists — the palette advertising five of six
+    #: settings pages is the kind of drift nothing would notice.
+    *(
+        PaletteSetting(id=f"settings:{key}", label=f"Settings: {label}", href=f"/settings/{key}")
+        for key, label in SETTINGS_PAGES
     ),
 )
 

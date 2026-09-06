@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en" data-theme="{{ prefs.theme }}" data-density="{{ prefs.density }}"
-      data-shortcuts="{{ 'on' if prefs.shortcuts else 'off' }}">
+      data-shortcuts="{{ 'on' if prefs.shortcuts else 'off' }}"
+      data-font-size="{{ prefs.font_size }}">
   <head>
     <meta charset="utf-8">
     {# `viewport-fit=cover` is what makes `env(safe-area-inset-*)` report
@@ -327,6 +328,12 @@
        about which pages may carry attachments. #}
     <script src="{{ static('js/attachments.js') }}" type="module"></script>
     <script src="{{ static('js/app.js') }}" type="module"></script>
+    {# Settings (spec §10): applies `font_size` from an `om:prefs` trigger to
+       `<html data-font-size>` — the one appearance preference `app.js`'s
+       store does not own. Loaded on the shell rather than by the settings
+       page because that page arrives as a `#main` swap, and a module tag
+       inside a morphed fragment is not reliably executed. Imports nothing. #}
+    <script src="{{ static('js/settings.js') }}" type="module"></script>
     <script src="{{ static('vendor/alpine.min.js') }}" defer></script>
     {% block scripts %}{% endblock %}
   </body>

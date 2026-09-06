@@ -361,10 +361,15 @@ async def test_the_conversation_bar_offers_reply_reply_all_and_forward(authed, f
     They carry `data-compose-reply` and no `hx-*` of their own: opening goes
     through `compose.js`, which owns where the card lands and the limit on
     how many are open. A button with its own `hx-get` would bypass both.
+
+    The first one asks for `default`, not `reply`: what a plain Reply means
+    is spec §10's Compose preference, and `mailosh.web.compose._reply_mode`
+    is the single place that resolves it. Reply all and Forward are
+    explicit choices and stay spelled out.
     """
     fake.thread("T1", ["E1"])
     html = (await authed.get("/t/T1")).text
-    for mode in ("reply", "reply_all", "forward"):
+    for mode in ("default", "reply_all", "forward"):
         assert f'data-compose-reply="{mode}"' in html
     bar = re.search(r'<div class="list-toolbar".*?</div>', html, re.S)
     assert bar is not None
@@ -748,7 +753,7 @@ def test_the_conversation_keys_are_live_and_scoped_to_a_conversation(entry_id, b
 
 @pytest.mark.parametrize(
     ("entry_id", "mode"),
-    [("reply", "reply"), ("reply-all", "reply_all"), ("forward", "forward")],
+    [("reply", "default"), ("reply-all", "reply_all"), ("forward", "forward")],
 )
 def test_reply_reply_all_and_forward_shipped_with_the_compose_card(entry_id, mode):
     """`r`/`a`/`f` were reserved-and-silent until 1C; they now open the
@@ -760,10 +765,12 @@ def test_reply_reply_all_and_forward_shipped_with_the_compose_card(entry_id, mod
     key means. An `available` entry whose runner is `() => undefined` is
     the unavailable case wearing a costume.
 
-    The mode strings are `mailosh.services.compose.build_reply`'s own
-    (`"reply"`/`"reply_all"`/`"forward"`) and travel to it untouched
-    through `GET /compose/reply/{id}?mode=`, so a rename there has to
-    change this line.
+    The mode strings travel through `GET /compose/reply/{id}?mode=` to
+    `mailosh.services.compose.build_reply`, so a rename there has to change
+    this line. `r` sends `"default"` — the one mode that is *not* one of
+    that function's, resolved to reply or reply-all from this reader's
+    Compose preference by `mailosh.web.compose._reply_mode` before the
+    service ever sees it.
     """
     entry = _registry_entry(entry_id)
     assert entry["available"] is True

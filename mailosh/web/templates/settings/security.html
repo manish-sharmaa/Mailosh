@@ -1,0 +1,74 @@
+{# Security (spec §10): every browser and phone signed in as you, and the
+   two ways to end one.
+
+   The whole point of the table is the row that is not you, so the columns
+   are the four things that would identify it — when it started, when it
+   was last used, what it says it is, and where from — and the one that is
+   you is marked rather than hidden. A list you cannot find yourself in is
+   a list you cannot read the rest of.
+
+   The table re-fetches itself on `om:sessions` (emitted by the per-row
+   revoke) because that route answers `204` with nothing to swap, and a
+   row that stays on screen after being signed out is the one thing this
+   page must never show.
+
+   "Sign out everywhere" posts to `/logout/all`, the route that has existed
+   since Phase 1A — plainly, not through htmx, because it ends in a 303 to
+   /login and that should be a real navigation replacing the whole
+   document. `data-confirm` is `static/js/settings.js`'s, which asks on the
+   form's own submit however it was reached. #}
+<div class="settings-sessions"
+     hx-get="/settings/security" hx-trigger="om:sessions from:body"
+     hx-target="#main" hx-swap="morph:innerHTML show:none" hx-push-url="false">
+  <p class="settings-help">Signed in on {{ sessions | length }} {{ "device" if sessions | length == 1 else "devices" }}.</p>
+  <div class="settings-table-wrap">
+    <table class="settings-table">
+      <thead>
+        <tr>
+          <th scope="col">Device</th>
+          <th scope="col">Signed in</th>
+          <th scope="col">Last used</th>
+          <th scope="col">IP address</th>
+          <th scope="col"><span class="sr-only">Sign out</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in sessions %}
+          <tr>
+            <td>
+              {{ row.agent }}
+              {% if row.current %}<span class="settings-pill">This device</span>{% endif %}
+            </td>
+            <td class="settings-row-muted">{{ row.created }}</td>
+            <td class="settings-row-muted">{{ row.last_seen }}</td>
+            <td class="settings-row-muted">{{ row.ip }}</td>
+            <td>
+              {% if not row.current %}
+                <form class="settings-inline-form" method="post"
+                      action="/settings/security/sessions/{{ row.id }}/revoke"
+                      hx-post="/settings/security/sessions/{{ row.id }}/revoke" hx-swap="none"
+                      hx-confirm="Sign out {{ row.agent }}?">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="settings-link is-danger">Sign out</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<section class="settings-section" aria-labelledby="everywhere-title">
+  <h3 id="everywhere-title" class="settings-section-title">Sign out everywhere</h3>
+  <p class="settings-help">
+    Ends every session above, this one included, and destroys the mail
+    server key they share. You will need to sign in again.
+  </p>
+  <form method="post" action="/logout/all"
+        data-confirm="Sign out of every device, including this one?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="lp-btn">Sign out everywhere</button>
+  </form>
+</section>

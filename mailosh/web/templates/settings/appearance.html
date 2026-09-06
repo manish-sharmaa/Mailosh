@@ -1,0 +1,38 @@
+{# Appearance (spec §10): theme, density, reading pane, font size.
+
+   One real `<form>` posting through htmx with nothing to swap: the route
+   answers `204` + `om:prefs` (applied to `<html>` by `static/js/app.js`
+   and `static/js/settings.js`, which is also what re-syncs the gear's
+   quick-settings radios) + `om:done` (the toast). Values are the same
+   `Literal` sets `mailosh/web/prefs.py` gives the popover, so the two
+   surfaces cannot disagree about what is legal.
+
+   `hx-headers` on `<body>` carries the CSRF token for the htmx path; the
+   hidden field is what `deps.csrf_protect` reads for a plain submit. #}
+{% from "settings/_controls.html" import segmented, actions %}
+<form class="settings-form" method="post" action="/settings/appearance"
+      hx-post="/settings/appearance" hx-swap="none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  {{ segmented("theme", "Theme",
+               [("system", "System"), ("light", "Light"), ("dark", "Dark")],
+               prefs.theme,
+               help="System follows your device.") }}
+
+  {{ segmented("density", "Density",
+               [("compact", "Compact"), ("standard", "Standard"), ("comfortable", "Comfortable")],
+               prefs.density,
+               help="How tall each conversation row is.") }}
+
+  {{ segmented("reading_pane", "Reading pane",
+               [("none", "Off"), ("right", "Right"), ("bottom", "Bottom")],
+               prefs.reading_pane,
+               help="Where a conversation opens beside the list. The list-first view is the only one this version draws; the choice is kept for the pane when it arrives.") }}
+
+  {{ segmented("font_size", "Font size",
+               [("sm", "Small"), ("md", "Default"), ("lg", "Large")],
+               prefs.font_size,
+               help="Scales the list and the conversation. The top bar and the sidebar stay as they are.") }}
+
+  {{ actions() }}
+</form>

@@ -155,20 +155,35 @@ def test_settings_cover_every_legal_prefs_value_exactly_once():
     # density (compact|standard|comfortable), shortcuts (true|false).
     by_id = {s.id: s for s in palette.SETTINGS}
     assert len(by_id) == len(palette.SETTINGS)  # every id unique
-    assert len(palette.SETTINGS) == 8
 
-    themes = {s.values["theme"] for s in palette.SETTINGS if "theme" in s.values}
+    toggles = [s for s in palette.SETTINGS if s.href is None]
+    assert len(toggles) == 8
+
+    themes = {s.values["theme"] for s in toggles if "theme" in s.values}
     assert themes == {"system", "light", "dark"}
 
-    densities = {s.values["density"] for s in palette.SETTINGS if "density" in s.values}
+    densities = {s.values["density"] for s in toggles if "density" in s.values}
     assert densities == {"compact", "standard", "comfortable"}
 
-    shortcuts = {s.values["shortcuts"] for s in palette.SETTINGS if "shortcuts" in s.values}
+    shortcuts = {s.values["shortcuts"] for s in toggles if "shortcuts" in s.values}
     assert shortcuts == {True, False}
 
-    assert all(s.post == "/prefs" for s in palette.SETTINGS)
+    assert all(s.post == "/prefs" for s in toggles)
     # Every value dict is single-field: one POST flips exactly one toggle.
-    assert all(len(s.values) == 1 for s in palette.SETTINGS)
+    assert all(len(s.values) == 1 for s in toggles)
+
+
+def test_every_settings_page_is_reachable_from_the_palette():
+    """The Settings group holds two shapes: the quick toggles above, and
+    one entry per full page. Built from `mailosh.web.settings.PAGES`, so a
+    seventh page cannot exist without being findable from Cmd+K."""
+    from mailosh.web.settings import PAGES
+
+    pages = [s for s in palette.SETTINGS if s.href is not None]
+    assert [s.href for s in pages] == [f"/settings/{key}" for key, _label in PAGES]
+    assert [s.label for s in pages] == [f"Settings: {label}" for _key, label in PAGES]
+    # A page navigates; it never posts a preference.
+    assert all(s.post == "" and s.values == {} for s in pages)
 
 
 # ---------------------------------------------------------------------------

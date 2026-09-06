@@ -766,7 +766,7 @@ const RUNNERS = {
   "expand-all": () => foldAll(true),
   "collapse-all": () => foldAll(false),
   "mark-unread-from-here": () => markUnreadFromHere(),
-  reply: () => composeCall("reply", "reply"),
+  reply: () => composeCall("reply", "default"),
   "reply-all": () => composeCall("reply", "reply_all"),
   forward: () => composeCall("reply", "forward"),
 

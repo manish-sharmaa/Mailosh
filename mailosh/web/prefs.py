@@ -96,6 +96,17 @@ RemoteImages = Literal["ask", "always", "contacts"]
 #: something Pydantic coerces (`"yes"`, `"1"`, `"on"`) into a value the
 #: control that posted it could never have produced.
 Flag = Literal["true", "false"]
+#: The four value sets `/prefs` deliberately does not take (module
+#: docstring) but the full settings pages (`mailosh.web.settings`, spec
+#: §10) do. Named here, beside the seven above, so every `UiPref` column's
+#: legal values live in one module whichever route writes them. `font_size`
+#: is `<html data-font-size>` (`styles/settings.css`); `undo_send_seconds`
+#: is the send window `static/js/compose.js` arms from the compose form;
+#: `default_reply` is what `GET /compose/reply/{id}?mode=default` resolves.
+ReadingPane = Literal["none", "right", "bottom"]
+FontSize = Literal["sm", "md", "lg"]
+UndoSend = Literal["5", "10", "20", "30"]
+DefaultReply = Literal["reply", "reply_all"]
 
 UserDep = Annotated[AppUser, Depends(deps.current_user)]
 DbDep = Annotated[AsyncSession, Depends(deps.get_db)]

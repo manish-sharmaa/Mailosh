@@ -52,6 +52,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Self
 
@@ -413,6 +414,137 @@ class StalwartAdmin:
             logger.info("create_account(%r): account already exists, treating as success", email)
             return False
         raise JmapError(f"x:Account/set create failed for account {email!r}: {error!r}")
+
+    async def _account_credentials(self, account_id: str) -> list[dict]:
+        """One account's `credentials` list, as the server keeps it.
+
+        `credentials` is a tagged union of `Password`, `ApiKey` and
+        `AppPassword` entries, and `x:Account/set update` addresses one of
+        them by its **index** in this list (`"credentials/0"`). So a
+        password change has to read the list first: writing index 0 blind
+        is fine on the accounts this app creates (`create_account` sets
+        exactly one `Password` there) and quietly replaces somebody's api
+        key with a password on an account an administrator has since added
+        one to.
+        """
+        out = await self._call(
+            [
+                (
+                    "x:Account/get",
+                    {
+                        "accountId": await self._admin_account_id(),
+                        "ids": [account_id],
+                        "properties": ["id", "credentials"],
+                    },
+                    "g0",
+                )
+            ]
+        )
+        for item in out["g0"].get("list") or []:
+            if item.get("id") == account_id:
+                return list(item.get("credentials") or [])
+        return []
+
+    async def _password_index(self, account_id: str) -> str:
+        """Which `credentials` slot holds this account's password, as the
+        string key the patch path needs.
+
+        The first `Password` entry, or `"0"` when the server reports no
+        credentials at all (redaction, or an account that genuinely has
+        none) -- index 0 is where `create_account` puts one, so that is
+        both the right place to write and the right place for a first
+        password to land. A non-`Password` entry is never overwritten.
+        """
+        credentials = await self._account_credentials(account_id)
+        for index, entry in enumerate(credentials):
+            if isinstance(entry, dict) and entry.get("@type") == "Password":
+                return str(index)
+        return "0" if not credentials else str(len(credentials))
+
+    async def set_password(self, username: str, password: str) -> None:
+        """Change `username`'s mailbox password.
+
+        The exact shape a live probe against Stalwart 0.16 established: a
+        patch on `x:Account/set update`, keyed by the credential's index in
+        the account's own `credentials` list --
+
+            {"credentials/0": {"@type": "Password", "secret": "..."}}
+
+        -- scoped to the **admin's** account id (accounts are a server-wide
+        directory the admin manages, unlike `x:ApiKey`, which is per-account
+        and needs the owner's id; `destroy_api_key`'s docstring records how
+        that difference was found). Replacing the whole `credentials`
+        property instead is rejected outright ("Secondary credentials
+        cannot be set directly"), which is the same wall `create_api_key`
+        hit from the other side.
+
+        Raises `JmapError` if `username` has no account, or if the id is
+        not in the response's `updated` map -- reported in `notUpdated` or
+        not mentioned at all, since a server that says nothing about an id
+        is not evidence the write happened (`mailosh.jmap.client.
+        _check_updated`'s stance, applied here).
+
+        Never logs `password`, and never puts it in an exception message:
+        the `notUpdated` error is reported, the patch is not.
+        """
+        await self._patch_account(
+            username,
+            lambda index: {f"credentials/{index}": {"@type": "Password", "secret": password}},
+            what="password",
+        )
+
+    async def set_display_name(self, username: str, name: str) -> None:
+        """Change the human label shown for `username`.
+
+        `description`, for the reason `create_account` already records:
+        `x:UserAccount` has no dedicated display-name property -- its
+        `name` is the login local part -- and `description` is the only
+        free-text field the schema offers. The same live probe confirmed
+        it is what a plain `{"description": ...}` update writes.
+        """
+        await self._patch_account(username, lambda _index: {"description": name}, what="name")
+
+    async def _patch_account(
+        self,
+        username: str,
+        build: Callable[[str], dict[str, object]],
+        *,
+        what: str,
+    ) -> None:
+        """`x:Account/set update` for one account, shared by the two
+        setters above so the resolve/patch/check-the-response sequence
+        exists once.
+
+        `build` receives the account's password-credential index and
+        returns the patch. It is a callable rather than a plain dict so the
+        `x:Account/get` that finds that index is only paid for by the
+        caller that needs it.
+        """
+        account_id = await self._find_account_id(username)
+        if account_id is None:
+            raise JmapError(f"set_{what}: no account with email {username!r}")
+        index = await self._password_index(account_id) if what == "password" else ""
+        out = await self._call(
+            [
+                (
+                    "x:Account/set",
+                    {
+                        "accountId": await self._admin_account_id(),
+                        "update": {account_id: build(index)},
+                    },
+                    "u0",
+                )
+            ]
+        )
+        result = out["u0"]
+        if account_id in (result.get("updated") or {}):
+            return
+        error = (result.get("notUpdated") or {}).get(account_id)
+        if error is None:
+            raise JmapError(
+                f"x:Account/set update ({what}) for {username!r}: not reported in response"
+            )
+        raise JmapError(f"x:Account/set update ({what}) failed for {username!r}: {error!r}")
 
     async def get_dkim_record(self, domain: str) -> DkimRecord:
         """Fetch the DKIM TXT record to publish for `domain`, via

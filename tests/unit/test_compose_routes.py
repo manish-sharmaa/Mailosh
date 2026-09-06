@@ -129,16 +129,21 @@ def env(tmp_path):
         id=1, email="demo@mailosh.test"
     )
     app.dependency_overrides[deps.prefs_for] = lambda: SimpleNamespace(
-        theme="light", density="comfortable", shortcuts=True
+        theme="light",
+        density="comfortable",
+        shortcuts=True,
+        undo_send_seconds=10,
+        default_reply="reply",
     )
     app.dependency_overrides[deps.client_for] = lambda: jmap
-
     # `POST /compose/send` records the submission it produced
     # (`mailosh.services.outbound.record`), which is the one thing in this
     # router that touches the database. A real aiosqlite schema rather than
     # a stub session, so that write is exercised for real and
     # `test_send_records_the_submission_for_delivery_tracking` can read it
-    # back.
+    # back. The two open-a-composer routes read this user's saved signature
+    # through `repo.signature_map`, which the fixture below stubs out of the
+    # same namespace -- `signatures` is what it returns here.
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'compose.db'}")
     maker = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -153,7 +158,7 @@ def env(tmp_path):
             yield session
 
     app.dependency_overrides[deps.get_db] = get_db
-    return SimpleNamespace(app=app, jmap=jmap, calls=calls, sessionmaker=maker)
+    return SimpleNamespace(app=app, jmap=jmap, calls=calls, sessionmaker=maker, signatures={})
 
 
 @pytest.fixture
@@ -193,7 +198,12 @@ def stub(env, monkeypatch):
     monkeypatch.setattr(compose_module, "send_draft", send_draft)
     monkeypatch.setattr(compose_module, "discard_draft", discard_draft)
     monkeypatch.setattr(compose_module, "list_identities", list_identities)
+
+    async def signature_map(db, user_id, account_id):
+        return dict(env.signatures)
+
     monkeypatch.setattr(compose_module, "build_reply", build_reply)
+    monkeypatch.setattr(compose_module.repo, "signature_map", signature_map)
     return env
 
 

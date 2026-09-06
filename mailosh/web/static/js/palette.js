@@ -318,7 +318,11 @@ function settingCandidates() {
     binding: null,
     icon: ICONS.settings,
     color: null,
-    run: () => applyPrefs(setting.values),
+    // Two shapes in one group (`mailosh/web/palette.py`'s `PaletteSetting`):
+    // a quick toggle writes a preference through the same `ui` store the
+    // gear's popover uses, and a page navigates the same way a Go to
+    // result does. `href` is what tells them apart.
+    run: () => (setting.href ? go(setting.href) : applyPrefs(setting.values)),
   }));
 }
 
