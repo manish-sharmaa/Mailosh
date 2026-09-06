@@ -168,6 +168,30 @@ def format_date(dt: datetime, now: datetime) -> str:
     return dt_local.strftime("%-m/%-d/%y")
 
 
+def format_full(dt: datetime, now: datetime) -> str:
+    """The whole timestamp, spelled out: `Tue, Sep 1, 2026, 10:42 AM`.
+
+    What `format_date` above leaves out. That one is the *column*: three
+    characters wide where it can be, because a list of fifty rows is read by
+    scanning it. This is the answer to "yes, but when exactly" — the message
+    card's `<time title>`, the details popover's Date row and the list row's
+    own tooltip, all of which are read one at a time and deliberately.
+
+    Converted into `now`'s timezone for the same reason `format_date`
+    compares in it: the reader's "when" is their own clock's, and a tooltip
+    that disagreed with the timestamp it annotates would be worse than
+    either being slightly wrong.
+
+    It lives here rather than in `mailosh.services.conversation`, where it
+    started, because the list rows want the same string and a second
+    implementation of "the long form of a date" is how a conversation comes
+    to disagree with the row it was opened from.
+    """
+    now = _as_aware(now)
+    tz = now.tzinfo
+    return _as_aware(dt).astimezone(tz).strftime("%a, %b %-d, %Y, %-I:%M %p")
+
+
 def _first_name(label: str) -> str:
     """The leading word of a display name, for the multi-sender case.
 

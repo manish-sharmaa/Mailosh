@@ -22,6 +22,7 @@ fakes `tests/unit/test_thread_routes.py` uses: no Stalwart, no network.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
@@ -342,7 +343,11 @@ async def test_a_previewable_chip_carries_download_and_open_once_each(authed, fa
     (chip,) = chips_in(html)
     assert len(chip["links"]) == 2
     assert html.count("Download spec.pdf") == 1
-    assert html.count("Open spec.pdf") == 1
+    # "Preview", not "Open": the control is the stretched `.chip-link` that
+    # opens the dialog now, and the label follows what the click does. The
+    # anchor is still the same real `?inline=1` URL underneath, which is
+    # what a modifier click and a JS-less browser still get.
+    assert html.count("Preview spec.pdf") == 1
 
 
 async def test_a_chip_with_no_preview_kind_offers_download_only(authed, fake):
@@ -353,7 +358,10 @@ async def test_a_chip_with_no_preview_kind_offers_download_only(authed, fake):
     (chip,) = chips_in(html)
     assert len(chip["links"]) == 1
     assert html.count("Download bundle.zip") == 1
-    assert "Open bundle.zip" not in html
+    # Spec §7's "unsupported types fall back to download" is this absence:
+    # no preview control at all, rather than a dialog that opens on a `.zip`
+    # to say it cannot show one.
+    assert "Preview bundle.zip" not in html
 
 
 async def test_the_controls_point_at_this_messages_own_blob(authed, fake):
@@ -479,3 +487,171 @@ def test_the_glyph_for_a_type_is_one_that_is_actually_vendored(mime, expected):
     name = _attachment_icon(mime)
     assert name == expected
     assert (ICONS / f"{name}.svg").exists(), f"{name}: run `make icons`"
+
+
+# ---------------------------------------------------------------------------
+# The preview dialog (spec §7)
+#
+# One `<dialog>` per conversation, filled by `static/js/attachments.js` from
+# the chip that was clicked. There is no JS runtime here (Global
+# Constraints), so the markup is asserted through the route and the module
+# is read as source — and what is read is the part a browser would not tell
+# us about anyway: which element it reaches for, and what it clears.
+# ---------------------------------------------------------------------------
+
+ATTACHMENTS_JS = Path("mailosh/web/static/js/attachments.js")
+
+
+def _attachments_js() -> str:
+    """The module minus its whole-line comments: this file explains itself
+    at length, and a rule about what the code does must not be satisfiable
+    by prose describing it."""
+    source = ATTACHMENTS_JS.read_text()
+    return "\n".join(line for line in source.splitlines() if not line.lstrip().startswith("//"))
+
+
+async def test_the_page_carries_exactly_one_preview_dialog(authed, fake):
+    """A singleton, however many chips there are: twenty copies of this
+    markup is nineteen dialogs nobody opens, each with an `<iframe>` in it.
+    """
+    fake.thread(
+        "T1",
+        [("E1", None, "x"), ("E2", None, "y")],
+        attachments=[_att(f"B{n}", "image/png", f"s{n}.png", 9) for n in range(3)],
+    )
+    html = (await authed.get("/t/T1")).text
+    assert len(chips_in(html)) == 6
+    assert html.count('id="att-preview"') == 1
+    # Counted by its own body rather than by `<dialog`: the app layout has
+    # dialogs of its own (the shortcuts overlay), and this is about there
+    # being one *preview*.
+    assert html.count('class="att-dialog-body"') == 1
+
+
+async def test_the_dialog_starts_empty_and_names_itself_by_its_filename(authed, fake):
+    """It carries no attachment until a chip is clicked — no `src` on either
+    surface, no `href` on either link. A dialog that shipped one would be
+    fetching a file the reader never asked for.
+    """
+    fake.thread("T1", [("E1", None, "x")], attachments=[_att("B2", "image/png", "s.png", 9)])
+    html = (await authed.get("/t/T1")).text
+    dialog = html[html.index("<dialog") : html.index("</dialog>")]
+    tags = parse_attrs(dialog)
+    assert "src" not in tags["img"][0] and "hidden" in tags["img"][0]
+    assert "src" not in tags["iframe"][0] and "hidden" in tags["iframe"][0]
+    assert [a["href"] for a in tags["a"]] == ["", ""]
+    # Named by the element the module writes the filename into.
+    assert 'aria-labelledby="att-preview-name"' in dialog
+    assert 'id="att-preview-name"' in dialog
+
+
+async def test_the_dialogs_frame_is_sandboxed_exactly_as_a_message_frame_is(authed, fake):
+    """An attachment is a file a stranger sent. The response's own
+    `default-src 'none'; sandbox` is the braces; this attribute is the belt,
+    and `allow-same-origin` is absent from both.
+    """
+    fake.thread("T1", [("E1", None, "x")], attachments=[_att("B2", "application/pdf", "s.pdf", 9)])
+    html = (await authed.get("/t/T1")).text
+    (frame,) = parse_attrs(html)["iframe"]
+    assert "allow-same-origin" not in frame["sandbox"].split()
+    assert "allow-scripts" in frame["sandbox"].split()
+    assert frame["referrerpolicy"] == "no-referrer"
+
+
+async def test_a_previewable_chip_is_a_stretched_link_and_says_what_it_opens(authed, fake):
+    """The whole chip is the control (`.chip-link`, stretched by
+    styles/thread.css) — and it is a real link to the URL that already
+    works, so a modifier click and a browser with no modules both still open
+    the file. `data-preview-kind` is the Python table's answer, not a guess
+    made in JS from the filename.
+    """
+    fake.thread("T1", [("E1", None, "x")], attachments=[_att("B2", "image/png", "shot.png", 9)])
+    html = (await authed.get("/t/T1")).text
+    (link,) = [a for a in parse_attrs(html)["a"] if a.get("class") == "chip-link"]
+    assert link["href"] == "/m/E1/att/B2?inline=1"
+    assert link["data-role"] == "attachment-preview"
+    assert link["data-preview-kind"] == "image"
+    assert link["data-preview-name"] == "shot.png"
+    assert link["data-download-url"] == "/m/E1/att/B2"
+    assert link["target"] == "_blank"
+    assert set(link["rel"].split()) == {"noopener", "noreferrer"}
+
+
+@pytest.mark.parametrize(
+    "mime,kind",
+    [("image/png", "image"), ("application/pdf", "pdf"), ("text/plain", "text")],
+)
+async def test_the_chip_carries_the_kind_the_service_layer_decided(authed, fake, mime, kind):
+    fake.thread("T1", [("E1", None, "x")], attachments=[_att("B2", mime, "f", 9)])
+    html = (await authed.get("/t/T1")).text
+    (link,) = [a for a in parse_attrs(html)["a"] if a.get("class") == "chip-link"]
+    assert link["data-preview-kind"] == kind
+    assert PREVIEW_KIND[mime] == kind
+
+
+async def test_a_type_with_no_preview_gets_no_stretched_link_at_all(authed, fake):
+    fake.thread("T1", [("E1", None, "x")], attachments=[_att("B2", "text/html", "page.html", 9)])
+    html = (await authed.get("/t/T1")).text
+    assert "chip-link" not in html
+    assert 'data-role="attachment-preview"' not in html
+
+
+def test_the_module_shows_a_picture_as_a_picture_and_a_document_in_the_frame():
+    """`image` is the only kind that is a picture. `pdf` and `text` are
+    documents a stranger sent, and a document in this app goes in a
+    sandboxed frame — the same rule a message body follows.
+    """
+    code = _attachments_js()
+    assert 'if (previewKind === "image")' in code
+    assert 'previewKind === "pdf" || previewKind === "text"' in code
+    # An unrecognised kind opens nothing and the click is handed back to the
+    # browser, which is what makes the anchor's `href` the fallback.
+    assert "return false;" in code
+    assert "if (open(trigger)) event.preventDefault();" in code
+
+
+def test_the_module_hands_a_modifier_click_back_to_the_browser():
+    """The chip is a real link. "Open in a new tab" has to keep meaning
+    that, exactly as it does on a list row and a Drafts row.
+    """
+    code = _attachments_js()
+    assert "event.metaKey || event.ctrlKey || event.shiftKey" in code
+    assert "event.button !== 0" in code
+
+
+def test_the_module_clears_every_surface_on_close_and_returns_the_focus():
+    """Two things a `<dialog>` does not do by itself. A closed dialog must
+    hold no bytes of the attachment it showed, and the reader must land back
+    on the chip rather than at the top of the conversation.
+    """
+    code = _attachments_js()
+    assert 'frame.removeAttribute("src")' in code
+    assert 'image.removeAttribute("src")' in code
+    # `src = ""` would resolve against the page's own URL and point the
+    # frame at the conversation.
+    assert 'src = ""' not in code
+    assert "opener?.focus?.({ preventScroll: true })" in code
+    # `close` does not bubble, so the listener has to be a capture one on an
+    # ancestor — `#main` is swapped by htmx, so it cannot be bound to the
+    # dialog itself and left there.
+    close_listener = re.search(
+        r"document\.body\.addEventListener\(\s*\"close\",(.*?)^\);$", code, re.M | re.S
+    )
+    assert close_listener is not None, "the close handler is no longer a body listener"
+    # The trailing `true` is what makes it capture.
+    assert re.search(r"\btrue,?\s*$", close_listener.group(1).strip())
+
+
+def test_escape_and_the_backdrop_are_the_platforms_and_the_dialog_is_modal():
+    """`showModal()`, not `show()`: Escape, the inert page behind it and the
+    focus trap all come with the modal form and with nothing else. The
+    backdrop click is the one addition — a click whose target is the
+    `<dialog>` itself, since every visible part of it is a child.
+    """
+    code = _attachments_js()
+    assert "root.showModal()" in code
+    assert "root.show()" not in code
+    assert "event.target === root" in code
+    # Escape is never bound: binding it would be a second, divergent idea of
+    # what closes this dialog.
+    assert "Escape" not in code

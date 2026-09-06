@@ -30,7 +30,7 @@ from helpers import parse_attrs
 from httpx import ASGITransport, AsyncClient
 
 from mailosh.jmap.errors import TransportError
-from mailosh.jmap.models import Address, EmailBody, Mailbox
+from mailosh.jmap.models import Address, BodyPart, EmailBody, Mailbox
 from mailosh.security.exchange import VerifiedAccount
 from mailosh.stalwart_admin import ApiKey
 from mailosh.web import deps
@@ -71,8 +71,12 @@ class FakeClient:
 
     `thread(...)` registers a conversation from a compact spec: a bare id
     for a plain-text message, or `(id, html, text)` when a test cares which
-    body type it gets. `raise_on_thread` makes the fetch fail the way an
-    unreachable Stalwart does.
+    body type it gets. `attach` hangs the same
+    `(blob id, name, type, size)` parts off *every* message in the thread —
+    enough for a test that cares whether attachments are listed at all, and
+    deliberately not a per-message shape nothing yet needs.
+    `raise_on_thread` makes the fetch fail the way an unreachable Stalwart
+    does.
     """
 
     def __init__(self) -> None:
@@ -95,6 +99,7 @@ class FakeClient:
         starred: tuple[str, ...] | list[str] = (),
         return_path: str | None = None,
         auth_results: str | None = None,
+        attach: list[tuple[str, str, str, int]] | None = None,
     ) -> None:
         messages = []
         for minute, spec in enumerate(specs):
@@ -118,9 +123,13 @@ class FakeClient:
                     subject=subject,
                     received_at=datetime(2026, 9, 2, 10, tzinfo=UTC) + timedelta(minutes=minute),
                     preview="Attaching the deck we walked through",
-                    has_attachment=False,
                     text_body=text,
                     html_body=html,
+                    has_attachment=bool(attach),
+                    attachments=[
+                        BodyPart(blob_id=blob_id, name=name, type=mime, size=size)
+                        for blob_id, name, mime, size in (attach or [])
+                    ],
                     return_path=return_path,
                     auth_results=auth_results,
                 )
@@ -229,10 +238,19 @@ async def test_the_conversation_page_frames_nothing_itself(authed, fake):
     alone, behind `GET /m/{id}/frame`. Two hand-written copies of that
     attribute is how one of them comes to differ from the other, and the
     one that matters is the omission of `allow-same-origin`.
+
+    Still true with the preview dialog on the page: that frame holds an
+    attachment, never a message body, and it holds nothing at all until a
+    chip is clicked.
     """
     fake.thread("T1", [("E1", "<p>rich</p>", None)])
     html = (await authed.get("/t/T1")).text
-    assert parse_attrs(html).get("iframe", []) == []
+    # The one iframe the page does render is the attachment preview
+    # dialog's, and it frames nothing until a chip is clicked: no `src` at
+    # all, and no message URL anywhere in the document.
+    frames = parse_attrs(html).get("iframe", [])
+    assert [attrs["class"] for attrs in frames] == ["att-preview-frame"]
+    assert "src" not in frames[0]
     assert "/m/E1/html" not in html
 
 
@@ -282,25 +300,58 @@ async def test_a_quoted_run_is_folded_behind_the_pill(authed, fake):
 # ---------------------------------------------------------------------------
 
 
-async def test_menu_offers_only_the_actions_this_task_implements(authed, fake):
+async def test_menu_offers_only_the_actions_that_have_routes_behind_them(authed, fake):
     """Scoped to the per-message menu, not the whole page.
 
     It used to assert "Reply all"/"Forward" appeared nowhere in the
     response, which held only while nothing anywhere could reply. Phase 1C
-    put both in the conversation's action bar, and a whole-page assertion
-    then failed for a change it was never about — the menu is still exactly
-    as it was. Narrowed to `details.msg-menu` so it keeps testing the menu's
-    contents and stops testing the rest of the page.
+    put both in the conversation's action bar; the menu now carries its own
+    per-message three as well. Narrowed to `details.msg-menu` so it tests
+    the menu's contents and not the rest of the page.
+
+    Print joined the list with the route behind it (`GET /t/{id}/print`),
+    which is the only condition on an item being here at all (spec §3:
+    nothing present-and-dead).
     """
     fake.thread("T1", ["E1"])
     html = (await authed.get("/t/T1")).text
     menus = re.findall(r'<details class="msg-menu".*?</details>', html, re.S)
     assert len(menus) == 1
     menu = menus[0]
-    for present in ("Mark unread from here", "View source", "Delete message"):
-        assert menu.count(present) == 1
-    for absent in ("Reply all", "Forward", "Print"):
-        assert absent not in menu
+    labels = [
+        label.strip()
+        for label in re.findall(r'class="menu-item[^"]*"[^>]*>.*?</svg>\s*([^<]+)', menu, re.S)
+    ]
+    assert labels == [
+        "Reply",
+        "Reply all",
+        "Forward",
+        "Mark unread from here",
+        "View source",
+        # New: `GET /t/{id}/print` exists, so the item that opens it may.
+        "Print",
+        "Delete message",
+    ]
+
+
+async def test_the_menus_reply_items_name_their_own_message(authed, fake):
+    """The conversation bar replies to whichever card holds focus; a menu
+    item has to reply to the card it is *in*, and a pointer click does not
+    focus a button on every platform. So each item names its message
+    outright, in the same `data-compose-reply` modes the bar and the
+    `r`/`a`/`f` keys use, with no `hx-*` of its own — the dock limit and
+    the inline-card slot stay `compose.js`'s.
+    """
+    fake.thread("T1", ["E1", "E2"])
+    html = (await authed.get("/t/T1")).text
+    menus = re.findall(r'<details class="msg-menu".*?</details>', html, re.S)
+    assert len(menus) == 2
+    for menu, email_id in zip(menus, ["E1", "E2"], strict=True):
+        items = re.findall(r"<button[^>]*data-compose-reply=\"([^\"]+)\"[^>]*>", menu)
+        assert items == ["reply", "reply_all", "forward"], menu
+        for tag in re.findall(r"<button[^>]*data-compose-reply[^>]*>", menu):
+            assert f'data-compose-email="{email_id}"' in tag
+            assert "hx-" not in tag
 
 
 async def test_the_conversation_bar_offers_reply_reply_all_and_forward(authed, fake):
@@ -481,6 +532,157 @@ async def test_the_mailbox_the_reader_came_from_stays_selected(authed, fake):
     ).text
     active = re.findall(r'<a href="(/mail/\w+)"[^>]*aria-current="page"', html)
     assert active == ["/mail/archive"]
+
+
+# ---------------------------------------------------------------------------
+# The print page (`GET /t/{id}/print`)
+#
+# `styles/print.css` already prints the reading view; this route exists for
+# the two things a stylesheet cannot fix — a collapsed card's body was never
+# fetched, and a conversation you are not currently reading has no page to
+# press Cmd+P on. So what these tests pin is that the page is *rendered*
+# expanded rather than revealed, that it carries no chrome, and that the
+# containment around a message body is exactly the reading view's.
+# ---------------------------------------------------------------------------
+
+
+async def test_the_print_page_renders_every_message_with_no_folds(authed, fake):
+    """Not one card open and the rest revealed by a media query: a `<details>`
+    on this page would be a control, and a lazily-framed one prints blank.
+    """
+    fake.thread("T1", ["E1", "E2", "E3"])
+    page = await authed.get("/t/T1/print")
+    assert page.status_code == 200
+    html = page.text
+    assert html.count('class="print-msg"') == 3
+    assert "<details" not in html
+    # Every body is on the page, in order, and so is each sender's header.
+    assert html.count("plain body") == 3
+    assert re.findall(r'class="print-msg"', html) == ['class="print-msg"'] * 3
+
+
+async def test_the_print_page_carries_no_app_chrome_and_no_app_scripts(authed, fake):
+    """ "No chrome" is not a stylesheet's job here — the toolbar, the nav, the
+    dock and the toast stack are simply not rendered, and neither htmx nor
+    Alpine is loaded, because there is nothing on this page to act on.
+    """
+    fake.thread("T1", ["E1"])
+    html = (await authed.get("/t/T1/print")).text
+    for absent in (
+        "list-toolbar",
+        "app-nav",
+        "compose-dock",
+        'id="toasts"',
+        "htmx.min.js",
+        "alpine.min.js",
+        "data-action=",
+        "hx-get",
+        "hx-post",
+    ):
+        assert absent not in html, absent
+    # Two modules and nothing else, in the order the height handshake needs:
+    # the listener before the page that triggers a report.
+    assert re.findall(r"<script src=\"/static/js/([\w.-]+)\?", html) == [
+        "frame.js",
+        "print.js",
+    ]
+    assert "<script>" not in html
+    assert re.search(r"<[^>]*\son\w+=", html) is None
+
+
+async def test_the_print_page_frames_html_bodies_eagerly_light_and_expanded(authed, fake):
+    """The same sandboxed frame the reading view gets — with the two query
+    parameters `/m/{id}/html` already takes for exactly this page, and
+    without the `loading="lazy"` that would leave a frame unloaded at the
+    moment `print.js` prints.
+    """
+    fake.thread("T1", [("E1", "<p>rich</p>", None), ("E2", None, "plain")])
+    html = (await authed.get("/t/T1/print")).text
+    frames = parse_attrs(html)["iframe"]
+    assert [attrs["src"] for attrs in frames] == ["/m/E1/html?theme=light&expand=1"]
+    for attrs in frames:
+        assert "loading" not in attrs
+        assert attrs["referrerpolicy"] == "no-referrer"
+        assert "allow-same-origin" not in attrs["sandbox"].split()
+        # `frame.js` resizes the classes its own selector names, and a page
+        # class beside them would be a frame that never resizes.
+        assert attrs["class"] == "mail-frame"
+    # A text body is still rendered inline, both halves of it unfolded.
+    assert "plain" in html
+
+
+async def test_the_print_page_unfolds_a_quoted_run_it_would_otherwise_hide(authed, fake):
+    """The `•••` pill is a control, and paper has none: `render_plain`'s two
+    halves are both printed.
+    """
+    fake.thread("T1", [("E1", None, "Sounds good.\n\nOn Mon, Dan wrote:\n> earlier")])
+    html = (await authed.get("/t/T1/print")).text
+    assert "quote-toggle" not in html
+    assert "Sounds good." in html and "earlier" in html
+
+
+async def test_the_print_page_names_attachments_without_offering_a_button(authed, fake):
+    """A chip's Download and Open are buttons; what survives on paper is the
+    fact that the message came with the file.
+    """
+    fake.thread("T1", ["E1"], attach=[("blob-1", "spec.pdf", "application/pdf", 2048)])
+    html = (await authed.get("/t/T1/print")).text
+    assert "spec.pdf" in html
+    assert "attachment-chip" not in html
+    assert "/m/E1/att/blob-1" not in html
+
+
+async def test_the_print_page_is_never_stored(authed, fake):
+    """A printout is a snapshot of something that changes underneath it, and
+    this page prints itself on load — a cached copy would reprint an old one.
+    """
+    fake.thread("T1", ["E1"])
+    page = await authed.get("/t/T1/print")
+    assert page.headers["cache-control"] == "private, no-store"
+
+
+async def test_a_missing_conversation_is_the_404_page_here_too(authed, fake):
+    page = await authed.get("/t/T404/print")
+    assert page.status_code == 404
+    assert "print-msg" not in page.text
+
+
+async def test_the_menu_links_the_conversations_print_page_in_a_new_tab(authed, fake):
+    """The one item in the ⋮ menu that is the conversation's rather than the
+    card's, and the only kind of control it can be: a link to a real
+    address, so the page is reachable, linkable and openable without first
+    opening the conversation.
+    """
+    fake.thread("T1", ["E1", "E2"])
+    html = (await authed.get("/t/T1")).text
+    prints = [attrs for attrs in parse_attrs(html)["a"] if attrs.get("href", "").endswith("/print")]
+    assert [attrs["href"] for attrs in prints] == ["/t/T1/print"] * 2
+    for attrs in prints:
+        assert attrs["target"] == "_blank"
+        assert set(attrs["rel"].split()) == {"noopener", "noreferrer"}
+
+
+PRINT_JS = pathlib.Path("mailosh/web/static/js/print.js")
+
+
+def test_print_js_waits_for_the_frames_and_prints_once():
+    """`window.print()` cannot be an inline `onload` under
+    `script-src 'self'`, so it lives in a module — and it has to wait for
+    `load` rather than `DOMContentLoaded`, because `load` is the one event
+    that waits for the message frames. A frame that has not loaded prints
+    blank.
+    """
+    source = PRINT_JS.read_text()
+    code = "\n".join(line for line in source.splitlines() if not line.lstrip().startswith("//"))
+    assert "window.print()" in code
+    assert 'addEventListener("load"' in code
+    assert "DOMContentLoaded" not in code
+    # The already-complete branch: a module is deferred, so on a warm cache
+    # `load` can have fired before this file ran at all.
+    assert 'document.readyState === "complete"' in code
+    assert "{ once: true }" in code
+    # Nothing re-arms it: cancelling the dialog leaves the reader the page.
+    assert "afterprint" not in code
 
 
 # ---------------------------------------------------------------------------

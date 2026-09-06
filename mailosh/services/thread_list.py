@@ -18,7 +18,7 @@ from datetime import datetime
 
 from mailosh.jmap.client import JmapClient
 from mailosh.jmap.models import EmailHeader
-from mailosh.ui.format import avatar_color, format_date, format_senders
+from mailosh.ui.format import avatar_color, format_date, format_full, format_senders
 
 from .mailbox_tree import LabelNode, NavModel, resolve_mailbox
 
@@ -103,6 +103,13 @@ class ThreadRow:
     subject: str
     preview: str
     date_display: str
+    #: The same instant spelled out (`Tue, Sep 1, 2026, 10:42 AM`), for the
+    #: row's tooltip. `date_display` is the column — three characters where
+    #: it can be, because fifty rows are read by scanning them — and this is
+    #: the answer to "yes, but when exactly". One `format_full`, shared with
+    #: the message card, so a row and the conversation it opens cannot
+    #: disagree about when something arrived.
+    date_full: str
     received_at: datetime
     unread: bool
     starred: bool
@@ -232,6 +239,7 @@ def _row_for_thread(
         subject=latest.subject or _NO_SUBJECT,
         preview=latest.preview,
         date_display=format_date(latest.received_at, now),
+        date_full=format_full(latest.received_at, now),
         received_at=latest.received_at,
         unread=any("$seen" not in email.keywords for email in scoped),
         starred=any("$flagged" in email.keywords for email in scoped),

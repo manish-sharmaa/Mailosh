@@ -1,6 +1,6 @@
 // Mailosh — triage actions, the undo toast, and the bulk confirmation.
 //
-// Design spec §6.3. The six routes in `mailosh/web/actions.py` answer
+// Design spec §6.3. The action routes in `mailosh/web/actions.py` answer
 // `204 No Content` (or `409`) with their whole result in an `HX-Trigger`
 // response header and no body at all, so everything a reader sees after
 // clicking Archive is built here: the row leaving, the nav badge moving,
@@ -131,7 +131,15 @@ import { openShortcuts } from "./keys.js";
 // an explicit "Try again" affordance on the toast, which is not in this
 // phase.
 
-/** Route per action kind. */
+/** Route per action kind.
+ *
+ *  The last three are Trash and Spam's own vocabulary: `restore` and
+ *  `destroy` stand where archive and delete stand in Trash, `unspam` where
+ *  report-spam stands in Spam. They are separate kinds rather than a flag
+ *  on the existing ones for the same reason `unread` is not `("read",
+ *  {on: 0})` — one name, one operation, in the hook, in `om.act()` and in
+ *  the key runner alike. `/a/empty` is not here: it takes a mailbox, not
+ *  a selection, and has its own poster below. */
 const ROUTES = {
   archive: "/a/archive",
   delete: "/a/delete",
@@ -140,7 +148,13 @@ const ROUTES = {
   unstar: "/a/star",
   read: "/a/read",
   unread: "/a/read",
+  restore: "/a/restore",
+  unspam: "/a/unspam",
+  destroy: "/a/destroy",
 };
+
+/** The one route that acts on a mailbox rather than on a selection. */
+const EMPTY_ROUTE = "/a/empty";
 
 // The `on` form field for the two routes that take a direction. Folded
 // into the kind rather than passed as a separate flag so that one name
@@ -150,15 +164,27 @@ const ROUTES = {
 const ON = { star: "1", unstar: "0", read: "1", unread: "0" };
 
 /** Kinds whose rows leave the list, and which therefore collapse. */
-const REMOVES_ROWS = new Set(["archive", "delete", "spam"]);
+const REMOVES_ROWS = new Set(["archive", "delete", "spam", "restore", "unspam", "destroy"]);
+
+/** The one kind that asks *before* it posts, every time. A bulk archive
+ *  confirms past 100 because the mail is one `z` away; a destroy has no
+ *  `z`, so the question is asked for one message as readily as for a
+ *  thousand, and the server's own >100 guard stands behind it. */
+const ASKS_FIRST = new Set(["destroy"]);
 
 // The client owns every word below. `undo_unavailable` is a stable code,
 // never display copy (that is what keeps a copy edit or an i18n pass from
 // being a server change), so this map is the only place its wording
-// exists — and it deliberately holds one entry. A `Map`, not an object
-// literal, so a code that happened to name an `Object.prototype` member
-// could never resolve to a function.
-const UNDO_UNAVAILABLE_NOTE = new Map([["too_many", "Too many messages to undo"]]);
+// exists — and it deliberately holds two entries: `too_many` explains a
+// button the reader would otherwise look for, and `permanent` is the note
+// beside "Deleted forever" that says the missing Undo is missing on
+// purpose. `no_change` is deliberately absent (see the header). A `Map`,
+// not an object literal, so a code that happened to name an
+// `Object.prototype` member could never resolve to a function.
+const UNDO_UNAVAILABLE_NOTE = new Map([
+  ["too_many", "Too many messages to undo"],
+  ["permanent", "This can't be undone"],
+]);
 
 /** What the toast says when the request itself failed. */
 const FAILED = {
@@ -169,6 +195,10 @@ const FAILED = {
   unstar: "Couldn't unstar",
   read: "Couldn't mark as read",
   unread: "Couldn't mark as unread",
+  restore: "Couldn't restore",
+  unspam: "Couldn't move out of spam",
+  destroy: "Couldn't delete",
+  empty: "Couldn't empty the mailbox",
   undo: "Couldn't undo",
 };
 
@@ -197,6 +227,10 @@ const CONFIRM_LABEL = {
   unstar: "Unstar",
   read: "Mark as read",
   unread: "Mark as unread",
+  restore: "Restore",
+  unspam: "Not spam",
+  destroy: "Delete forever",
+  empty: "Delete forever",
 };
 
 // Spec §6.3's undo window. The signed token itself lives 60 s
@@ -837,9 +871,24 @@ function applyDone(done, { silent = false } = {}) {
 async function run(kind, elements, ids, confirmed = false, options = null) {
   if (!Object.hasOwn(ROUTES, kind) || ids.length === 0) return;
 
+  // Delete forever asks before anything is painted or posted. `sure` is
+  // the reader's answer carried into the re-entry, and it is what sets
+  // `confirm=1` on the wire — so the server's >100 guard is met by the
+  // same dialog and the reader is never asked twice. Kept apart from
+  // `confirmed`, which means "the 409 re-post" and skips the paint.
+  if (ASKS_FIRST.has(kind) && !confirmed && !options?.sure) {
+    const rows = elements.filter((el) => el.matches(ROW_SELECTOR)).length;
+    const what = rows > 0 ? `${rows} conversation${rows === 1 ? "" : "s"}` : "this conversation";
+    const agreed = await confirmBulk(kind, {
+      message: `Delete ${what} forever? This can't be undone.`,
+    });
+    if (!agreed) return;
+    return run(kind, elements, ids, false, { ...(options ?? {}), sure: true });
+  }
+
   const values = { ids: ids };
   if (Object.hasOwn(ON, kind)) values.on = ON[kind];
-  if (confirmed) values.confirm = "1";
+  if (confirmed || options?.sure) values.confirm = "1";
 
   // Not on the confirmed re-post: the first attempt already painted it,
   // and the 409 that came back put it straight again. `revert` is that
@@ -922,9 +971,87 @@ async function undo(token) {
   applyDone(trigger(response, "om:done"));
 }
 
+/** "Empty Trash now" / "Empty Spam now" (`list/toolbar.html`).
+ *
+ *  Posts against a *mailbox*, so nothing here is painted optimistically:
+ *  there is no selection to collapse, and the reply's `refresh: true` is
+ *  the whole reconciliation. The question is the server's — `/a/empty`
+ *  answers `409` + `om:confirm` until `confirm=1` — so the dialog here is
+ *  the same `confirmBulk` every other bulk action uses and the copy has
+ *  one owner. Never undoable, and the toast's note says so. */
+async function emptyMailbox(key, confirmed = false) {
+  const values = { key: key };
+  if (confirmed) values.confirm = "1";
+
+  let response = null;
+  try {
+    response = await post(EMPTY_ROUTE, values);
+  } catch {
+    announceFailure(FAILED.empty);
+    return;
+  }
+
+  if (handledExpiredSession(response)) return;
+
+  if (response.status === 409) {
+    const ask = trigger(response, "om:confirm");
+    if (ask === null) return;
+    if (await confirmBulk("empty", ask)) await emptyMailbox(key, true);
+    return;
+  }
+
+  // Same guard as `run()`: a `200` carrying `om:error` is a failure.
+  if (trigger(response, "om:error") !== null || !response.ok) {
+    announceFailure(FAILED.empty);
+    refreshList();
+    return;
+  }
+
+  applyDone(trigger(response, "om:done"));
+}
+
 // ---------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------
+
+// The ⋮ menu's Reply / Reply all / Forward (`thread/menu.html`). They carry
+// `compose.js`'s own `data-compose-reply` hook, and compose decides which
+// message a reply quotes by which card holds focus — right for the
+// conversation bar, and right for `r` on a card, but a pointer click does
+// not focus a button on every platform, so a menu item cannot rely on it.
+// `data-compose-email` names the message, and this listener turns the name
+// into the focus compose reads: it moves focus to that card's own summary,
+// then lets the click carry on into compose's handler.
+//
+// Capture phase, on purpose. `compose-boot.js`'s loader is a capture
+// listener on this same element that stops propagation and replays the
+// click once the module is in, and `compose.js`'s handler is a bubble one;
+// this module's script tag precedes both (layouts/app.html), so a capture
+// listener here runs before either can read the focus. The menu is closed
+// on the way out — a `<details>` does not close itself — and closing it
+// does not detach the item, so the replayed click still finds it.
+document.body.addEventListener(
+  "click",
+  (event) => {
+    const control = event.target?.closest?.("[data-compose-email]");
+    if (control === null || control === undefined) return;
+    const card = document.getElementById("msg-" + control.dataset.composeEmail);
+    (card?.querySelector("summary") ?? card)?.focus({ preventScroll: true });
+    control.closest("details")?.removeAttribute("open");
+  },
+  true,
+);
+
+// The list toolbar's "Empty … now". `data-role`, not `data-action`: every
+// `data-action` acts on a selection and names its key in a tooltip, and
+// this control does neither — it names the mailbox it empties instead.
+document.body.addEventListener("click", (event) => {
+  const control = event.target?.closest?.('[data-role="empty-mailbox"]');
+  if (control === null || control === undefined) return;
+  event.preventDefault();
+  const key = control.dataset.mailboxKey ?? "";
+  if (key !== "") emptyMailbox(key);
+});
 
 // app.js's toast renders the Undo button and reports the click here rather
 // than posting itself — the store draws, this module acts.

@@ -250,6 +250,10 @@ async def test_page_rows_from_batched_query(client, api_mock):
         and row.unread
         and row.chips[0].name == "Work"
         and row.date_display == "10:42 AM"
+        # The tooltip's long form of the same instant, from the same
+        # `format_full` the message card uses — a row and the conversation
+        # it opens must not word "when" differently.
+        and row.date_full == "Wed, Sep 2, 2026, 10:42 AM"
     )
     assert page.total == 1284 and page.next_position == 50
 

@@ -25,7 +25,10 @@
    browser, where it was already failing exactly that quietly. Empty is the
    right value: this bar's state lives in a store, not in a component, and
    the CSP build allows no inline methods in `x-data` anyway. #}
-<div class="list-toolbar" x-data x-show="$store.list.count === 0">
+{# `data-view-key` is static/js/keys.js's `viewKey()`: `e`, `#` and `!`
+   read it to mean restore / delete forever / not spam in Trash and Spam,
+   the same way the buttons below and in the selection bar already do. #}
+<div class="list-toolbar" data-view-key="{{ key }}" x-data x-show="$store.list.count === 0">
   {# Tri-state: both glyphs ship, CSS shows the one `aria-checked` calls for
      (nothing at "false", a dash at "mixed", a tick at "true"). app.js's
      `render()` sets the attribute on every `[data-role="select-all"]` in
@@ -49,6 +52,18 @@
           hx-indicator="#list-skeleton">
     {{ icon("refresh-cw", class_="size-4", label="Refresh") }}
   </button>
+
+  {# "Empty Trash now" / "Empty Spam now" — the two mailboxes, and only the
+     two, that `POST /a/empty` will empty. A `data-role` hook rather than a
+     `data-action`: it acts on the mailbox, not on a selection, and names
+     no key. static/js/actions.js posts it; the server answers with the
+     confirmation question, and the reply is never undoable. #}
+  {% if key in ("trash", "spam") %}
+  <button type="button" class="toolbar-text-btn" data-role="empty-mailbox"
+          data-mailbox-key="{{ key }}">
+    {{ icon("trash-2", class_="size-4") }}Empty {{ view_label }} now
+  </button>
+  {% endif %}
 
 
   {# Its own file because `list/rows.html` renders it a second time, out of

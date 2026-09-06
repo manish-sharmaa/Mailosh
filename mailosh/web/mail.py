@@ -896,3 +896,71 @@ async def mail_at(
         nav=nav,
         label_meta=label_meta,
     )
+
+
+@router.get("/t/{thread_id}/print", response_class=HTMLResponse)
+async def thread_print(
+    request: Request,
+    thread_id: str,
+    session: SessionDep,
+    user: UserDep,
+    prefs: PrefsDep,
+    client: ClientDep,
+    db: DbDep,
+) -> Response:
+    """The whole conversation on one chrome-less page, for paper.
+
+    `styles/print.css` already prints the *app* — it hides the shell and
+    opens every fold under `@media print`. This route is the other half of
+    spec §7's Print, and it exists because that stylesheet cannot fix two
+    things about the reading view. A collapsed card's body has never been
+    fetched at all (`thread/message.html` loads each frame on `intersect
+    once`), so a `display: block` on it prints an empty box; and a reader
+    who wants a printout of a conversation they are *not* currently reading
+    has no page to press Cmd+P on. This one renders every message expanded,
+    frames every HTML body eagerly, and carries no toolbar, nav or dock to
+    hide.
+
+    Deliberately its own template rather than `thread/page.html` under a
+    different layout: what a printout wants is not the reading view minus
+    chrome. The fold, the ⋮ menus, the stars, the hover actions and the
+    attachment buttons are all controls, and a control on paper is ink
+    spent on something nobody can press — so the page renders headers, body
+    and a plain list of what was attached, and nothing that would be a
+    button on screen.
+
+    The frames are `/m/{id}/html?theme=light&expand=1`: `expand` opens the
+    quoted run that the reading view folds behind its `•••` pill (a
+    printout cannot be clicked), and `theme=light` prints black on white
+    whatever the reader's own theme is — both parameters that route already
+    takes, and neither of them changes anything the reader has saved.
+
+    Remote images stay at that route's own default, which is blocked:
+    printing a message must not be the one path that quietly fetches from
+    the sender's host on the reader's behalf.
+    """
+    label_meta = await repo.label_meta_map(db, user.id, client.account_id)
+    nav = await build_nav(client, active_key="inbox", label_meta=label_meta)
+    context = _base_context(request, session=session, user=user, prefs=prefs, nav=nav)
+    view = await build_conversation(
+        client,
+        thread_id=thread_id,
+        me=user.email,
+        now=deps.viewer_now(request),
+        label_meta=label_meta,
+        nav=nav,
+        # No restyle predicate: a printed message is rendered at
+        # `theme=light`, and the dark inversion is exactly what that turns
+        # off. Passing one would compute an answer the page cannot use.
+        restyled=None,
+    )
+    if view is None:
+        return _not_found(request, context, message="That conversation no longer exists.")
+
+    context.update({"view": view, "me": user.email})
+    # A printout is a snapshot of a conversation that can change underneath
+    # it, and this page is served to be printed once. `no-store` keeps a
+    # back-button return from re-printing yesterday's copy of it.
+    return _templates(request).TemplateResponse(
+        request, "thread/print.html", context, headers={"Cache-Control": "private, no-store"}
+    )

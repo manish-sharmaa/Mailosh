@@ -1,0 +1,201 @@
+/* The conversation's mail-semantics additions: the list toolbar's
+   "Empty … now" control, the attachment preview dialog, and the dedicated
+   print page. A partial like search.css and labels.css, `@import`ed from
+   input.css, so `make css` rebuilds when it changes. */
+@layer components {
+  /* A labelled toolbar button, for the one control in the list toolbar that
+     needs a verb the reader can read without hovering ("Empty Trash now").
+     Same height and radius as `.btn-icon size-7` so it sits on the same
+     baseline as its neighbours. */
+  .toolbar-text-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: var(--radius-pill);
+    color: var(--fg-2);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .toolbar-text-btn:hover,
+  .toolbar-text-btn:focus-visible {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .toolbar-text-btn svg {
+    color: var(--icon);
+  }
+}
+
+@layer components {
+  /* The dedicated print page (`thread/print.html`, `GET /t/{id}/print`).
+     A document, not an app screen: one measured column on a plain ground,
+     no fixed regions and nothing that scrolls inside anything else — so
+     what the browser lays out for the screen is already what it paginates
+     for paper, and `styles/print.css`'s @media block has nothing left to
+     undo here.
+
+     It rides on the same tokens as the rest of the app (the page pins
+     `data-theme="light"`, so they resolve light), which is what keeps a
+     printed message set in the same face and scale as the one on screen. */
+  .print-page {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 24px 20px 40px;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .print-head {
+    padding-bottom: 10px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+  .print-subject {
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .print-count {
+    margin-top: 2px;
+    color: var(--fg-2);
+    font-size: 12px;
+  }
+  /* `break-inside: avoid` is deliberately NOT set on a message: a card can
+     be taller than a sheet, and a message that cannot fit on one page must
+     flow onto the next rather than be pushed off the bottom of this one.
+     The separator is what tells two messages apart across a page break. */
+  .print-msg {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .print-msg:last-of-type {
+    border-bottom: 0;
+  }
+  .print-msg-head {
+    margin-bottom: 10px;
+  }
+  /* Every header row and the attachment list share one shape: the printed
+     page has no labelled `<dl>` grid, because on paper "to …" reads as
+     what it is without a column heading beside it. */
+  .print-line {
+    color: var(--fg-2);
+    font-size: 12px;
+  }
+  .print-msg-head .print-line:first-child {
+    color: var(--fg);
+    font-size: 13px;
+  }
+  .print-attachments {
+    margin-top: 10px;
+  }
+  /* A message frame on this page carries `.mail-frame` and nothing else
+     -- `static/js/frame.js` resizes the classes its own selector names --
+     so anything this layout wants from one is scoped here instead. It
+     starts at the 200px that class gives it everywhere else and is resized
+     by the height handshake, whose inline pixel value beats this rule; the
+     margin is what keeps a resized frame off the separator below it. */
+  .print-page .mail-frame {
+    margin-bottom: 4px;
+  }
+}
+
+@layer components {
+  /* The whole chip is the preview control (`thread/attachments.html`).
+     Stretched exactly as `.row-link` is stretched over a list row: the
+     surface a reader aims at when they mean "show me this file" is the
+     chip, not a 26px glyph that appears on hover.
+
+     `position: relative` on the chip is what the stretch is measured
+     against, and `.chip-actions` is lifted above it so a click on Download
+     is a download rather than a preview under it. */
+  .attachment-chip {
+    position: relative;
+  }
+  .chip-link {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+  .chip-actions {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* The preview dialog (`thread/preview.html`). A `<dialog>` in the top
+     layer, so it needs no z-index of its own and nothing here fights the
+     app's stacking contexts.
+
+     Sized in viewport units and capped rather than fixed: a portrait scan
+     and a wide screenshot are the same dialog, and neither may push its
+     own controls off the screen. */
+  .att-dialog {
+    width: min(880px, 92vw);
+    max-width: 92vw;
+    max-height: 88vh;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    color: var(--fg);
+    overflow: hidden;
+  }
+  .att-dialog::backdrop {
+    background: rgb(0 0 0 / 45%);
+  }
+  .att-dialog-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 8px 8px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  /* The filename takes the row and pushes the three controls to the end;
+     a long one is truncated rather than wrapping the header onto a second
+     line. */
+  .att-dialog-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* One body for both surfaces, and it is what scrolls: a tall text
+     attachment scrolls inside the dialog rather than growing it past the
+     screen. The chequer-free flat ground is deliberate -- a preview is for
+     reading a file, not for judging its transparency. */
+  .att-dialog-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-height: calc(88vh - 45px);
+    padding: 12px;
+    overflow: auto;
+    background: var(--bg);
+  }
+  .att-preview-image {
+    max-width: 100%;
+    max-height: calc(88vh - 69px);
+    object-fit: contain;
+  }
+  /* A PDF or a text file is a document with its own scrollbar, so the
+     frame takes a fixed share of the viewport rather than being measured:
+     there is no height handshake here, and there cannot be -- the frame
+     holds an attachment, not one of our own rendered documents, so nothing
+     inside it will ever post its height. */
+  .att-preview-frame {
+    width: 100%;
+    height: 74vh;
+    border: 0;
+    background: #fff;
+  }
+}

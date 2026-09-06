@@ -11,6 +11,7 @@
 @import "./a11y.css";
 @import "./responsive.css";
 @import "./print.css";
+@import "./thread.css";
 
 /* ==========================================================================
    Design tokens — spec §4.1 (Graphite & Blue, approach C in

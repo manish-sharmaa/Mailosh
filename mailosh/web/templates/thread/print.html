@@ -1,0 +1,135 @@
+<!doctype html>
+{# The dedicated print page (spec §7's Print), served by
+   `GET /t/{thread_id}/print`.
+
+   Its own lean document rather than `layouts/app.html` or
+   `layouts/bare.html`: the app layout is the chrome this page exists to be
+   without, and bare.html centres a single card in the viewport, which is a
+   sign-in form's shape and not a document's. What is left is the head both
+   share — charset, viewport, the compiled `app.css` — and nothing else. No
+   htmx, no Alpine, no nav, no toolbar, no dock, no toasts: there is
+   nothing on this page to act on.
+
+   `data-theme="light"` is fixed, and is not the reader's preference being
+   overruled — it is the medium. Paper is white, so the page and every
+   message frame on it render light regardless of how the app is set (the
+   frames are asked for `?theme=light` for the same reason). Density is
+   left at the token default for the same reason; a printout has no
+   comfortable/compact.
+
+   **Every message is expanded, and expanded here means rendered, not
+   revealed.** `styles/print.css` prints the *reading* view by opening its
+   folds under `@media print`, and it cannot do more than that: a collapsed
+   card's body was never fetched (`thread/message.html` asks for each frame
+   on `intersect once`), so opening it on paper prints an empty box. This
+   page has no folds at all — no `<details>`, no lazy frames, no `•••`
+   pill — so there is nothing left to open.
+
+   For the same reason there are no controls. The star, the ⋮ menu, the
+   attachment chips' Download/Open buttons and the recipient disclosure are
+   all things to press, and paper cannot be pressed: the headers they hide
+   are printed outright, and the attachments are named in a list rather
+   than drawn as chips with buttons on them. #}
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ view.subject }} — Mailosh</title>
+    <link rel="stylesheet" href="{{ static('app.css') }}">
+  </head>
+  <body class="print-page">
+    {# The recipient macros, from the one template that spells "me" and
+       `Name <addr>` the way this app spells them — the same import
+       `thread/details.html` makes, so the printed header reads identically
+       to the disclosure on screen instead of being a second copy of the
+       same six lines. `with context` because `person()` reads `me`. #}
+    {% from "thread/people.html" import people with context %}
+
+    <header class="print-head">
+      <h1 class="print-subject">{{ view.subject }}</h1>
+      <p class="print-count">
+        {{ view.messages | length }} message{{ "" if view.messages | length == 1 else "s" }}
+      </p>
+    </header>
+
+    {% for message in view.messages %}
+      <article class="print-msg">
+        <header class="print-msg-head">
+          <p class="print-line"><b>{{ message.from_name }}</b>{% if message.from_email and message.from_email != message.from_name %} &lt;{{ message.from_email }}&gt;{% endif %}</p>
+          <p class="print-line">
+            {% if message.to %}to {{ people(message.to) }}{% else %}to undisclosed recipients{% endif %}
+            {%- if message.cc %} · cc {{ people(message.cc) }}{% endif %}
+          </p>
+          <p class="print-line print-date">
+            <time datetime="{{ message.received_at.isoformat() }}">{{ message.date_full }}</time>
+          </p>
+        </header>
+
+        {% if message.has_html %}
+          {# Framed, not inlined: the sanitiser, the CSP and the sandbox
+             that contain a stranger's markup belong to `/m/{id}/html`, and
+             a printout is not a reason to render a message body any less
+             carefully than the reading view does. The `sandbox` list is
+             `thread/frame.html`'s, `allow-same-origin` absent from it for
+             the reason that file gives at length.
+
+             No `loading="lazy"`: this page is printed the moment it
+             finishes loading, and a frame that has not loaded yet prints
+             blank. That is also why `static/js/print.js` waits for `load`
+             rather than for the DOM.
+
+             `expand=1` renders the quoted run open — the `•••` pill is a
+             control, and this page has none. `theme=light` prints black on
+             white. Remote images are left at that route's default, which
+             is blocked: printing must not be the one path that fetches
+             from a sender's host on the reader's behalf.
+
+             `class="mail-frame"` and nothing else: `static/js/frame.js`
+             resizes what its own selector matches, and a page-specific
+             class beside it would be a frame this page styles and that
+             file's list does not name. Anything this layout needs is
+             scoped as `.print-page .mail-frame` in styles/thread.css. #}
+          <iframe class="mail-frame"
+                  sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+                  referrerpolicy="no-referrer"
+                  title="Message content"
+                  src="/m/{{ message.id | urlencode }}/html?theme=light&amp;expand=1"></iframe>
+        {% else %}
+          {# Both halves of a text body, one after the other and neither
+             folded — `render_plain` split them, and the pill that hides
+             the second is a control. #}
+          {% if message.visible_lines %}
+            <pre class="msg-text">{% for line in message.visible_lines %}{% if line.depth %}<span class="q{{ line.depth }}">{{ line.html }}</span>{% else %}{{ line.html }}{% endif %}{{ "\n" if not loop.last }}{% endfor %}</pre>
+          {% endif %}
+          {% if message.quoted_lines %}
+            <pre class="msg-text">{% for line in message.quoted_lines %}{% if line.depth %}<span class="q{{ line.depth }}">{{ line.html }}</span>{% else %}{{ line.html }}{% endif %}{{ "\n" if not loop.last }}{% endfor %}</pre>
+          {% endif %}
+        {% endif %}
+
+        {% if message.attachments %}
+          {# Named, not offered. `thread/attachments.html`'s chips carry a
+             Download and an Open, and both are buttons; what survives on
+             paper is the fact that the message came with these files. #}
+          <p class="print-line print-attachments">
+            Attachments:
+            {% for attachment in message.attachments %}{{ attachment.name }} ({{ attachment.size_display }}){{ ", " if not loop.last }}{% endfor %}
+          </p>
+        {% endif %}
+      </article>
+    {% endfor %}
+
+    {# `frame.js` is the parent half of the frame height handshake: without
+       it every frame prints at its CSS height and a long message is cut
+       off at the box. It is dependency-free and registers the app's one
+       and only `message` listener, with the same three checks it applies
+       in the reading view.
+
+       `print.js` is this page's own behaviour, and the reason it is a
+       module at all: the CSP is `script-src 'self'` with no inline script
+       and no `unsafe-eval`, so `window.print()` cannot be an `onload`
+       attribute. Loaded second, so the height listener is already
+       installed before anything can report one. #}
+    <script src="{{ static('js/frame.js') }}" type="module"></script>
+    <script src="{{ static('js/print.js') }}" type="module"></script>
+  </body>
+</html>

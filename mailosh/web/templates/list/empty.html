@@ -1,7 +1,9 @@
 {# Empty state, spec §5.4: the Inbox gets the one line worth earning ("You're
-   all caught up"); every other mailbox gets the neutral "Nothing here". The
-   illustration is a plain inline SVG — calm, two tokens, no photos, no
-   third-party asset. #}
+   all caught up"); the four system folders that *mean* something when
+   empty say what — an empty Trash or Spam is good news, an empty Drafts or
+   Sent is simply a place nothing has reached yet — and every other mailbox
+   gets the neutral "Nothing here". The illustration is a plain inline SVG —
+   calm, two tokens, no photos, no third-party asset. #}
 <div class="empty-state">
   <svg viewBox="0 0 120 84" class="empty-art" aria-hidden="true" fill="none">
     <path d="M14 34 60 8l46 26v34a6 6 0 0 1-6 6H20a6 6 0 0 1-6-6V34Z"
@@ -12,11 +14,24 @@
           opacity=".5"/>
   </svg>
   <p class="empty-title">
-    {%- if key == "inbox" -%}You're all caught up{%- else -%}Nothing here{%- endif -%}
+    {%- if key == "inbox" -%}You're all caught up
+    {%- elif key == "trash" -%}Trash is empty
+    {%- elif key == "spam" -%}No spam
+    {%- elif key == "drafts" -%}No drafts
+    {%- elif key == "sent" -%}Nothing sent yet
+    {%- else -%}Nothing here{%- endif -%}
   </p>
   <p class="empty-body">
     {%- if key == "inbox" -%}
       New mail lands here the moment it arrives.
+    {%- elif key == "trash" -%}
+      Conversations you delete wait here until you delete them forever.
+    {%- elif key == "spam" -%}
+      Mail you report as spam, and mail the server flags, lands here.
+    {%- elif key == "drafts" -%}
+      Messages you start writing are kept here until you send them.
+    {%- elif key == "sent" -%}
+      Messages you send show up here.
     {%- else -%}
       There are no conversations in {{ view_label }}.
     {%- endif -%}

@@ -11,7 +11,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from mailosh.ui.format import avatar_color, format_date, format_senders, initials
+from mailosh.ui.format import (
+    avatar_color,
+    format_date,
+    format_full,
+    format_senders,
+    initials,
+)
 
 UTC = timezone.utc
 NOW = datetime(2026, 9, 2, 15, 0, tzinfo=UTC)
@@ -26,6 +32,39 @@ def test_dates():
     assert format_date(datetime(2026, 9, 2, 10, 42, tzinfo=UTC), NOW) == "10:42 AM"
     assert format_date(datetime(2026, 9, 1, 23, 59, tzinfo=UTC), NOW) == "Sep 1"
     assert format_date(datetime(2025, 9, 1, 8, 0, tzinfo=UTC), NOW) == "9/1/25"
+
+
+# ---------------------------------------------------------------------------
+# format_full -- the long form behind the row tooltip and the message card's
+# `<time title>`. It moved here from `services.conversation` when the list
+# rows wanted the same string: two implementations of "the long form of a
+# date" is how a row comes to word "when" differently from the conversation
+# it opens.
+# ---------------------------------------------------------------------------
+
+
+def test_full_spells_the_whole_instant_out():
+    assert (
+        format_full(datetime(2026, 9, 1, 10, 42, tzinfo=UTC), NOW) == "Tue, Sep 1, 2026, 10:42 AM"
+    )
+    # Same instant, same string, whichever branch `format_date` would take
+    # for it: this one never abbreviates.
+    assert format_full(datetime(2025, 9, 1, 8, 0, tzinfo=UTC), NOW) == "Mon, Sep 1, 2025, 8:00 AM"
+
+
+def test_full_is_read_in_the_viewers_own_timezone():
+    """The tooltip annotates the column beside it, and `format_date`
+    compares in `now`'s zone — the two disagreeing about which day a message
+    arrived would be worse than either being slightly off."""
+    now = datetime(2026, 9, 2, 15, 0, tzinfo=timezone(timedelta(hours=-7)))
+    at = datetime(2026, 9, 2, 3, 30, tzinfo=UTC)
+    assert format_full(at, now) == "Tue, Sep 1, 2026, 8:30 PM"
+    assert format_date(at, now) == "Sep 1"
+
+
+def test_full_treats_a_naive_stamp_as_utc_like_every_other_reader_here():
+    now = datetime(2026, 9, 2, 15, 0, tzinfo=UTC)
+    assert format_full(datetime(2026, 9, 1, 10, 42), now) == "Tue, Sep 1, 2026, 10:42 AM"
 
 
 # ---------------------------------------------------------------------------

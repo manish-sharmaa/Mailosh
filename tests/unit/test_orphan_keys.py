@@ -26,7 +26,11 @@ from mailosh.web import auth, orphan_keys
 
 
 def _settings() -> Settings:
-    return Settings(stalwart_admin_secret="test-admin-secret-0123456789", secret_key="k" * 40, cookie_secure=False)
+    return Settings(
+        stalwart_admin_secret="test-admin-secret-0123456789",
+        secret_key="k" * 40,
+        cookie_secure=False,
+    )
 
 
 @pytest.fixture(autouse=True)

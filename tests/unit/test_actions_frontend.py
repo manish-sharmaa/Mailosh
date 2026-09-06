@@ -53,6 +53,7 @@ ROW_HTML = ROOT / "mailosh/web/templates/list/row.html"
 ACTIONS_PY = ROOT / "mailosh/web/actions.py"
 APP_PY = ROOT / "mailosh/web/app.py"
 INPUT_CSS = ROOT / "styles/input.css"
+THREAD_CSS = ROOT / "styles/thread.css"
 APP_CSS = ROOT / "mailosh/web/static/app.css"
 
 TEMPLATES_DIR = ROOT / "mailosh/web/templates"
@@ -452,23 +453,90 @@ def test_the_range_readout_is_declared_once_and_rendered_by_both_paths():
     assert re.search(r'\{% with oob = true %\}\{% include "list/range\.html" %\}', rows)
 
 
-def test_only_too_many_is_ever_explained_to_the_reader():
-    """`undo_unavailable`'s two codes, and the rule for surfacing them.
+def test_only_a_missing_undo_the_reader_would_look_for_is_ever_explained():
+    """`undo_unavailable`'s three codes, and the rule for surfacing them.
 
     `"no_change"` arrives *alongside* an ordinary success toast — starring
     an already-starred message answers `toast: "Starred"` with
     `undo_unavailable: "no_change"` — so explaining it would tell the
-    reader that something they did successfully had failed. Only
-    `"too_many"` describes something they can see is missing.
+    reader that something they did successfully had failed. `"too_many"`
+    describes a button they can see is missing, and `"permanent"` (delete
+    forever, empty Trash/Spam) is the one case where the missing Undo is
+    the point: the note is what tells the reader it is gone for good.
     """
     emitted = set(re.findall(r'\["undo_unavailable"\] = "(\w+)"', ACTIONS_PY.read_text()))
-    assert emitted == {"no_change", "too_many"}
+    # `/a/empty` spells its whole payload as one literal rather than
+    # assigning the key, so it is read separately.
+    emitted |= set(re.findall(r'"undo_unavailable": "(\w+)"', ACTIONS_PY.read_text()))
+    assert emitted == {"no_change", "too_many", "permanent"}
 
     note = re.search(r"const UNDO_UNAVAILABLE_NOTE = new Map\(\[(.*?)\]\);", _actions_js(), re.S)
     assert note is not None, "actions.js no longer declares the note map"
     explained = re.findall(r'\["(\w+)",', note.group(1))
 
-    assert explained == ["too_many"]
+    assert explained == ["too_many", "permanent"]
+
+
+def test_delete_forever_asks_before_it_paints_or_posts():
+    """Every other bulk action confirms only past 100 messages, because the
+    mail is one `z` away. A destroy has no `z`, so the question comes
+    first — before the optimistic collapse, before the request — and the
+    reader's answer is what puts `confirm=1` on the wire, so the server's
+    own >100 guard never asks a second time.
+    """
+    source = _actions_js()
+    asks = re.search(r"const ASKS_FIRST = new Set\(\[(.*?)\]\);", source)
+    assert asks is not None, "actions.js no longer declares ASKS_FIRST"
+    assert re.findall(r'"(\w+)"', asks.group(1)) == ["destroy"]
+
+    body = _function_body(source, "run")
+    ask = body.index("ASKS_FIRST.has(kind)")
+    assert ask < body.index("applyOptimistic(")
+    assert ask < body.index("await post(")
+    guard = _block_at(body, ask)[2]
+    assert "confirmBulk(" in guard
+    assert "forever" in guard
+    assert "sure: true" in guard
+    assert re.search(r"if \(confirmed \|\| options\?\.sure\) values\.confirm = \"1\";", body)
+
+    # And the three Trash/Spam kinds collapse their rows like archive does.
+    removes = re.search(r"const REMOVES_ROWS = new Set\(\[(.*?)\]\);", source)
+    assert removes is not None
+    assert set(re.findall(r'"(\w+)"', removes.group(1))) >= {"restore", "unspam", "destroy"}
+
+
+def test_empty_mailbox_is_a_role_hook_that_posts_the_mailbox_not_a_selection():
+    """ "Empty Trash now" acts on a mailbox: no ids, no optimistic paint, no
+    key hint — so it is `data-role`, not `data-action`, and it goes
+    through its own poster rather than `run()`. The server always answers
+    the first post with `409` + `om:confirm`, and the same `confirmBulk`
+    dialog every bulk action uses is what asks.
+    """
+    source = _actions_js()
+    marked = [
+        template.name
+        for template in TEMPLATES
+        if 'data-role="empty-mailbox"' in _without_comments(template.read_text())
+    ]
+    assert marked == ["toolbar.html"]
+    toolbar = _without_comments((TEMPLATES_DIR / "list/toolbar.html").read_text())
+    control = re.search(r'<button[^>]*data-role="empty-mailbox"[^>]*>', toolbar, re.S)
+    assert control is not None
+    assert "data-action" not in control.group(0)
+    assert 'data-mailbox-key="{{ key }}"' in control.group(0)
+
+    body = _function_body(source, "emptyMailbox")
+    assert "EMPTY_ROUTE" in body
+    assert 'const EMPTY_ROUTE = "/a/empty";' in source
+    assert "applyOptimistic(" not in body
+    assert "response.status === 409" in body
+    assert 'confirmBulk("empty", ask)' in body
+    assert _nesting_at(body, body.index(ERROR_CHECK)) == 0
+    assert "applyDone(" in body
+
+    at = source.index('[data-role="empty-mailbox"]')
+    listener = _block_at(source, source.rindex("addEventListener(", 0, at))[2]
+    assert "emptyMailbox(" in listener
 
 
 def test_undo_unavailable_is_read_by_presence_never_compared_with_null():
@@ -621,6 +689,7 @@ def test_the_toast_takes_its_note_and_its_window_from_the_action_layer():
 #: *compiled* stylesheet, so each one has to survive `make css` as well as
 #: exist in the source.
 OWNED_CLASSES = [
+    ".toolbar-text-btn",
     ".row.is-leaving",
     ".act-read",
     ".act-unread",
@@ -636,7 +705,9 @@ OWNED_CLASSES = [
 
 @pytest.mark.parametrize("selector", OWNED_CLASSES)
 def test_the_action_styles_exist_in_the_source_stylesheet(selector: str):
-    assert selector in INPUT_CSS.read_text()
+    # `thread.css` is `@import`ed by input.css and holds the toolbar's
+    # text button, so the source is the pair of them.
+    assert selector in INPUT_CSS.read_text() + THREAD_CSS.read_text()
 
 
 @pytest.mark.skipif(not APP_CSS.exists(), reason="`make css` has not run in this tree")
@@ -686,6 +757,40 @@ def test_a_control_acts_on_the_nearest_thing_that_names_its_own_messages():
     assert "querySelectorAll" not in body
 
 
+def test_a_menu_reply_is_scoped_to_its_card_before_compose_reads_the_focus():
+    """`compose.js` replies to the card holding focus. A menu item names
+    its message in `data-compose-email` instead, and this listener is what
+    honours the name: it focuses that card's summary and closes the menu.
+    Capture phase and registered from this module — whose tag precedes
+    `compose-boot.js` and `compose.js` in the layout — so it runs before
+    the loader's own capture listener stops propagation, and before
+    compose's bubble handler can read `document.activeElement`.
+    """
+    source = _actions_js()
+    at = source.index('closest?.("[data-compose-email]")')
+    start = source.rindex("addEventListener(", 0, at)
+    assert "document.body" in source[start - 40 : start]
+    _, closes, listener = _block_at(source, start)
+    assert 'getElementById("msg-" + control.dataset.composeEmail)' in listener
+    assert 'querySelector("summary")' in listener
+    assert "focus(" in listener
+    assert 'removeAttribute("open")' in listener
+    # The closing `, true)` is what makes it capture.
+    assert re.match(r"\s*,\s*true,?\s*\)", source[closes + 1 :]), source[closes : closes + 20]
+
+    # Script order is the other half: this module before both compose ones.
+    order = re.findall(
+        r"static\('((?:js|vendor)/[\w.-]+)'\)", _without_comments(APP_LAYOUT.read_text())
+    )
+    assert order.index("js/actions.js") < order.index("js/compose-boot.js")
+
+    # And the hook is only ever paired with compose's own reply hook.
+    for template in TEMPLATES:
+        markup = _without_comments(template.read_text())
+        for tag in re.findall(r"<[a-z]+\b[^>]*data-compose-email[^>]*>", markup):
+            assert "data-compose-reply=" in tag, (template.name, tag)
+
+
 def test_the_menus_two_mutating_items_still_carry_their_own_ids():
     """Deliberately *not* riding on the fix above. "Delete message" resolving
     to the whole conversation is data loss, so those two post real forms
@@ -719,8 +824,9 @@ def test_an_action_htmx_posted_gets_the_same_toast_and_undo_as_a_fetched_one():
     assert "applyDone(" in listener
 
     # Both halves reach one consumer, so a toast cannot exist on one path
-    # and not the other: the declaration, `run()`, `undo()`, and this.
-    assert _code(source).count("applyDone(") == 4
+    # and not the other: the declaration, `run()`, `undo()`,
+    # `emptyMailbox()`, and this.
+    assert _code(source).count("applyDone(") == 5
     # ...and `run()`'s own posts cannot also arrive here: a `fetch`
     # dispatches no DOM event, which is what keeps this from double-applying.
     assert "fetch(" in _function_body(source, "post")
