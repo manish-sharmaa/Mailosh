@@ -12,6 +12,7 @@ No network call is ever made.
 
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 
@@ -180,3 +181,89 @@ def test_no_settings_template_uses_an_evaluated_attribute():
         assert "hx-vals='js:" not in markup, path.name
         assert "onclick" not in markup, path.name
         assert "<script>" not in markup, path.name
+
+
+# ---------------------------------------------------------------------------
+# Appearance
+# ---------------------------------------------------------------------------
+
+
+def _checked(body: str, name: str) -> str | None:
+    """The checked radio's value for `name`, or None."""
+    for tag in re.findall(rf'<input type="radio" name="{name}"[^>]*>', body):
+        if "checked" in tag:
+            return re.search(r'value="([^"]+)"', tag).group(1)
+    return None
+
+
+def test_appearance_renders_the_stored_values_checked(app):
+    client = _login(app)
+    body = client.get("/settings/appearance").text
+    assert _checked(body, "theme") == "system"
+    assert _checked(body, "density") == "comfortable"
+    assert _checked(body, "reading_pane") == "none"
+    assert _checked(body, "font_size") == "md"
+    # The document itself carries the font size for the stylesheet.
+    assert 'data-font-size="md"' in body
+
+
+def test_appearance_save_persists_and_echoes_every_field(app):
+    client = _login(app)
+    r = _post(
+        client,
+        "/settings/appearance",
+        {"theme": "dark", "density": "compact", "reading_pane": "right", "font_size": "lg"},
+    )
+    assert r.status_code == 204, r.text
+    trigger = json.loads(r.headers["HX-Trigger"])
+    assert trigger["om:prefs"] == {
+        "theme": "dark",
+        "density": "compact",
+        "reading_pane": "right",
+        "font_size": "lg",
+    }
+    assert trigger["om:done"]["toast"] == "Saved"
+    assert trigger["om:done"]["undo"] is None
+
+    body = client.get("/settings/appearance").text
+    assert _checked(body, "theme") == "dark"
+    assert _checked(body, "font_size") == "lg"
+    assert 'data-theme="dark"' in body and 'data-font-size="lg"' in body
+    # The quick-settings popover on the same shell agrees.
+    quick = body[body.index('id="quick-settings"') :]
+    assert re.search(r'name="theme" value="dark" data-pref="theme"\s+checked', quick)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"theme": "sepia", "density": "compact", "reading_pane": "none", "font_size": "md"},
+        {"theme": "dark", "density": "compact", "reading_pane": "none", "font_size": "xl"},
+        {"theme": "dark", "density": "compact", "reading_pane": "left", "font_size": "md"},
+        {"theme": "dark", "density": "compact"},
+    ],
+)
+def test_appearance_refuses_a_value_outside_the_set(app, data):
+    client = _login(app)
+    before = client.get("/settings/appearance").text
+    assert _post(client, "/settings/appearance", data).status_code == 422
+    assert client.get("/settings/appearance").text == before
+
+
+def test_appearance_save_needs_a_csrf_token(app):
+    client = _login(app)
+    r = client.post(
+        "/settings/appearance",
+        data={"theme": "dark", "density": "compact", "reading_pane": "none", "font_size": "md"},
+    )
+    assert r.status_code == 403
+
+
+def test_settings_js_is_on_the_shell_and_imports_nothing():
+    layout = REPO / "mailosh/web/templates/layouts/app.html"
+    assert "static('js/settings.js')" in layout.read_text()
+    source = (REPO / "mailosh/web/static/js/settings.js").read_text()
+    assert "import " not in source
+    assert "font_size" in source and "dataset.fontSize" in source
+    css = (REPO / "styles/settings.css").read_text()
+    assert "[data-font-size=lg]" in css and "[data-font-size=sm]" in css

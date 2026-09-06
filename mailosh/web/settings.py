@@ -37,7 +37,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +47,7 @@ from mailosh.db.models import AppUser, SessionRow, UiPref
 from mailosh.jmap.client import JmapClient
 from mailosh.services.mailbox_tree import NavModel, build_nav
 from mailosh.web import deps
+from mailosh.web.prefs import Density, FontSize, ReadingPane, Theme
 
 router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(deps.csrf_protect)])
 
@@ -205,6 +206,38 @@ async def settings_page(
         request, page, session=session, user=user, prefs=prefs, client=client, db=db, **extra
     )
     return _render(request, context)
+
+
+# ---------------------------------------------------------------------------
+# Appearance
+# ---------------------------------------------------------------------------
+
+
+@router.post("/appearance")
+async def save_appearance(
+    user: UserDep,
+    db: DbDep,
+    theme: Annotated[Theme, Form()],
+    density: Annotated[Density, Form()],
+    reading_pane: Annotated[ReadingPane, Form()],
+    font_size: Annotated[FontSize, Form()],
+) -> Response:
+    """Persist the four Appearance fields and echo them as `om:prefs`.
+
+    All four are required, unlike `POST /prefs`'s partial updates: this is
+    a whole form with a Save button, and a form always posts every one of
+    its radio groups. The `om:prefs` payload names all four so the page
+    that posted them — and the quick-settings popover behind the gear —
+    end up showing exactly what was stored, whatever they showed before.
+    """
+    changed: dict[str, object] = {
+        "theme": theme,
+        "density": density,
+        "reading_pane": reading_pane,
+        "font_size": font_size,
+    }
+    await repo.set_prefs(db, user.id, **changed)
+    return _saved(prefs=changed)
 
 
 #: Per-page context loaders — `page` -> coroutine returning that page's

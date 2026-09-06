@@ -195,6 +195,25 @@
   }
 }
 
+/* Font size (spec §10's fourth Appearance control) — `[data-font-size]` on
+   `<html>`, rendered server-side like `data-density` so there is no flash,
+   and written live by `static/js/settings.js` from the `om:prefs` trigger.
+
+   `zoom` on the main surface rather than a root `font-size`: this
+   stylesheet sizes text in px throughout (13px rows, 12px previews, 15px
+   subjects), so a root em change would move nothing, and rewriting every
+   rule to a `calc()` is a change to every file in `styles/`. `zoom` scales
+   the list, the conversation and the message frames together — the
+   surfaces a reader means when they ask for bigger mail — and leaves the
+   top bar and the rail alone. `md` is the size everything was designed at
+   and sets nothing. */
+[data-font-size=sm] .app-main {
+  zoom: .92;
+}
+[data-font-size=lg] .app-main {
+  zoom: 1.12;
+}
+
 /* Under 768px the sub-nav stacks above the page. Unlayered, inside a media
    query, for the reason `responsive.css` gives: an unlayered rule beats the
    layered `.settings` grid above without a selector arms race. */
