@@ -318,6 +318,68 @@ run finds the listener, changes nothing, and restarts nothing.
 `--verify-only` never changes or restarts anything at all — on a server
 missing 587 it reports the gap and exits 2.
 
+### Relay mode — sending through a smarthost
+
+Most budget VPS providers block outbound port 25 (`docs/hosting.md`), so the
+recommended deployment sends through a relay (Amazon SES, SMTP2GO, your
+provider's smarthost). The bootstrap script configures it, on a first boot or
+on an already-configured server, and it is safe to re-run:
+
+```
+printf '%s\n' 'the-relay-password' > /root/relay-password   # mode 0600
+scripts/stalwart-bootstrap.sh --domain example.com \
+    --relay-host email-smtp.eu-west-1.amazonaws.com:587 \
+    --relay-user AKIA... --relay-password-file /root/relay-password
+```
+
+Port 465 means implicit TLS; anything else means STARTTLS. TLS is **required**
+either way — a relay that cannot negotiate it gets no mail, rather than a
+password in the clear. The password is read from the file and travels to
+Stalwart inside curl's stdin config, so it appears in no `ps` listing, no
+shell history, and no output. There is deliberately no `--relay-password`.
+
+What it writes, read from the running server's `GET /api/schema` and then
+written and read back live on 2026-09-06 (Stalwart `v0.16.20`):
+
+| Object | Value |
+|---|---|
+| `x:MtaRoute` name `relay` | `@type: Relay`, `address`, `port`, `protocol: smtp`, `implicitTls`, `allowInvalidCerts: false`, `authUsername`, `authSecret: {"@type":"Value","secret":…}` — the secret reads back as `****` |
+| `x:MtaTlsStrategy` name `relay` | `startTls: require`, `dane: disable`, `mtaSts: disable`, `allowInvalidCerts: false` |
+| `x:MtaOutboundStrategy` singleton | `route`: `is_local_domain(rcpt_domain)` → `'local'`, else `'relay'`; `tls`: else `'relay'` (the stock retry-with-`invalid-tls` downgrade is dropped) |
+| `x:Action` | `{"@type":"ReloadSettings"}` — the running server picks the change up; no restart |
+
+Two things learned on the way: the `match` list of an `x:Expression` must be
+written as the index-keyed map the server returns it as (`{"0": {...}}`), the
+same idiom as `x:Account.credentials`; and a route named `relay` that already
+exists is *updated* in place (the password re-applied — it cannot be compared,
+since it is never returned), so the script converges instead of failing on a
+second run.
+
+`--verify-only` reports the current outbound mode in either case:
+
+```
+  ok    outbound delivery: direct to each recipient's MX (route 'mx') -- needs outbound port 25 and a PTR record, see docs/hosting.md
+  ok    outbound delivery: via relay relay.mailosh.test:587 (STARTTLS, tls strategy 'relay', auth as ses-user)
+```
+
+and with `--relay-host` also given it **fails** (exit 2) when what is
+configured is not what was asked for — verified by asking for `:465` against a
+server configured for `:587`.
+
+Not verified: an actual TLS session and authentication against a real relay.
+The dev stack has no outbound network, so what was proven is object creation,
+read-back, idempotence, reload, and the verify reporting; the first message you
+send through a real relay is the test of the credential. Watch
+`x:QueuedMessage` (or the admin UI's queue) for it.
+
+Publish the relay's SPF `include:` rather than the direct-send `v=spf1 mx` —
+`mailosh setup` prints both and says which applies.
+
+Going back to direct delivery is not something the script does: set the
+outbound strategy's route `else` back to `'mx'` and `tls` to the stock
+expression in the admin UI (or with `x:MtaOutboundStrategy/set`), and read
+`docs/hosting.md` about port 25 and PTR first.
+
 ### Mail-port TLS — what is and is not configured
 
 Caddy owns 80 and 443 on the host, so Stalwart can answer **neither** HTTP-01

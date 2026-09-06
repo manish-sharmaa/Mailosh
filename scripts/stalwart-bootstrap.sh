@@ -137,6 +137,47 @@ set -euo pipefail
 # second run fail rather than converge.
 #
 # ---------------------------------------------------------------------------
+# Relay mode (--relay-host)
+# ---------------------------------------------------------------------------
+# Most budget VPS providers block outbound port 25 (docs/hosting.md), so the
+# recommended deployment sends through a smarthost. In Stalwart v0.16.20
+# that is three objects, read from the running server's own schema
+# (GET /api/schema, `x:MtaRouteRelay`, `x:MtaTlsStrategy`,
+# `x:MtaOutboundStrategy`) and then written and read back live:
+#
+#   x:MtaRoute          @type Relay, name "relay": address, port, protocol
+#                       smtp, implicitTls (465) or not (STARTTLS), auth as
+#                       authUsername + authSecret {"@type":"Value","secret"}.
+#                       The secret is write-only: reads never return it.
+#   x:MtaTlsStrategy    name "relay": startTls "require", DANE and MTA-STS
+#                       "disable" (they are for MX delivery; a relay host has
+#                       neither and looking them up is wasted DNS),
+#                       allowInvalidCerts false. The shipped "default"
+#                       strategy is *optional* TLS, and a fallback to
+#                       "invalid-tls" on retry -- fine for the open internet,
+#                       wrong for a host you are handing a password to.
+#   x:MtaOutboundStrategy (singleton): the `route` expression's `else`
+#                       becomes 'relay' (local domains still match 'local'
+#                       first), and `tls` becomes 'relay' unconditionally --
+#                       which also removes the downgrade-on-retry match.
+#
+# Then x:Action/set {"@type":"ReloadSettings"} so the running server picks
+# the change up without a restart (verified: the reload is accepted and the
+# next queued message is routed through the relay).
+#
+# Idempotent: a route named "relay" that already exists is UPDATED with the
+# values given (the password included -- it cannot be compared, since it
+# is never read back, so it is simply re-applied), the strategy likewise,
+# and the outbound singleton is rewritten only when its `else` is not
+# already 'relay'. --verify-only reports the current outbound mode either
+# way and fails if --relay-host was also given and does not match.
+#
+# This script does not remove relay mode. To go back to direct delivery,
+# set the outbound strategy's route back to 'mx' in Stalwart's admin UI, or
+# with x:MtaOutboundStrategy/set -- and read docs/hosting.md about port 25
+# and PTR first.
+#
+# ---------------------------------------------------------------------------
 # What it does NOT do
 # ---------------------------------------------------------------------------
 # It does not create user accounts. `mailosh setup --domain X --email Y`
@@ -159,6 +200,25 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 #   scripts/stalwart-bootstrap.sh --domain example.com [--hostname mail.example.com]
 #   scripts/stalwart-bootstrap.sh --domain example.com --verify-only
+#   scripts/stalwart-bootstrap.sh --domain example.com \
+#       --relay-host smtp.example.net:587 --relay-user USER --relay-password-file FILE
+#
+#   --relay-host HOST[:PORT]
+#                   route ALL remote deliveries through this SMTP smarthost
+#                   (Amazon SES, SMTP2GO, your provider's relay -- see
+#                   docs/hosting.md). Port defaults to 587. Port 465 means
+#                   implicit TLS; any other port means STARTTLS, and TLS is
+#                   REQUIRED either way -- a relay that cannot do TLS gets no
+#                   mail. Local domains still deliver locally. Safe to re-run:
+#                   the route is created once and updated in place after.
+#   --relay-user USER
+#   --relay-password-file FILE
+#                   the relay's SMTP credential. The password is read from
+#                   FILE (a file with one line, mode 0600), never from the
+#                   command line -- an argv is visible to every process on
+#                   the host in `ps`. Both must be given together; without
+#                   them the relay is used unauthenticated, which almost no
+#                   public relay accepts.
 #
 #   --domain D      the mail domain this server accepts mail for. Required.
 #   --hostname H    the mail server's own FQDN -- its SMTP banner, the name on
@@ -233,6 +293,9 @@ HOSTNAME_ARG=""
 REQUEST_TLS=no
 VERIFY_ONLY=no
 BRIEF=no
+RELAY_HOST=""
+RELAY_USER=""
+RELAY_PASSWORD_FILE=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 		-h|--help) usage 0 ;;
@@ -244,6 +307,20 @@ while [ $# -gt 0 ]; do
 			[ $# -ge 2 ] || die "--hostname needs a value"
 			HOSTNAME_ARG="$2"; shift 2 ;;
 		--hostname=*) HOSTNAME_ARG="${1#--hostname=}"; shift ;;
+		--relay-host)
+			[ $# -ge 2 ] || die "--relay-host needs a value, e.g. email-smtp.eu-west-1.amazonaws.com:587"
+			RELAY_HOST="$2"; shift 2 ;;
+		--relay-host=*) RELAY_HOST="${1#--relay-host=}"; shift ;;
+		--relay-user)
+			[ $# -ge 2 ] || die "--relay-user needs a value"
+			RELAY_USER="$2"; shift 2 ;;
+		--relay-user=*) RELAY_USER="${1#--relay-user=}"; shift ;;
+		--relay-password-file)
+			[ $# -ge 2 ] || die "--relay-password-file needs a file"
+			RELAY_PASSWORD_FILE="$2"; shift 2 ;;
+		--relay-password-file=*) RELAY_PASSWORD_FILE="${1#--relay-password-file=}"; shift ;;
+		--relay-password|--relay-password=*)
+			die "--relay-password is not an option, on purpose: a password on the command line is visible to every process on this host. Put it in a file and pass --relay-password-file." ;;
 		--request-tls-certificate) REQUEST_TLS=yes; shift ;;
 		--verify-only) VERIFY_ONLY=yes; shift ;;
 		--brief) BRIEF=yes; shift ;;
@@ -347,6 +424,40 @@ check_name "--domain" "$DOMAIN"
 SERVER_HOSTNAME="$(printf '%s' "${SERVER_HOSTNAME:-mail.$DOMAIN}" | tr '[:upper:]' '[:lower:]')"
 check_name "the server hostname" "$SERVER_HOSTNAME"
 
+# Relay arguments. Parsed and validated here, before any server is talked
+# to, for the same reason the names are.
+RELAY_PORT=""
+RELAY_IMPLICIT_TLS=false
+if [ -n "$RELAY_HOST" ]; then
+	case "$RELAY_HOST" in
+		*://*|*/*) die "--relay-host '$RELAY_HOST' looks like a URL. Pass host[:port], e.g. smtp.example.net:587." ;;
+		*:*) RELAY_PORT="${RELAY_HOST##*:}"; RELAY_HOST="${RELAY_HOST%:*}" ;;
+		*)   RELAY_PORT=587 ;;
+	esac
+	case "$RELAY_PORT" in
+		''|*[!0-9]*) die "--relay-host port '$RELAY_PORT' is not a number." ;;
+	esac
+	[ "$RELAY_PORT" -ge 1 ] && [ "$RELAY_PORT" -le 65535 ] || die "--relay-host port '$RELAY_PORT' is out of range."
+	RELAY_HOST="$(printf '%s' "$RELAY_HOST" | tr '[:upper:]' '[:lower:]')"
+	check_name "--relay-host" "$RELAY_HOST"
+	# 465 is "submissions": TLS from the first byte. Everything else --
+	# 587, 2525, 25 -- is plaintext SMTP upgraded with STARTTLS, which the
+	# 'relay' TLS strategy below makes mandatory.
+	[ "$RELAY_PORT" = 465 ] && RELAY_IMPLICIT_TLS=true
+	if [ -n "$RELAY_USER" ] || [ -n "$RELAY_PASSWORD_FILE" ]; then
+		[ -n "$RELAY_USER" ] || die "--relay-password-file was given without --relay-user."
+		[ -n "$RELAY_PASSWORD_FILE" ] || die "--relay-user was given without --relay-password-file. The password is read from a file, never from an argument."
+		[ -f "$RELAY_PASSWORD_FILE" ] || die "--relay-password-file '$RELAY_PASSWORD_FILE' does not exist."
+		[ -r "$RELAY_PASSWORD_FILE" ] || die "--relay-password-file '$RELAY_PASSWORD_FILE' is not readable."
+		[ -s "$RELAY_PASSWORD_FILE" ] || die "--relay-password-file '$RELAY_PASSWORD_FILE' is empty."
+		case "$RELAY_USER" in
+			*'"'*|*'\'*) die "--relay-user may not contain quotes or backslashes." ;;
+		esac
+	fi
+else
+	[ -z "$RELAY_USER$RELAY_PASSWORD_FILE" ] || die "--relay-user/--relay-password-file need --relay-host."
+fi
+
 # One name for both the webmail and the mail server is a legitimate small
 # deployment; it is also what someone who has confused the two ends up with,
 # and the two cases look identical from here. Say it once, and move on.
@@ -392,12 +503,20 @@ JMAP_CODE=""
 jmap_call() {
 	# $1 = JSON request body. Sets JMAP_BODY and JMAP_CODE; never prints.
 	# `HTTP:000` means curl never got a response at all.
+	#
+	# The body travels in the same stdin config file as the credential
+	# (`data-binary = "..."`), not as a `--data-binary` argument: since relay
+	# mode, a request body can carry the smarthost password, and `docker
+	# exec`'s argv is visible in `ps` on the host. Verified against curl in
+	# the stalwart image that a JSON body with escaped quotes and
+	# backslashes arrives byte for byte this way.
 	local raw
 	raw="$(
-		printf 'user = "%s:%s"\n' "$(cfg_escape "$ADMIN_USER")" "$(cfg_escape "$ADMIN_SECRET")" \
-		| sw_exec curl -sS -K - \
+		{
+			printf 'user = "%s:%s"\n' "$(cfg_escape "$ADMIN_USER")" "$(cfg_escape "$ADMIN_SECRET")"
+			printf 'data-binary = "%s"\n' "$(cfg_escape "$1")"
+		} | sw_exec curl -sS -K - \
 			-X POST -H 'content-type: application/json' \
-			--data-binary "$1" \
 			-w '\nHTTP:%{http_code}' \
 			"$STALWART_INTERNAL_URL/jmap" 2>/dev/null || true
 	)"
@@ -526,14 +645,58 @@ elif mode == "tracers":
                     "yes" if item.get("enable") else "no",
                     item.get("level", "?"), item.get("path", "")))
             print("OK|" + "\n".join(rows))
-elif mode == "tracer-set":
+elif mode in ("tracer-set", "set-any"):
+    # Any x:*/set whose success is "something was created or updated".
     if args.get("created") or args.get("updated"):
         print("OK|")
     else:
         bad = args.get("notCreated") or args.get("notUpdated") or {}
         bad = next(iter(bad.values()), {}) if isinstance(bad, dict) else {}
         detail = bad.get("description") or bad.get("type") or "no reason given"
-        print("ERR|%s" % detail)
+        props = ",".join(bad.get("properties") or [])
+        print("ERR|%s%s" % (detail, (" [%s]" % props) if props else ""))
+elif mode == "mta-routes":
+    # second method response: the /get that followed the /query. One row per
+    # route: id, name, @type, address, port, implicitTls, authUsername.
+    if len(responses) < 2:
+        print("ERR|x:MtaRoute/get did not run")
+    else:
+        got = responses[1][1]
+        if responses[1][0] == "error":
+            print("ERR|%s" % got.get("description", "x:MtaRoute/get failed"))
+        else:
+            rows = []
+            for item in got.get("list") or []:
+                rows.append("%s\t%s\t%s\t%s\t%s\t%s\t%s" % (
+                    item.get("id", "?"), item.get("name", "?"), item.get("@type", "?"),
+                    item.get("address") or "", item.get("port") or "",
+                    "yes" if item.get("implicitTls") else "no",
+                    item.get("authUsername") or ""))
+            print("OK|" + "\n".join(rows))
+elif mode == "tls-strategies":
+    if len(responses) < 2:
+        print("ERR|x:MtaTlsStrategy/get did not run")
+    else:
+        got = responses[1][1]
+        if responses[1][0] == "error":
+            print("ERR|%s" % got.get("description", "x:MtaTlsStrategy/get failed"))
+        else:
+            rows = ["%s\t%s\t%s" % (i.get("id", "?"), i.get("name", "?"), i.get("startTls", "?"))
+                    for i in (got.get("list") or [])]
+            print("OK|" + "\n".join(rows))
+elif mode == "outbound-strategy":
+    # The singleton's route and tls expressions, reduced to their `else`
+    # branch -- the branch every non-local recipient takes -- with the
+    # surrounding quotes Stalwart's expression language puts on a literal
+    # stripped: 'mx' -> mx.
+    items = args.get("list") or []
+    if not items:
+        print("ERR|x:MtaOutboundStrategy/get returned nothing")
+    else:
+        s = items[0]
+        def leaf(expr):
+            return ((expr or {}).get("else") or "").strip().strip("'")
+        print("OK|%s\t%s" % (leaf(s.get("route")), leaf(s.get("tls"))))
 else:
     print("ERR|unknown mode %s" % mode)
 PY
@@ -842,6 +1005,133 @@ ensure_stdout_tracer() {
 	TRACER_CHANGED=yes
 }
 
+# ---------------------------------------------------------------------------
+# Relay mode -- see the header section of the same name
+# ---------------------------------------------------------------------------
+RELAY_ROUTE=relay
+RELAY_CHANGED=no
+
+jmap_mta_routes() {
+	jmap_call "{\"using\":[\"urn:ietf:params:jmap:core\",\"urn:stalwart:jmap\"],\"methodCalls\":[[\"x:MtaRoute/query\",{\"accountId\":\"$ACCOUNT_ID\"},\"c0\"],[\"x:MtaRoute/get\",{\"accountId\":\"$ACCOUNT_ID\",\"#ids\":{\"resultOf\":\"c0\",\"name\":\"x:MtaRoute/query\",\"path\":\"/ids\"},\"properties\":[\"name\",\"@type\",\"address\",\"port\",\"implicitTls\",\"authUsername\"]},\"c1\"]]}"
+}
+jmap_tls_strategies() {
+	jmap_call "{\"using\":[\"urn:ietf:params:jmap:core\",\"urn:stalwart:jmap\"],\"methodCalls\":[[\"x:MtaTlsStrategy/query\",{\"accountId\":\"$ACCOUNT_ID\"},\"c0\"],[\"x:MtaTlsStrategy/get\",{\"accountId\":\"$ACCOUNT_ID\",\"#ids\":{\"resultOf\":\"c0\",\"name\":\"x:MtaTlsStrategy/query\",\"path\":\"/ids\"},\"properties\":[\"name\",\"startTls\"]},\"c1\"]]}"
+}
+
+# Filled by read_relay_state(): the configured relay route, if any, and the
+# outbound strategy's route/tls leaves ("mx"/"default" on a stock server).
+RELAY_ROW=""
+OUTBOUND_ROUTE=""
+OUTBOUND_TLS=""
+read_relay_state() {
+	jmap_mta_routes
+	extract mta-routes
+	[ "$X_OK" = yes ] || die_state "could not read the MTA routes: $X_VAL"
+	RELAY_ROW="$(printf '%s\n' "$X_VAL" | awk -F'\t' -v n="$RELAY_ROUTE" '$2 == n && $3 == "Relay"' | head -1)"
+	jmap_method "x:MtaOutboundStrategy/get" '"ids":["singleton"]'
+	extract outbound-strategy
+	[ "$X_OK" = yes ] || die_state "could not read x:MtaOutboundStrategy: $X_VAL"
+	OUTBOUND_ROUTE="$(printf '%s' "$X_VAL" | cut -f1)"
+	OUTBOUND_TLS="$(printf '%s' "$X_VAL" | cut -f2)"
+}
+
+# The relay route's properties as a JSON object fragment (no surrounding
+# braces, no `name`), built by python so the password -- read from the file
+# here, and nowhere else -- is JSON-escaped correctly whatever it contains.
+# The file path and the other fields go on argv; the password never does.
+relay_route_json() {
+	python3 - "$RELAY_HOST" "$RELAY_PORT" "$RELAY_IMPLICIT_TLS" "$RELAY_USER" "$RELAY_PASSWORD_FILE" <<'PY'
+import json, sys
+host, port, implicit, user, pwfile = sys.argv[1:6]
+obj = {
+    "@type": "Relay",
+    "description": "Smarthost for all remote delivery (scripts/stalwart-bootstrap.sh --relay-host)",
+    "address": host,
+    "port": int(port),
+    "protocol": "smtp",
+    "implicitTls": implicit == "true",
+    "allowInvalidCerts": False,
+}
+if user:
+    with open(pwfile, encoding="utf-8") as f:
+        secret = f.read()
+    # One trailing newline is what an editor leaves; strip exactly that,
+    # not every whitespace character, so a password ending in a space
+    # survives.
+    if secret.endswith("\n"):
+        secret = secret[:-1]
+    obj["authUsername"] = user
+    obj["authSecret"] = {"@type": "Value", "secret": secret}
+else:
+    obj["authUsername"] = None
+    obj["authSecret"] = {"@type": "None"}
+print(json.dumps(obj)[1:-1])
+PY
+}
+
+ensure_relay() {
+	# Never called with --verify-only: that mode changes nothing.
+	read_relay_state
+	local props
+	props="$(relay_route_json)" || die "could not read the relay password from $RELAY_PASSWORD_FILE"
+
+	# 1. The route. Create if absent, otherwise update in place -- `name` is
+	#    immutable and identifies it, everything else is re-applied.
+	if [ -z "$RELAY_ROW" ]; then
+		log "adding MTA route '$RELAY_ROUTE' -> $RELAY_HOST:$RELAY_PORT ($([ "$RELAY_IMPLICIT_TLS" = true ] && echo 'implicit TLS' || echo 'STARTTLS')${RELAY_USER:+, auth as $RELAY_USER})"
+		jmap_method "x:MtaRoute/set" "\"create\":{\"$RELAY_ROUTE\":{\"name\":\"$RELAY_ROUTE\",$props}}"
+	else
+		local rid
+		rid="$(printf '%s' "$RELAY_ROW" | cut -f1)"
+		log "updating MTA route '$RELAY_ROUTE' ($rid) -> $RELAY_HOST:$RELAY_PORT"
+		jmap_method "x:MtaRoute/set" "\"update\":{\"$rid\":{$props}}"
+	fi
+	[ "$JMAP_CODE" = 200 ] || die_state "x:MtaRoute/set answered HTTP $JMAP_CODE. Check 'docker compose logs stalwart'."
+	extract set-any
+	[ "$X_OK" = yes ] || die_state "Stalwart refused the relay route: $X_VAL"
+	RELAY_CHANGED=yes
+
+	# 2. The TLS strategy the relay connection will use. Same create-or-
+	#    update shape.
+	jmap_tls_strategies
+	extract tls-strategies
+	[ "$X_OK" = yes ] || die_state "could not read the TLS strategies: $X_VAL"
+	local sid
+	sid="$(printf '%s\n' "$X_VAL" | awk -F'\t' -v n="$RELAY_ROUTE" '$2 == n {print $1}' | head -1)"
+	local sprops='"description":"Relay host: TLS required, no DANE/MTA-STS lookups (scripts/stalwart-bootstrap.sh)","startTls":"require","dane":"disable","mtaSts":"disable","allowInvalidCerts":false,"mtaStsTimeout":300000,"tlsTimeout":180000'
+	if [ -z "$sid" ]; then
+		log "adding TLS strategy '$RELAY_ROUTE' (TLS required)"
+		jmap_method "x:MtaTlsStrategy/set" "\"create\":{\"$RELAY_ROUTE\":{\"name\":\"$RELAY_ROUTE\",$sprops}}"
+	else
+		jmap_method "x:MtaTlsStrategy/set" "\"update\":{\"$sid\":{$sprops}}"
+	fi
+	[ "$JMAP_CODE" = 200 ] || die_state "x:MtaTlsStrategy/set answered HTTP $JMAP_CODE. Check 'docker compose logs stalwart'."
+	extract set-any
+	[ "$X_OK" = yes ] || die_state "Stalwart refused the relay TLS strategy: $X_VAL"
+
+	# 3. Point every non-local delivery at it. The `match` list is written
+	#    as the index-keyed map the server itself returns it as (the same
+	#    idiom x:Account's `credentials` uses); a JSON array is rejected.
+	if [ "$OUTBOUND_ROUTE" = "$RELAY_ROUTE" ] && [ "$OUTBOUND_TLS" = "$RELAY_ROUTE" ]; then
+		log "outbound strategy already routes remote mail via '$RELAY_ROUTE' -- leaving it alone"
+	else
+		log "routing all remote delivery through '$RELAY_ROUTE' (was: route '$OUTBOUND_ROUTE', tls '$OUTBOUND_TLS')"
+		jmap_method "x:MtaOutboundStrategy/set" "\"update\":{\"singleton\":{\"route\":{\"match\":{\"0\":{\"if\":\"is_local_domain(rcpt_domain)\",\"then\":\"'local'\"}},\"else\":\"'$RELAY_ROUTE'\"},\"tls\":{\"match\":{},\"else\":\"'$RELAY_ROUTE'\"}}}"
+		[ "$JMAP_CODE" = 200 ] || die_state "x:MtaOutboundStrategy/set answered HTTP $JMAP_CODE. Check 'docker compose logs stalwart'."
+		extract set-any
+		[ "$X_OK" = yes ] || die_state "Stalwart refused the outbound strategy: $X_VAL"
+	fi
+
+	# 4. Apply. Route and strategy objects are configuration; the running
+	#    server reads them again on ReloadSettings (a restart is not needed
+	#    -- unlike a listener, nothing has to rebind).
+	jmap_method "x:Action/set" '"create":{"reload":{"@type":"ReloadSettings"}}'
+	[ "$JMAP_CODE" = 200 ] || die_state "x:Action/set ReloadSettings answered HTTP $JMAP_CODE."
+	extract set-any
+	[ "$X_OK" = yes ] || die_state "Stalwart refused to reload its settings: $X_VAL"
+	log "settings reloaded"
+}
+
 verify() {
 	VERIFY_FAILURES=0
 	printf '\nVerifying, against the running server:\n' >&2
@@ -972,6 +1262,42 @@ verify() {
 			VERIFY_FAILURES=$((VERIFY_FAILURES + 1))
 			;;
 	esac
+
+	# 9. Outbound routing, read back from the server: which route every
+	#    non-local recipient takes, and -- if a relay was asked for -- that
+	#    it is the one asked for. Read back rather than trusted, like all
+	#    of the above: a 200 from x:MtaRoute/set is not a delivery path.
+	read_relay_state
+	local rhost rport rtls ruser rmode
+	if [ -n "$RELAY_ROW" ]; then
+		rhost="$(printf '%s' "$RELAY_ROW" | cut -f4)"
+		rport="$(printf '%s' "$RELAY_ROW" | cut -f5)"
+		rtls="$(printf '%s' "$RELAY_ROW" | cut -f6)"
+		ruser="$(printf '%s' "$RELAY_ROW" | cut -f7)"
+	fi
+	if [ "$OUTBOUND_ROUTE" = "$RELAY_ROUTE" ] && [ -n "$RELAY_ROW" ]; then
+		rmode="via relay $rhost:$rport ($([ "$rtls" = yes ] && echo 'implicit TLS' || echo 'STARTTLS'), tls strategy '$OUTBOUND_TLS'${ruser:+, auth as $ruser})"
+	elif [ "$OUTBOUND_ROUTE" = "$RELAY_ROUTE" ]; then
+		rmode="route '$RELAY_ROUTE' selected but NO such relay route exists -- remote mail cannot be delivered"
+	else
+		rmode="direct to each recipient's MX (route '$OUTBOUND_ROUTE') -- needs outbound port 25 and a PTR record, see docs/hosting.md"
+	fi
+	if [ -z "$RELAY_HOST" ]; then
+		case "$rmode" in
+			*"NO such relay"*) bad "outbound delivery: $rmode"; VERIFY_FAILURES=$((VERIFY_FAILURES + 1)) ;;
+			*)                 ok  "outbound delivery: $rmode" ;;
+		esac
+	elif [ "$OUTBOUND_ROUTE" = "$RELAY_ROUTE" ] && [ "$OUTBOUND_TLS" = "$RELAY_ROUTE" ] \
+		&& [ "${rhost:-}" = "$RELAY_HOST" ] && [ "${rport:-}" = "$RELAY_PORT" ] \
+		&& [ "${rtls:-}" = "$([ "$RELAY_IMPLICIT_TLS" = true ] && echo yes || echo no)" ] \
+		&& [ "${ruser:-}" = "$RELAY_USER" ]; then
+		ok "outbound delivery: $rmode"
+	else
+		bad "outbound delivery is $rmode
+        expected: via relay $RELAY_HOST:$RELAY_PORT${RELAY_USER:+, auth as $RELAY_USER}, tls strategy '$RELAY_ROUTE'.
+        Re-run without --verify-only to configure it."
+		VERIFY_FAILURES=$((VERIFY_FAILURES + 1))
+	fi
 }
 
 # ---------------------------------------------------------------------------
@@ -1033,6 +1359,10 @@ if [ "$STATE" = "done" ]; then
 		ensure_submission_listener
 		[ "$LISTENER_CREATED" = no ] \
 			|| restart_stalwart "so the new $SUBMISSION_PORT listener binds -- the only change this run made"
+		# The other change a converging run may make: relay mode. Additive
+		# on a server without it, an in-place update on one with it, and
+		# applied with a settings reload rather than a restart.
+		[ -z "$RELAY_HOST" ] || ensure_relay
 	fi
 
 	verify
@@ -1107,6 +1437,9 @@ restart_stalwart "so the configuration takes effect"
 ensure_submission_listener
 # Tracer changes take effect on restart too, so both ride the same one.
 ensure_stdout_tracer
+# Relay mode reloads settings itself; on a first boot the restart below
+# covers it as well.
+[ -z "$RELAY_HOST" ] || ensure_relay
 if [ "$LISTENER_CREATED" = yes ] || [ "$TRACER_CHANGED" = yes ]; then
 	restart_stalwart "so the new $SUBMISSION_PORT listener binds and logging takes effect"
 fi
@@ -1140,10 +1473,10 @@ Next, in this order:
        docker compose exec -T mailosh mailosh setup \\
            --domain $DOMAIN --email you@$DOMAIN
 
-     It prints MX, SPF, the live DKIM record and DMARC, ready to paste into
+     It prints MX, SPF, the live DKIM records and DMARC, ready to paste into
      your DNS provider. It prints a generated password too, so run it where
      the scrollback is yours, or pass --password.
-
+$( [ -z "$RELAY_HOST" ] || printf '\n     Outbound mail goes via %s, so use the SPF *include* for that relay\n     (the DNS block shows the common ones), not the direct-send "v=spf1 mx".\n' "$RELAY_HOST" )
   2. Publish those records, then point the MX at this box.
 
   3. Mail-port TLS. 465, 587 and 993 are serving a self-signed certificate
