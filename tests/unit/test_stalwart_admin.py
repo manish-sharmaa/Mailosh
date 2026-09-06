@@ -1370,3 +1370,23 @@ def test_bootstrap_script_creates_the_587_submission_listener():
     # And that it checks the result rather than trusting HTTP 200 -- the
     # failure mode the whole script is built around.
     assert "extract listener-set" in script
+
+
+def test_bootstrap_script_makes_stalwart_log_to_stdout():
+    """A configured Stalwart logs to a file under /var/log/stalwart/, a
+    directory the container image does not have and the compose file does
+    not mount -- so nothing it wrote after first boot went anywhere. Found
+    on the first public deployment. The script creates a stdout tracer
+    (what `docker compose logs stalwart` shows) and disables a file tracer
+    whose directory is missing, checking each result rather than the status.
+    """
+    script = (_repo_root() / "scripts" / "stalwart-bootstrap.sh").read_text(encoding="utf-8")
+
+    assert "x:Tracer/query" in script and "x:Tracer/get" in script
+    assert r"\"@type\":\"Stdout\",\"enable\":true,\"level\":\"info\"" in script
+    assert r"\"update\":{\"$tid\":{\"enable\":false}}" in script
+    assert 'sw_exec test -d "$tpath"' in script
+    assert "extract tracers" in script and "extract tracer-set" in script
+    # Wired into the bootstrap path and covered by the restart that applies it.
+    assert "ensure_stdout_tracer\n" in script
+    assert '[ "$TRACER_CHANGED" = yes ]' in script

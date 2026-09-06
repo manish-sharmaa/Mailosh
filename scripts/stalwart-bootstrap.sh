@@ -509,6 +509,31 @@ elif mode == "listeners":
                     port = bind.rsplit(":", 1)[-1]
                     rows.append("%s\t%s\t%s" % (item.get("name", "?"), port, item.get("protocol", "?")))
             print("OK|" + "\n".join(rows))
+elif mode == "tracers":
+    # second method response: the /get that followed the /query. One row per
+    # tracer: id, variant, enabled, level, path (log-file variant only).
+    if len(responses) < 2:
+        print("ERR|x:Tracer/get did not run")
+    else:
+        got = responses[1][1]
+        if responses[1][0] == "error":
+            print("ERR|%s" % got.get("description", "x:Tracer/get failed"))
+        else:
+            rows = []
+            for item in got.get("list") or []:
+                rows.append("%s\t%s\t%s\t%s\t%s" % (
+                    item.get("id", "?"), item.get("@type", "?"),
+                    "yes" if item.get("enable") else "no",
+                    item.get("level", "?"), item.get("path", "")))
+            print("OK|" + "\n".join(rows))
+elif mode == "tracer-set":
+    if args.get("created") or args.get("updated"):
+        print("OK|")
+    else:
+        bad = args.get("notCreated") or args.get("notUpdated") or {}
+        bad = next(iter(bad.values()), {}) if isinstance(bad, dict) else {}
+        detail = bad.get("description") or bad.get("type") or "no reason given"
+        print("ERR|%s" % detail)
 else:
     print("ERR|unknown mode %s" % mode)
 PY
@@ -768,6 +793,53 @@ ensure_submission_listener() {
 	extract listener-set
 	[ "$X_OK" = yes ] || die_state "Stalwart refused to create the $SUBMISSION_PORT listener: $X_VAL"
 	LISTENER_CREATED=yes
+}
+
+# ---------------------------------------------------------------------------
+# Logging that actually goes somewhere
+# ---------------------------------------------------------------------------
+# A configured Stalwart ships one tracer: a rotating log *file* under
+# /var/log/stalwart/. That directory does not exist in the container image
+# and nothing in docker-compose.yml mounts it, so every line the server
+# wrote after first boot -- every delivery, every rejection, every TLS
+# handshake -- went nowhere, silently. Found on the first public deployment,
+# while looking for a message that had in fact arrived. `docker logs` is
+# where an operator of this stack looks, so a stdout tracer is what gets
+# created, and a file tracer aimed at a directory that is not there is
+# disabled rather than left to fail quietly forever.
+TRACER_CHANGED=no
+ensure_stdout_tracer() {
+	jmap_call "{\"using\":[\"urn:ietf:params:jmap:core\",\"urn:stalwart:jmap\"],\"methodCalls\":[[\"x:Tracer/query\",{\"accountId\":\"$ACCOUNT_ID\"},\"c0\"],[\"x:Tracer/get\",{\"accountId\":\"$ACCOUNT_ID\",\"#ids\":{\"resultOf\":\"c0\",\"name\":\"x:Tracer/query\",\"path\":\"/ids\"},\"properties\":[\"@type\",\"enable\",\"level\",\"path\"]},\"c1\"]]}"
+	[ "$JMAP_CODE" = 200 ] || die_state "x:Tracer/query answered HTTP $JMAP_CODE. Check 'docker compose logs stalwart'."
+	extract tracers
+	[ "$X_OK" = yes ] || die_state "could not list Stalwart's tracers: $X_VAL"
+	local rows="$X_VAL" have_stdout=no tid ttype tenabled tlevel tpath
+	while IFS="$(printf '\t')" read -r tid ttype tenabled tlevel tpath; do
+		[ -n "$tid" ] || continue
+		if [ "$ttype" = Stdout ] && [ "$tenabled" = yes ]; then
+			have_stdout=yes
+		fi
+		if [ "$ttype" = Log ] && [ "$tenabled" = yes ] && [ -n "$tpath" ] && ! sw_exec test -d "$tpath"; then
+			log "disabling the log-file tracer: its directory $tpath does not exist in the container"
+			jmap_method "x:Tracer/set" "\"update\":{\"$tid\":{\"enable\":false}}"
+			[ "$JMAP_CODE" = 200 ] || die_state "x:Tracer/set answered HTTP $JMAP_CODE. Check 'docker compose logs stalwart'."
+			extract tracer-set
+			[ "$X_OK" = yes ] || die_state "Stalwart refused to disable tracer $tid: $X_VAL"
+			TRACER_CHANGED=yes
+		fi
+	done <<-EOF
+	$rows
+	EOF
+	if [ "$have_stdout" = yes ]; then
+		log "a stdout tracer is already enabled -- 'docker compose logs stalwart' will show mail activity"
+		return 0
+	fi
+	log "adding a stdout tracer (level info) so 'docker compose logs stalwart' shows mail activity"
+	jmap_method "x:Tracer/set" "\"create\":{\"stdout\":{\"@type\":\"Stdout\",\"enable\":true,\"level\":\"info\",\"ansi\":false,\"lossy\":false,\"multiline\":false}}"
+	[ "$JMAP_CODE" = 200 ] || die_state "x:Tracer/set answered HTTP $JMAP_CODE. Check 'docker compose logs stalwart'."
+	extract tracer-set
+	[ "$X_OK" = yes ] || die_state "Stalwart refused to create the stdout tracer: $X_VAL"
+	TRACER_CHANGED=yes
 }
 
 verify() {
@@ -1033,7 +1105,11 @@ restart_stalwart "so the configuration takes effect"
 # port either, so this needs a second restart -- free here, because a server
 # that has never been configured has no mail in flight to interrupt.
 ensure_submission_listener
-[ "$LISTENER_CREATED" = no ] || restart_stalwart "so the new $SUBMISSION_PORT listener binds"
+# Tracer changes take effect on restart too, so both ride the same one.
+ensure_stdout_tracer
+if [ "$LISTENER_CREATED" = yes ] || [ "$TRACER_CHANGED" = yes ]; then
+	restart_stalwart "so the new $SUBMISSION_PORT listener binds and logging takes effect"
+fi
 
 read_state
 verify
