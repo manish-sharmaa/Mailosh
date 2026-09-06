@@ -364,10 +364,10 @@ What was verified about DNS-01 in this pass, and what was not:
   stores it in its own data volume, which is why `scripts/backup.sh` treats
   that volume as irreplaceable.
 
-- **Not verified: actual certificate issuance.** It needs a public domain
-  whose DNS this box can edit with a live token, and neither was available
-  here. Configure it in Stalwart's admin UI under TLS → ACME providers,
-  choose DNS-01, attach the Cloudflare DNS server object, then confirm with
+- **Verified: actual certificate issuance**, on 2026-09-06 against
+  `mail.mailosh.com` with Let's Encrypt **production** and a Cloudflare token
+  scoped to the one zone. The listeners picked the certificate up live, with
+  no restart. Confirm with
 
   ```
   openssl s_client -connect mail.<domain>:465 -servername mail.<domain> </dev/null 2>/dev/null \
@@ -375,7 +375,43 @@ What was verified about DNS-01 in this pass, and what was not:
   ```
 
   A real certificate names an ACME issuer (Let's Encrypt) rather than
-  Stalwart itself. **Treat the steps themselves as unexercised.**
+  Stalwart itself (`CN=rcgen self signed cert` is the placeholder).
+
+  **How the objects fit together** (v0.16.20, read from the schema and then
+  exercised): the `x:AcmeProvider` carries only the ACME account —
+  `directory`, `challengeType: Dns01`, `contact` — and has no domain or DNS
+  field of its own. The `x:DnsServerCloudflare` carries the token as
+  `secret: {"@type": "Value", "secret": "<token>"}`. Both attach to the
+  **domain**: `certificateManagement: {"@type": "Automatic", acmeProviderId,
+  subjectAlternativeNames: {"mail.<domain>": true}}` and `dnsManagement:
+  {"@type": "Automatic", dnsServerId, publishRecords: {...}}`. All of it is
+  settable over the admin JMAP API (`x:*/set` on `/jmap`) from a container
+  on the internal network, so the token never has to pass through a browser.
+
+  Three things that cost time, and are not in Stalwart's documentation:
+
+  1. **`publishRecords` is what Stalwart will write into your zone.** Left at
+     its default it publishes MX, SPF, DMARC, CAA, MTA-STS, TLS-RPT,
+     autoconfig and SRV records — over whatever is there. If those are
+     hand-managed, set it to `{"dkim": true}` only. That still publishes the
+     **Ed25519 DKIM key**, which `mailosh setup` does not print (it prints
+     only the RSA one) and which Stalwart signs with regardless — so without
+     this, half of every message's signatures fail.
+  2. **Set `propagationDelay` on the DNS server (30 s works).** With the
+     default of none, the first poll for `_acme-challenge` can race the
+     record into existence and be answered negatively by the host's
+     resolver, which then caches that answer for the zone's negative TTL —
+     and the order stalls with nothing in the log past `auth-start`.
+  3. **The `AcmeRenewal` task is not re-run after a restart.** It is queued
+     when `certificateManagement` is saved and executed then; a task still
+     `Pending` in `x:Task` when the server restarts stays pending. To
+     re-trigger, save `certificateManagement` again (switch to `Manual` and
+     back). Whether the *renewal* due in ~60 days is affected the same way
+     is unknown until it comes due — check `x:Task` and the certificate's
+     `validTo` around then, and re-arm the same way if needed.
+
+  Stalwart leaves the `_acme-challenge` TXT in the zone after validation;
+  delete it by hand or let the next order overwrite it.
 
 One lead recorded rather than acted on: the same schema exposes an
 `x:Certificate` object that accepts a PEM certificate and private key over

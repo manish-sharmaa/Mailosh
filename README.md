@@ -95,17 +95,16 @@ you care about at it.
 
 ### What is *not* proven yet
 
-- **Delivery beyond your own server is untested.** Mailosh has never
-  received a message from the internet, and has never delivered one to an
-  outside recipient. No MX record has ever pointed at a running instance.
+- **Outbound delivery to other providers is untested.** Mailosh has never
+  delivered a message to an outside recipient: the first public host has
+  outbound port 25 blocked pending the provider's unblock. Inbound *is*
+  proven — one public instance receives mail from Gmail over its MX.
 - **No queue visibility.** If outbound delivery fails the interface says
-  "Sent", then nothing until your server bounces the message. Configure a
-  relay before you depend on it.
-- **Never deployed.** The production compose file is verified by rendering
-  and by tests, not by a stack running on a public host — and certificates
-  were issued against Let's Encrypt *staging* only. DNS-01 works end to end
-  with a real provider, wildcards included; production issuance is not
-  exercised.
+  "Sent", then nothing until your server bounces the message.
+- **Deployed exactly once**, on 2026-09-06, from a bare clone — which found
+  and fixed one release-blocking bug (0.1.2). Webmail and mail ports both
+  carry Let's Encrypt production certificates; DNS-01 is verified end to
+  end. One instance, one operator, one day: not yet a track record.
 - **Chromium and Safari only, and no external security review.**
   [`SECURITY.md`](SECURITY.md) names the parts most worth attacking.
 
