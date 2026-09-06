@@ -1167,7 +1167,14 @@ def test_frame_js_looks_for_every_class_the_app_actually_frames_with(frame_js_ru
     selector = {s.strip() for s in frame_js_run["selector"].split(",")}
     assert selector == {"iframe.mail-frame", "iframe.msg-frame"}
 
-    framed = {attrs.get("class") for _, attrs in _iframes()}
+    # `.att-preview-frame` (thread/preview.html) is the one iframe in the
+    # tree that is deliberately outside this rule: it holds an *attachment*,
+    # not one of our own rendered documents, so nothing inside it will ever
+    # post a height and a selector that matched it would be claiming
+    # otherwise. Its size is CSS's (styles/thread.css), which is why it can
+    # be left out without leaving a frame stuck at 200px. Named here rather
+    # than filtered by a pattern so a third class cannot join it silently.
+    framed = {attrs.get("class") for _, attrs in _iframes()} - {"att-preview-frame"}
     assert framed <= {s.removeprefix("iframe.") for s in selector}
 
 

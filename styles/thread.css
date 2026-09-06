@@ -106,3 +106,96 @@
     margin-bottom: 4px;
   }
 }
+
+@layer components {
+  /* The whole chip is the preview control (`thread/attachments.html`).
+     Stretched exactly as `.row-link` is stretched over a list row: the
+     surface a reader aims at when they mean "show me this file" is the
+     chip, not a 26px glyph that appears on hover.
+
+     `position: relative` on the chip is what the stretch is measured
+     against, and `.chip-actions` is lifted above it so a click on Download
+     is a download rather than a preview under it. */
+  .attachment-chip {
+    position: relative;
+  }
+  .chip-link {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+  .chip-actions {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* The preview dialog (`thread/preview.html`). A `<dialog>` in the top
+     layer, so it needs no z-index of its own and nothing here fights the
+     app's stacking contexts.
+
+     Sized in viewport units and capped rather than fixed: a portrait scan
+     and a wide screenshot are the same dialog, and neither may push its
+     own controls off the screen. */
+  .att-dialog {
+    width: min(880px, 92vw);
+    max-width: 92vw;
+    max-height: 88vh;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    color: var(--fg);
+    overflow: hidden;
+  }
+  .att-dialog::backdrop {
+    background: rgb(0 0 0 / 45%);
+  }
+  .att-dialog-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 8px 8px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  /* The filename takes the row and pushes the three controls to the end;
+     a long one is truncated rather than wrapping the header onto a second
+     line. */
+  .att-dialog-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* One body for both surfaces, and it is what scrolls: a tall text
+     attachment scrolls inside the dialog rather than growing it past the
+     screen. The chequer-free flat ground is deliberate -- a preview is for
+     reading a file, not for judging its transparency. */
+  .att-dialog-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-height: calc(88vh - 45px);
+    padding: 12px;
+    overflow: auto;
+    background: var(--bg);
+  }
+  .att-preview-image {
+    max-width: 100%;
+    max-height: calc(88vh - 69px);
+    object-fit: contain;
+  }
+  /* A PDF or a text file is a document with its own scrollbar, so the
+     frame takes a fixed share of the viewport rather than being measured:
+     there is no height handshake here, and there cannot be -- the frame
+     holds an attachment, not one of our own rendered documents, so nothing
+     inside it will ever post its height. */
+  .att-preview-frame {
+    width: 100%;
+    height: 74vh;
+    border: 0;
+    background: #fff;
+  }
+}

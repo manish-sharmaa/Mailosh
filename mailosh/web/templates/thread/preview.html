@@ -1,0 +1,69 @@
+{# The attachment preview (spec §7), one `<dialog>` per conversation page.
+
+   A native `<dialog>` opened with `showModal()`, which is what buys the
+   things a hand-built overlay has to reimplement and usually gets wrong:
+   Escape closes it, the rest of the page goes inert, focus is trapped
+   inside it while it is open, and it paints in the top layer above every
+   stacking context on the page. `static/js/attachments.js` adds the one
+   thing the element does not do by itself — putting focus back on the chip
+   that opened it.
+
+   **A singleton, filled in place.** One dialog per page rather than one
+   per chip: a twenty-attachment conversation would otherwise ship twenty
+   copies of this markup, nineteen of which are never opened, and the
+   `<iframe>` in each is a document the browser may decide to start
+   fetching. It carries no attachment of its own — `src`, `href` and the
+   name are written by the module at open time, from the chip's own
+   `data-preview-*`, and cleared again on close so a closed dialog holds no
+   bytes of a message the reader has moved on from.
+
+   Both halves are here rather than created in JS. Which types render as a
+   picture and which as a document is `mailosh.services.conversation`'s
+   `PREVIEW_KIND` (`image` / `pdf` / `text`), and the sandbox around the
+   document half is the kind of thing that must be readable in the markup
+   it protects — an `<iframe>` assembled in JavaScript is one whose
+   `sandbox` nobody reviews. The module only toggles `hidden`.
+
+   The `<iframe>`'s sandbox is `thread/frame.html`'s list, `allow-same-origin`
+   absent for the same reason it is absent there: an attachment is a file a
+   stranger sent, and one that could reach this origin could read the
+   reader's session. It is belt to the response's own braces —
+   `GET /m/{id}/att/{blob}?inline=1` already answers with
+   `Content-Security-Policy: default-src 'none'; sandbox`, a *fully*
+   restricted sandbox that the browser intersects with this attribute, so
+   the scripts `allow-scripts` names are in fact refused. Neither side is
+   relaxed to make a preview render: a file that needs more than this is a
+   file the reader downloads. #}
+<dialog id="att-preview" class="att-dialog" aria-labelledby="att-preview-name"
+        data-role="attachment-dialog">
+  <header class="att-dialog-head">
+    <span class="att-dialog-name" id="att-preview-name" data-role="attachment-name"></span>
+
+    {# The two ways out of a preview and into the file itself. Both are real
+       links with real `href`s the module fills in, so ⌘-click, middle-click
+       and "Save link as" all behave; neither is a button that only works
+       because a script is listening. #}
+    <a class="btn-icon size-7" data-role="attachment-download" href="" download>
+      {{ icon("download", class_="size-4") }}<span class="sr-only">Download this attachment</span>
+    </a>
+    <a class="btn-icon size-7" data-role="attachment-open" href=""
+       target="_blank" rel="noopener noreferrer">
+      {{ icon("maximize-2", class_="size-4") }}<span class="sr-only">Open this attachment in a new tab</span>
+    </a>
+    <button type="button" class="btn-icon size-7" data-role="attachment-close"
+            aria-label="Close preview" title="Close (Esc)">
+      {{ icon("x", class_="size-4") }}
+    </button>
+  </header>
+
+  <div class="att-dialog-body">
+    {# `alt` is written with the src: a picture whose only description is
+       its filename is still better than an unnamed one, and an empty `alt`
+       on the element the dialog exists to show would announce nothing at
+       all. #}
+    <img class="att-preview-image" data-role="attachment-image" alt="" hidden>
+    <iframe class="att-preview-frame" data-role="attachment-frame"
+            sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+            referrerpolicy="no-referrer" title="Attachment preview" hidden></iframe>
+  </div>
+</dialog>

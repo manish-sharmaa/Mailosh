@@ -12,7 +12,7 @@
    ---------------------------------------------------------------------
    Two real controls, not one hover affordance
 
-   Download and Open are `<a>` elements that are in the tab order at all
+   Download and Preview are `<a>` elements that are in the tab order at all
    times. `.chip-actions` fades them in on `:hover` AND on `:focus-within`
    (styles/input.css), which is the whole reason the reveal is `opacity`
    rather than `display: none` — a control removed from the box tree cannot
@@ -26,24 +26,44 @@
    step, and a screen reader that reads both announces the file twice.
 
    ---------------------------------------------------------------------
-   Open is offered only for what the server will actually show
+   Preview is offered only for what the server will actually show
 
    `AttachmentView.preview` is non-`None` exactly for the types
    `GET /m/{id}/att/{blob}?inline=1` serves with their real `Content-Type`
    (`conversation.PREVIEW_KIND`, held identical to
    `frames.PREVIEW_TYPES` by a test). Everything else — `.zip`, and
    `text/html` and `image/svg+xml` above all — that route quietly downgrades
-   to a download, so an "Open" on one of those would be a button whose label
-   is a lie about what it does.
+   to a download, so a "Preview" on one of those would be a control whose
+   label is a lie about what it does. A chip for one of them carries
+   Download and nothing else: spec §7's "unsupported types fall back to
+   download" is this absence, not a dialog that opens and says it cannot
+   show the file.
 
-   It opens in a new tab rather than the preview dialog spec §7 describes.
-   The dialog is a singleton fed by an `hx-get`, and the fragment route that
-   would answer that GET does not exist yet; a link to a URL that already
-   works is the version of this control that is real today. The response
-   carries `Content-Security-Policy: default-src 'none'; sandbox`,
+   ---------------------------------------------------------------------
+   The whole chip is the preview control
+
+   `.chip-link` is stretched over the chip by styles/thread.css, exactly as
+   `.row-link` is stretched over a list row and for the same reason: what
+   the reader means by clicking a file is "show me this file", and the
+   surface they aim at is the whole chip rather than a 26px glyph revealed
+   on hover. Download stays a control of its own, painted above the
+   stretched link so a click on it is a download and not a preview.
+
+   **It is a real link to a URL that really works, and only then a
+   dialog.** `static/js/attachments.js` intercepts the click and opens
+   `thread/preview.html`'s `<dialog>` instead; with that module absent, or
+   on a ⌘/Ctrl/Shift-click, the anchor is left alone and the attachment
+   opens in a tab as it always did. The response carries
+   `Content-Security-Policy: default-src 'none'; sandbox`,
    `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`, so
-   the new tab is inert whatever the sender attached, and `rel="noopener
-   noreferrer"` keeps it from reaching back through `window.opener`. #}
+   that tab is inert whatever the sender attached, and `rel="noopener
+   noreferrer"` keeps it from reaching back through `window.opener`.
+
+   `data-preview-kind` is `AttachmentView.preview` — "image", "pdf" or
+   "text" — and is what the dialog reads to decide between an `<img>` and a
+   sandboxed `<iframe>`. Deciding it here rather than in JS keeps
+   "which types render how" in the one Python table that already answers
+   it. #}
 {% if message.attachments %}
   <ul class="attachments">
     {% for attachment in message.attachments %}
@@ -61,13 +81,21 @@
           <a class="btn-icon chip-btn" href="{{ href }}" download="{{ attachment.name }}">
             {{ icon("download", class_="size-4") }}<span class="sr-only">Download {{ attachment.name }}</span>
           </a>
-          {% if attachment.preview %}
-            <a class="btn-icon chip-btn" href="{{ href }}?inline=1"
-               target="_blank" rel="noopener noreferrer">
-              {{ icon("maximize-2", class_="size-4") }}<span class="sr-only">Open {{ attachment.name }}</span>
-            </a>
-          {% endif %}
         </span>
+
+        {# Last in the chip, not first: stretched or not, it is the fallback
+           surface, and DOM order is what keeps Download the first control
+           Tab reaches inside a chip. #}
+        {% if attachment.preview %}
+          <a class="chip-link" href="{{ href }}?inline=1"
+             target="_blank" rel="noopener noreferrer"
+             data-role="attachment-preview"
+             data-preview-kind="{{ attachment.preview }}"
+             data-preview-name="{{ attachment.name }}"
+             data-download-url="{{ href }}">
+            <span class="sr-only">Preview {{ attachment.name }}</span>
+          </a>
+        {% endif %}
       </li>
     {% endfor %}
   </ul>

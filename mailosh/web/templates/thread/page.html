@@ -179,6 +179,14 @@
       {% endwith %}
     {% endfor %}
   </div>
+
+  {# One attachment preview dialog for the whole conversation, not one per
+     chip -- it carries no attachment of its own until a chip is clicked
+     (`static/js/attachments.js`). Outside `.thread-scroll` because a
+     `showModal()` dialog paints in the top layer regardless of where it
+     sits, and inside the scroller it would be one more child of an element
+     whose children are messages. #}
+  {% include "thread/preview.html" %}
 {% endblock %}
 
 {% block oob %}{% with oob = true %}{% include "shell/nav.html" %}{% endwith %}{% endblock %}

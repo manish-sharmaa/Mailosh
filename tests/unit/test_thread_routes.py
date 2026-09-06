@@ -238,10 +238,19 @@ async def test_the_conversation_page_frames_nothing_itself(authed, fake):
     alone, behind `GET /m/{id}/frame`. Two hand-written copies of that
     attribute is how one of them comes to differ from the other, and the
     one that matters is the omission of `allow-same-origin`.
+
+    Still true with the preview dialog on the page: that frame holds an
+    attachment, never a message body, and it holds nothing at all until a
+    chip is clicked.
     """
     fake.thread("T1", [("E1", "<p>rich</p>", None)])
     html = (await authed.get("/t/T1")).text
-    assert parse_attrs(html).get("iframe", []) == []
+    # The one iframe the page does render is the attachment preview
+    # dialog's, and it frames nothing until a chip is clicked: no `src` at
+    # all, and no message URL anywhere in the document.
+    frames = parse_attrs(html).get("iframe", [])
+    assert [attrs["class"] for attrs in frames] == ["att-preview-frame"]
+    assert "src" not in frames[0]
     assert "/m/E1/html" not in html
 
 

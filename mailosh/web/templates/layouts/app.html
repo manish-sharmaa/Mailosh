@@ -319,6 +319,13 @@
        `allow-same-origin`, so the parent cannot read its content height
        any other way. #}
     <script src="{{ static('js/frame.js') }}" type="module"></script>
+    {# The attachment preview dialog (spec §7). Another entry point, tagged
+       and imported by nothing: it opens `thread/preview.html`'s `<dialog>`
+       from a delegated listener and touches no other module. It is loaded
+       on every page rather than only the conversation -- the listener finds
+       no chip anywhere else and does nothing, which is cheaper than a rule
+       about which pages may carry attachments. #}
+    <script src="{{ static('js/attachments.js') }}" type="module"></script>
     <script src="{{ static('js/app.js') }}" type="module"></script>
     <script src="{{ static('vendor/alpine.min.js') }}" defer></script>
     {% block scripts %}{% endblock %}
