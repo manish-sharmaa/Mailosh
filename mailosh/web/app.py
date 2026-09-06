@@ -101,6 +101,9 @@ from mailosh.web import (
     prefs,
     search,
 )
+from mailosh.web import (
+    settings as settings_web,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -630,6 +633,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # be authored in parallel without both needing this file.
     app.include_router(search.router)
     app.include_router(labels.router)
+    app.include_router(settings_web.router)
     app.include_router(frames.router)
     app.include_router(mail.router)
 

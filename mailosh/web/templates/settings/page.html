@@ -1,0 +1,51 @@
+{% extends layout %}
+
+{# The settings section (spec §10). One template for all six pages: the
+   sub-nav on the left, and the page's own partial (`settings/<page>.html`)
+   on the right. `layout` is `layouts/app.html` for a full navigation and
+   `layouts/fragment.html` when htmx asked for the `#main` half
+   (`mailosh.web.settings._is_fragment`), so the markup exists once.
+
+   The sub-nav's links are the same shape as `shell/nav.html`'s items —
+   `hx-get` into `#main` with the URL pushed — so switching pages is a
+   fragment swap, and `aria-current` on the active one is what both the
+   stylesheet and a screen reader read. Under 768px the sub-nav stacks
+   above the page (`styles/settings.css`) and scrolls sideways rather than
+   collapsing into a menu: six short words fit, and a disclosure would hide
+   the one thing this page exists to show.
+
+   No `hx-on:`, no Alpine expression, no inline script anywhere below —
+   the CSP is `script-src 'self'` with no `'unsafe-eval'`. Every control is
+   a real form field; `static/js/settings.js` (loaded by the partials that
+   need it) binds by `data-role`. #}
+
+{% block title %}{{ page_label }} — Settings — Mailosh{% endblock %}
+{% block topbar %}{% include "shell/topbar.html" %}{% endblock %}
+{% block nav %}{% include "shell/nav.html" %}{% endblock %}
+
+{% block main %}
+  <div class="settings" data-settings="{{ page }}">
+    <nav class="settings-nav" aria-label="Settings">
+      <h1 class="settings-heading">Settings</h1>
+      <ul class="settings-tabs">
+        {% for key, label in pages %}
+          <li>
+            <a href="/settings/{{ key }}"
+               class="settings-tab"
+               hx-get="/settings/{{ key }}"
+               hx-target="#main"
+               hx-swap="morph:innerHTML show:none"
+               hx-push-url="true"
+               {% if key == page %}aria-current="page"{% endif %}>{{ label }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </nav>
+    <section class="settings-page" aria-labelledby="settings-title">
+      <h2 id="settings-title" class="settings-title">{{ page_label }}</h2>
+      {% include "settings/" ~ page ~ ".html" %}
+    </section>
+  </div>
+{% endblock %}
+
+{% block oob %}{% with oob = true %}{% include "shell/nav.html" %}{% endwith %}{% endblock %}

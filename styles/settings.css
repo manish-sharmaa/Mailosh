@@ -1,0 +1,227 @@
+/* Settings (design spec §10) — the `/settings/*` pages: the sub-nav, the
+   page column, and the field groups the six partials share.
+
+   A separate file for the reason `labels.css` and `search.css` are: it is
+   `@import`ed into `input.css` and compiled by the same `make css`, so every
+   theme token, density variable and utility defined there is in scope —
+   one stylesheet split across files, not a second one. The controls
+   themselves (`.segmented`, `.switch`, `.lp-btn`, `.lm-input`) are reused
+   from `input.css`/`labels.css` rather than restyled, so a radio group
+   here looks like the quick-settings popover's and a button like the
+   label menu's. */
+
+@layer components {
+  .settings {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  .settings-nav {
+    padding: 16px 8px 16px 12px;
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+  }
+  .settings-heading {
+    margin: 0 0 10px 8px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .settings-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  /* The same fill/ink pairs `.nav-item` uses, so the two rails read as one
+     system side by side. */
+  .settings-tab {
+    display: flex;
+    align-items: center;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: var(--radius-ctl);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg-2);
+    text-decoration: none;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .settings-tab:hover {
+    background: var(--ctl-hover);
+    color: var(--fg);
+  }
+  .settings-tab[aria-current=page] {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+  .settings-tab:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  .settings-page {
+    min-width: 0;
+    padding: 20px 28px 40px;
+    overflow-y: auto;
+  }
+  .settings-title {
+    margin: 0 0 18px;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+  }
+  .settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-width: 560px;
+  }
+  /* A labelled group: the quick-settings popover's `.quick-field`, widened
+     to a page and given a line of help under the legend. */
+  .settings-field {
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .settings-label {
+    display: block;
+    margin-bottom: 6px;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .settings-help {
+    margin: 0 0 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg-2);
+  }
+  .settings-note {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--fg-2);
+  }
+  .settings-field .segmented {
+    max-width: 360px;
+  }
+  .settings-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .settings-input {
+    width: 100%;
+    max-width: 360px;
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-ctl);
+    background: var(--surface);
+    color: var(--fg);
+    font-size: 13px;
+  }
+  .settings-input:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -1px;
+  }
+  .settings-textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 8px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-ctl);
+    background: var(--surface);
+    color: var(--fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+  .settings-textarea:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -1px;
+  }
+  .settings-section {
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .settings-section-title {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .settings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .settings-table th,
+  .settings-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+  }
+  .settings-table th {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+  .settings-table-wrap {
+    overflow-x: auto;
+  }
+  .settings-row-muted {
+    color: var(--fg-2);
+  }
+  .settings-pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-size: 11px;
+    font-weight: 600;
+  }
+}
+
+/* Under 768px the sub-nav stacks above the page. Unlayered, inside a media
+   query, for the reason `responsive.css` gives: an unlayered rule beats the
+   layered `.settings` grid above without a selector arms race. */
+@media (max-width: 767.98px) {
+  .settings {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .settings-nav {
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .settings-heading {
+    margin: 0 0 6px;
+  }
+  .settings-tabs {
+    flex-direction: row;
+    gap: 4px;
+  }
+  .settings-tab {
+    height: 36px;
+    white-space: nowrap;
+  }
+  .settings-page {
+    padding: 16px;
+  }
+}

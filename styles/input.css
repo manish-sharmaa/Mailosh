@@ -4,6 +4,7 @@
    one entry point, and these need this file's theme tokens. */
 @import "./search.css";
 @import "./labels.css";
+@import "./settings.css";
 /* Phase 1E. `responsive.css` is imported last of the four so its
    breakpoint overrides win against the component rules above without
    needing specificity tricks. */
