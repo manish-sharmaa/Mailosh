@@ -55,7 +55,7 @@ from mailosh.security import csrf, ratelimit, sessions
 from mailosh.security.exchange import verify_password
 from mailosh.security.ratelimit import LoginLimiter
 from mailosh.stalwart_admin import StalwartAdmin
-from mailosh.web import deps
+from mailosh.web import deps, orphan_keys
 
 logger = logging.getLogger(__name__)
 
@@ -355,13 +355,14 @@ async def _destroy_key_if_last_session(
                 api_key_id,
                 user.stalwart_username,
             )
-        except JmapError:
+        except JmapError as exc:
             logger.warning(
                 "failed to destroy stalwart api key %s for %s",
                 api_key_id,
                 user.stalwart_username,
                 exc_info=True,
             )
+            await orphan_keys.record(db, user.stalwart_username, api_key_id, exc)
 
 
 @router.post("/logout")
@@ -454,13 +455,14 @@ async def logout_all(
                         api_key_id,
                         user.stalwart_username,
                     )
-                except JmapError:
+                except JmapError as exc:
                     logger.warning(
                         "failed to destroy stalwart api key %s for %s",
                         api_key_id,
                         user.stalwart_username,
                         exc_info=True,
                     )
+                    await orphan_keys.record(db, user.stalwart_username, api_key_id, exc)
 
     await repo.audit(db, user.id, "logout.all", {"session_count": len(revoked_rows)}, ip)
 
@@ -544,12 +546,15 @@ async def reap_expired_sessions(
                     if user is not None:
                         try:
                             await admin.destroy_api_key(user.stalwart_username, row.api_key_id)
-                        except JmapError:
+                        except JmapError as exc:
                             logger.warning(
                                 "session reap: failed to destroy stalwart api key %s for %s",
                                 row.api_key_id,
                                 user.stalwart_username,
                                 exc_info=True,
+                            )
+                            await orphan_keys.record(
+                                db, user.stalwart_username, row.api_key_id, exc
                             )
             await pool.drop(row.id)
             await db.delete(row)

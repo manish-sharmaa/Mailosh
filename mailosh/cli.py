@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import mailbox
 import secrets
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
 
@@ -124,13 +125,27 @@ def _display_name_from_email(email: str) -> str:
     return local_part.replace(".", " ").replace("_", " ").title()
 
 
-def _format_dns_block(domain: str, dkim: DkimRecord) -> str:
+def _format_dns_block(
+    domain: str, dkim: DkimRecord | Sequence[DkimRecord], relay_host: str | None = None
+) -> str:
     """Render the copy-paste DNS records block for `domain` (design spec §11):
-    the MX target's own A/AAAA, MX, SPF, the live DKIM record, and DMARC,
+    the MX target's own A/AAAA, MX, SPF, the live DKIM record(s), and DMARC,
     plus a one-line rDNS/PTR reminder. Plain text, no markup, one record's
     Host/Value per stanza — each Value line is meant to be pasted directly
     into a DNS provider's record-editor UI (or a zone file) without further
     editing.
+
+    `dkim` is every record the server signs with -- Stalwart generates an
+    RSA and an Ed25519 key per domain and signs with both, so both must be
+    published or half of every message's signatures fail to verify
+    (`StalwartAdmin.get_dkim_records`). A single `DkimRecord` is still
+    accepted, for a server with one key.
+
+    `relay_host` is the smarthost the server routes outbound mail through
+    (`StalwartAdmin.outbound_relay_host`), or `None` for direct delivery.
+    It decides which SPF record is printed as *the* value -- see the SPF
+    paragraph below -- rather than leaving the operator to work out which of
+    two applies.
 
     The A/AAAA stanza comes first, and it is first because it is the record
     an operator is most likely to forget: the MX below points at
@@ -152,6 +167,7 @@ def _format_dns_block(domain: str, dkim: DkimRecord) -> str:
     that is wrong for the deployment this project's own hosting doc
     recommends.
     """
+    records = [dkim] if isinstance(dkim, DkimRecord) else list(dkim)
     mx_target = f"mail.{domain}"
     dmarc_host = f"_dmarc.{domain}"
     heading = f"DNS records for {domain}"
@@ -160,6 +176,49 @@ def _format_dns_block(domain: str, dkim: DkimRecord) -> str:
         "this server's public IP address — most receiving mail servers treat "
         "missing/mismatched rDNS as a strong spam signal."
     )
+    if relay_host is None:
+        spf = [
+            "SPF (TXT record)",
+            f"  Host:  {domain}",
+            "  Value: v=spf1 mx ~all",
+            "",
+            "  That value is for DIRECT SEND — this server delivering outbound mail",
+            "  itself on port 25. If you send through a RELAY (Amazon SES, SMTP2GO,",
+            "  your provider's smarthost), the sending IP is the relay's and is not",
+            "  covered by `mx`, so outbound mail fails SPF at the receiver. Use the",
+            "  relay's own include instead, e.g.",
+            "      Amazon SES   v=spf1 include:amazonses.com ~all",
+            "      SMTP2GO      v=spf1 include:spf.smtp2go.com ~all",
+            "  Check your relay's documentation for its exact include, and see",
+            "  docs/hosting.md — most budget VPS providers block outbound port 25,",
+            "  and relay mode is what it recommends for most deployments.",
+        ]
+    else:
+        spf = [
+            "SPF (TXT record)",
+            f"  Host:  {domain}",
+            "  Value: v=spf1 include:<your relay's SPF include> ~all",
+            "",
+            f"  This server RELAYS outbound mail through {relay_host}, so the",
+            "  sending IP is the relay's, not this server's — `v=spf1 mx ~all`",
+            "  would fail SPF at every receiver. Use the relay's own include, e.g.",
+            "      Amazon SES   v=spf1 include:amazonses.com ~all",
+            "      SMTP2GO      v=spf1 include:spf.smtp2go.com ~all",
+            "  Check your relay's documentation for its exact include.",
+        ]
+    dkim_lines: list[str] = []
+    if len(records) > 1:
+        dkim_lines += [
+            f"DKIM (TXT records — {len(records)} of them)",
+            "  Stalwart signs every message with BOTH keys; publish both, or half of",
+            "  each message's signatures fail to verify.",
+        ]
+    else:
+        dkim_lines.append("DKIM (TXT record)")
+    for i, rec in enumerate(records):
+        if i:
+            dkim_lines.append("")
+        dkim_lines += [f"  Host:  {rec.host}", f"  Value: {rec.value}"]
     return "\n".join(
         [
             heading,
@@ -176,24 +235,9 @@ def _format_dns_block(domain: str, dkim: DkimRecord) -> str:
             "  Priority: 10",
             f"  Value:    {mx_target}",
             "",
-            "SPF (TXT record)",
-            f"  Host:  {domain}",
-            "  Value: v=spf1 mx ~all",
+            *spf,
             "",
-            "  That value is for DIRECT SEND — this server delivering outbound mail",
-            "  itself on port 25. If you send through a RELAY (Amazon SES, SMTP2GO,",
-            "  your provider's smarthost), the sending IP is the relay's and is not",
-            "  covered by `mx`, so outbound mail fails SPF at the receiver. Use the",
-            "  relay's own include instead, e.g.",
-            "      Amazon SES   v=spf1 include:amazonses.com ~all",
-            "      SMTP2GO      v=spf1 include:spf.smtp2go.com ~all",
-            "  Check your relay's documentation for its exact include, and see",
-            "  docs/hosting.md — most budget VPS providers block outbound port 25,",
-            "  and relay mode is what it recommends for most deployments.",
-            "",
-            "DKIM (TXT record)",
-            f"  Host:  {dkim.host}",
-            f"  Value: {dkim.value}",
+            *dkim_lines,
             "",
             "DMARC (TXT record)",
             f"  Host:  {dmarc_host}",
@@ -220,18 +264,20 @@ _ACCOUNT_EXISTED_WARNING = (
 
 async def _setup(
     domain: str, email: str, display_name: str, password: str
-) -> tuple[DkimRecord, bool]:
-    """Drive `StalwartAdmin.create_domain` -> `create_account` -> `get_dkim_record`,
-    in that order (SPK-5: `create_account` depends on the domain already
-    existing to resolve its `domainId`), against the admin credential from
-    `Settings()`. Deliberately does NOT call `try_mint_user_token` — that's
-    a standalone SPK-3 probe (see `mailosh.stalwart_admin` and SPK-3 in
+) -> tuple[list[DkimRecord], bool, str | None]:
+    """Drive `StalwartAdmin.create_domain` -> `create_account` ->
+    `get_dkim_records` -> `outbound_relay_host`, in that order (SPK-5:
+    `create_account` depends on the domain already existing to resolve its
+    `domainId`), against the admin credential from `Settings()`.
+    Deliberately does NOT call `try_mint_user_token` — that's a standalone
+    SPK-3 probe (see `mailosh.stalwart_admin` and SPK-3 in
     `docs/spikes/p0-findings.md`), not a step this wizard needs.
 
-    Returns `(dkim_record, account_created)` — `account_created` is
-    `create_account`'s own return value, threaded back out so `setup` can
-    decide whether the `password` it's holding was actually applied to the
-    account (see `_ACCOUNT_EXISTED_WARNING`) before deciding what to print.
+    Returns `(dkim_records, account_created, relay_host)` —
+    `account_created` is `create_account`'s own return value, threaded back
+    out so `setup` can decide whether the `password` it's holding was
+    actually applied to the account (see `_ACCOUNT_EXISTED_WARNING`) before
+    deciding what to print; `relay_host` picks the SPF record.
     """
     settings = Settings()
     admin = StalwartAdmin(
@@ -240,8 +286,9 @@ async def _setup(
     try:
         await admin.create_domain(domain)
         account_created = await admin.create_account(email, display_name, password)
-        dkim = await admin.get_dkim_record(domain)
-        return dkim, account_created
+        dkim = await admin.get_dkim_records(domain)
+        relay_host = await admin.outbound_relay_host()
+        return dkim, account_created, relay_host
     finally:
         await admin.close()
 
@@ -273,7 +320,7 @@ def setup(
     if password is None:
         password = secrets.token_urlsafe(18)
     display_name = _display_name_from_email(email)
-    dkim, account_created = asyncio.run(_setup(domain, email, display_name, password))
+    dkim, account_created, relay_host = asyncio.run(_setup(domain, email, display_name, password))
 
     typer.echo(f"Domain {domain!r} ready; account {email!r} ready.")
     if account_created:
@@ -285,7 +332,7 @@ def setup(
         # way `password` here is NOT this account's real password.
         typer.echo(_ACCOUNT_EXISTED_WARNING)
     typer.echo("")
-    typer.echo(_format_dns_block(domain, dkim))
+    typer.echo(_format_dns_block(domain, dkim, relay_host))
 
 
 if __name__ == "__main__":

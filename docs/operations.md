@@ -318,6 +318,68 @@ run finds the listener, changes nothing, and restarts nothing.
 `--verify-only` never changes or restarts anything at all — on a server
 missing 587 it reports the gap and exits 2.
 
+### Relay mode — sending through a smarthost
+
+Most budget VPS providers block outbound port 25 (`docs/hosting.md`), so the
+recommended deployment sends through a relay (Amazon SES, SMTP2GO, your
+provider's smarthost). The bootstrap script configures it, on a first boot or
+on an already-configured server, and it is safe to re-run:
+
+```
+printf '%s\n' 'the-relay-password' > /root/relay-password   # mode 0600
+scripts/stalwart-bootstrap.sh --domain example.com \
+    --relay-host email-smtp.eu-west-1.amazonaws.com:587 \
+    --relay-user AKIA... --relay-password-file /root/relay-password
+```
+
+Port 465 means implicit TLS; anything else means STARTTLS. TLS is **required**
+either way — a relay that cannot negotiate it gets no mail, rather than a
+password in the clear. The password is read from the file and travels to
+Stalwart inside curl's stdin config, so it appears in no `ps` listing, no
+shell history, and no output. There is deliberately no `--relay-password`.
+
+What it writes, read from the running server's `GET /api/schema` and then
+written and read back live on 2026-09-06 (Stalwart `v0.16.20`):
+
+| Object | Value |
+|---|---|
+| `x:MtaRoute` name `relay` | `@type: Relay`, `address`, `port`, `protocol: smtp`, `implicitTls`, `allowInvalidCerts: false`, `authUsername`, `authSecret: {"@type":"Value","secret":…}` — the secret reads back as `****` |
+| `x:MtaTlsStrategy` name `relay` | `startTls: require`, `dane: disable`, `mtaSts: disable`, `allowInvalidCerts: false` |
+| `x:MtaOutboundStrategy` singleton | `route`: `is_local_domain(rcpt_domain)` → `'local'`, else `'relay'`; `tls`: else `'relay'` (the stock retry-with-`invalid-tls` downgrade is dropped) |
+| `x:Action` | `{"@type":"ReloadSettings"}` — the running server picks the change up; no restart |
+
+Two things learned on the way: the `match` list of an `x:Expression` must be
+written as the index-keyed map the server returns it as (`{"0": {...}}`), the
+same idiom as `x:Account.credentials`; and a route named `relay` that already
+exists is *updated* in place (the password re-applied — it cannot be compared,
+since it is never returned), so the script converges instead of failing on a
+second run.
+
+`--verify-only` reports the current outbound mode in either case:
+
+```
+  ok    outbound delivery: direct to each recipient's MX (route 'mx') -- needs outbound port 25 and a PTR record, see docs/hosting.md
+  ok    outbound delivery: via relay relay.mailosh.test:587 (STARTTLS, tls strategy 'relay', auth as ses-user)
+```
+
+and with `--relay-host` also given it **fails** (exit 2) when what is
+configured is not what was asked for — verified by asking for `:465` against a
+server configured for `:587`.
+
+Not verified: an actual TLS session and authentication against a real relay.
+The dev stack has no outbound network, so what was proven is object creation,
+read-back, idempotence, reload, and the verify reporting; the first message you
+send through a real relay is the test of the credential. Watch
+`x:QueuedMessage` (or the admin UI's queue) for it.
+
+Publish the relay's SPF `include:` rather than the direct-send `v=spf1 mx` —
+`mailosh setup` prints both and says which applies.
+
+Going back to direct delivery is not something the script does: set the
+outbound strategy's route `else` back to `'mx'` and `tls` to the stock
+expression in the admin UI (or with `x:MtaOutboundStrategy/set`), and read
+`docs/hosting.md` about port 25 and PTR first.
+
 ### Mail-port TLS — what is and is not configured
 
 Caddy owns 80 and 443 on the host, so Stalwart can answer **neither** HTTP-01
@@ -549,25 +611,108 @@ completion marker sits several lines above. Checking only `tail -3` reports a
 perfectly good dump as truncated. That happened here, and is why the check reads
 the last 20 lines.
 
-### Running it from cron
+### Running it on a schedule
 
-`scripts/backup.sh` is the interface; `make backup` is a convenience. A daily
-backup at 03:15 keeping two weeks, from the directory holding your
-`docker-compose.yml`:
+`scripts/backup.sh` is the interface; `make backup` is a convenience. The
+supported scheduler is a **systemd timer**, installed by
+`scripts/backup-timer.sh`. From the checkout, as root, with the same
+`COMPOSE_FILE` you deploy with:
 
-```cron
-15 3 * * *  cd /srv/mailosh && ./scripts/backup.sh /srv/backups --keep 14 >> /var/log/mailosh-backup.log 2>&1
+```
+sudo COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml \
+  scripts/backup-timer.sh --dest /srv/mailosh-backups --keep 14 --user deploy
 ```
 
-Two things this does not do for you:
+It prints the two units before writing them (`--print` prints and stops), then
+`daemon-reload`s and `enable --now`s `mailosh-backup.timer`: daily at 03:15
+local time (`--calendar` takes any `OnCalendar=` spec), `Persistent=true` so a
+box that was off at 03:15 runs the backup at boot, and a 10-minute randomised
+delay. Afterwards:
 
-- **It does not copy the backup off the machine.** A backup on the same disk as
-  the data protects you from `rm -rf` and a bad upgrade, and from nothing else.
-  Sync `/srv/backups` somewhere else — `rclone`, `restic`, `rsync` to another
-  host, an object bucket. Whatever you choose, it now holds everyone's mail in
-  the clear, so encrypt it or trust the destination completely.
-- **It does not encrypt.** The tars are plain gzip. If the destination is not
-  trusted, wrap it (`age`, `gpg`, `restic`'s own encryption).
+```
+systemctl list-timers mailosh-backup.timer     # next and last run
+sudo systemctl start mailosh-backup.service    # one run now, to prove it
+journalctl -u mailosh-backup.service -n 50     # what the last run said
+sudo scripts/backup-timer.sh --uninstall
+```
+
+Why a host timer and not a compose sidecar: a backup container would need the
+Docker socket mounted into it to stop Stalwart and exec `pg_dump`, and a
+container holding `/var/run/docker.sock` is root on the host. It would be the
+most privileged thing in the stack, running all day to do ten seconds of work.
+The host already has docker access, the checkout, the `.env`, and a scheduler
+with logs and catch-up. If you have no systemd, the old cron line still works:
+
+```cron
+15 3 * * *  cd /srv/mailosh && ./scripts/backup.sh /srv/backups >> /var/log/mailosh-backup.log 2>&1
+```
+
+`--keep` now defaults to **14**; pass `--keep 0` to never prune.
+
+### Encryption and off-host copies
+
+Two flags, both optional, both off by default — a plain `scripts/backup.sh`
+still writes a plaintext directory to `./backups` exactly as before.
+
+**`--encrypt-to RECIPIENT`** packs the finished, checksummed directory into a
+single `mailosh-<stamp>.tar.age` and removes the plaintext. It needs
+[`age`](https://age-encryption.org) on the host (`apt install age`,
+`brew install age`). Make a key once, and keep the identity file *outside*
+anything the backup reaches — a password manager is the right place, since it
+is one line:
+
+```
+age-keygen -o ~/.config/mailosh/backup-identity.txt
+#   Public key: age1...        <- this is what --encrypt-to takes
+```
+
+Repeat `--encrypt-to` for a second recipient (a colleague's key, or an
+`ssh-ed25519 ...` public key). The script refuses an `AGE-SECRET-KEY-` on the
+command line. Restore needs the identity:
+
+```
+scripts/restore.sh --check --identity ~/.config/mailosh/backup-identity.txt \
+    /srv/mailosh-backups/mailosh-20260906T070700Z.tar.age
+```
+
+`--check` on an encrypted backup decrypts into a private temporary directory
+(removed on exit, including on failure) and then runs every check the
+directory form gets — so it also proves the identity you hold actually
+decrypts it. A wrong identity fails as `age: error: no identity matched any of
+the recipients` with nothing changed. Retention prunes directories and
+`.tar.age` files in one list, by the timestamp in the name, so turning
+encryption on mid-rota does not exempt the older shape.
+
+**`--rclone-remote REMOTE:PATH`** runs `rclone copy` of the result (the
+`.tar.age`, or the whole directory) after everything else succeeded. `rclone`
+must be configured on the host (`rclone config`). `rclone copy` never deletes
+on the remote, so remote retention is a separate decision — a bucket lifecycle
+rule is the usual answer. A failed upload exits 1 (so the timer shows failed
+and `journalctl` says why) but the local backup is complete and intact. An
+unencrypted upload is logged with a warning: it holds everyone's mail in the
+clear at the destination.
+
+Both were exercised on 2026-09-06 against the dev stack: `--encrypt-to
+--rclone-remote :local:... --keep 1` produced a 1.9 MB `.tar.age`, removed the
+plaintext, pruned three seeded older entries (two directories, one `.tar.age`)
+and left an unrelated directory alone, uploaded, and `restore.sh --check
+--identity` on the result decrypted and verified it (42 store files, 10
+tables). `age` and `rclone` ran from a container on that machine (neither is
+installed on the host), invoked through PATH shims — the scripts themselves
+are unaware of the difference.
+
+### The routine verification
+
+After every backup, and in the same timer if you like a belt with your braces:
+
+```
+scripts/restore.sh --check BACKUP            # a mailosh-<stamp> directory
+scripts/restore.sh --check --identity KEYFILE BACKUP.tar.age
+```
+
+`backup.sh` prints the exact command for the backup it just made as its last
+line (`Next: verify it.  ...`). `make backup-check` runs it against the newest
+directory.
 
 ### Retention advice
 
@@ -607,6 +752,8 @@ make backup-check                        # same, on the newest backup
 
 scripts/restore.sh BACKUP_DIR            # DESTRUCTIVE; asks first
 make restore BACKUP=backups/mailosh-...
+
+scripts/restore.sh --identity KEYFILE [--check] BACKUP.tar.age   # encrypted backup
 ```
 
 ### `--check` first
@@ -718,8 +865,9 @@ immediately afterwards, mail intact, `git status` clean.
 **Restore**: into `mailosh-drill`, through the interactive prompt (a wrong answer
 was tried first and rejected). **13.9 s** wall. The same restore re-run against
 the final version of the script — which additionally waits until the app answers
-`GET /login`, so that "Restore finished" is not printed while the web UI is still
-refusing connections — takes **16.2 s**.
+its liveness route (then `GET /login`, now `GET /healthz` → 204), so that
+"Restore finished" is not printed while the web UI is still refusing
+connections — takes **16.2 s**.
 
 **What it proved.** Every one of these was checked after the restore:
 
@@ -770,24 +918,33 @@ Found, not invented. Verified against the running stack on 2026-09-05:
 | Stalwart | `GET :8080/healthz/ready` | `200` |
 | Postgres | `pg_isready -U mailosh` | same probe as the compose healthcheck |
 | Schema | `select version_num from alembic_version` | proves Postgres is not just up but holds a migrated Mailosh database |
-| Mailosh app | `GET :8000/login` → `200` | **the app has no health endpoint of its own** |
-| Backups | age of the newest `backups/mailosh-*` | warns past `MAILOSH_BACKUP_MAX_AGE_DAYS` (default 7) |
+| Mailosh app | `GET :8000/healthz` → `204` | the app's own liveness route (`mailosh/web/app.py`). Verified 2026-09-06: `ok mailosh GET /healthz 204` |
+| Caddy | container status | only under `docker-compose.prod.yml`; the dev stack reports "not in project" as ok |
+| TLS | `openssl s_client` on 443 (via the mailosh container, SNI `MAILOSH_SITE_ADDRESS`) and 465 / 993 / 587-STARTTLS (Stalwart's loopback, SNI = server hostname) | warn < 21 days, FAIL < 7; issuer always named — `rcgen self signed cert` and Let's Encrypt **STAGING** are warnings even when "valid 89d" |
+| ACME | `x:Task` over the admin JMAP API | an `AcmeRenewal` task still `Pending` > 15 min past `due` is stuck (see "Mail-port TLS", item 3); warn with the remediation |
+| Disk | `df -P` of `/var/lib/stalwart` inside the container, Docker's data root when it exists on this host, and the backups directory | warn < 20 % free, FAIL < 10 % |
+| Backups | age of the newest `backups/mailosh-*` (directory or `.tar.age`) | warns past `MAILOSH_BACKUP_MAX_AGE_DAYS` (default 7) |
 
-**The app has no health endpoint, and that is worth stating plainly.**
-`/healthz`, `/health`, `/healthz/live` and `/healthz/ready` all return **404**
-from the Mailosh app (checked directly against the running app at commit
-`35de4dd`; the routers in `mailosh/web/` declare no such route). `GET /login` is
-the cheapest route that renders without a session, so it is the honest liveness
-probe until the app grows a real one.
+An earlier version of this section said the app had no health endpoint and
+probed `GET /login`. **That is out of date**: `GET /healthz` → `204` exists, is
+what `healthcheck.sh` and `restore.sh` probe, and is what
+`docker-compose.prod.yml`'s `mailosh` healthcheck uses. It is liveness only, on
+purpose — no session, no template, no database query — because Docker's answer
+to an unhealthy container is to restart it, and restarting the app neither
+fixes a failed Postgres nor preserves the SSE streams it was serving. So
+**`/healthz` answers 204 with Stalwart completely stopped**; the mail server
+and the database are probed separately, and the `schema` row is what proves
+Postgres holds a migrated database.
 
-Know what that probe does and does not tell you: **`/login` returned 200 with
-Stalwart completely stopped.** It proves the process is alive and serving HTTP.
-It does not prove the mail server is reachable, which is why `healthcheck.sh`
-probes Stalwart separately.
+The base `docker-compose.yml` defines no healthcheck for `mailosh`, so on the
+dev stack `docker compose ps` shows it as plain `Up`; the production overlay
+adds one. Do not read "Up" as "working".
 
-Also: `docker-compose.yml` defines **no healthcheck for the `mailosh` service**,
-so `docker compose ps` shows it as plain `Up` and never `healthy`/`unhealthy`.
-Do not read "Up" as "working".
+The TLS and ACME rows read Stalwart's admin API from **inside the mailosh
+container**, whose environment already holds `MAILOSH_STALWART_ADMIN_SECRET`;
+the probe program travels on stdin, reads the secret from `os.environ`, and
+prints only `HOSTNAME`/`ACME`/`ERR` records. The credential never appears in
+an argument, in `ps`, or in the output.
 
 ### Two Docker habits worth having
 
@@ -807,11 +964,31 @@ Verified output with Stalwart stopped:
 UNHEALTHY.
 ```
 
+### Orphaned Stalwart API keys
+
+Every webmail session holds a per-user Stalwart API key, destroyed when the
+user's last session ends (logout, "sign out everywhere", or the reaper). If
+that destroy fails — Stalwart restarting at the wrong moment is enough — the
+key is recorded in the `orphan_api_key` table (`migrations/versions/0003_orphan_api_key.py`)
+and retried by the app's maintenance loop every 300 s until it succeeds, or
+until 1000 attempts (about four days), after which it is dropped with an
+error-level log line naming the key so it can be revoked by hand in Stalwart's
+admin UI. Watch for:
+
+```
+WARNING mailosh.web.orphan_keys stalwart api key <id> for <user> could not be destroyed; queued for retry
+INFO    mailosh.web.orphan_keys destroyed orphaned stalwart api key <id> for <user> on retry <n>
+ERROR   mailosh.web.orphan_keys giving up on stalwart api key <id> for <user> after 1000 attempts ...
+```
+
+`select * from orphan_api_key` in Postgres shows what is pending.
+
 ### What is not monitored
 
-No metrics, no alerting, no history, no disk-space watch, no certificate-expiry
-watch, no queue-depth or delivery-failure monitoring. `healthcheck.sh` answers
-"is it up right now". Anything longitudinal is Phase 2's health panel.
+No metrics, no alerting, no history, no queue-depth or delivery-failure
+monitoring. `healthcheck.sh` answers "is it up right now" — disk space and
+certificate expiry are point-in-time checks, not trends. Anything longitudinal
+is Phase 2's health panel.
 
 ---
 
@@ -993,9 +1170,10 @@ Stated plainly, because the gaps matter more than the coverage:
   messages and a 7.9 MB database. The approach is size-independent; the
   *numbers* are not. A large mailbox means a longer stop window, and nothing here
   tells you how long.
-- **Off-host copies and encryption.** Not implemented, not wrapped, not tested.
-  The scripts write plaintext gzip to a local path. Getting it off the machine
-  and protecting it there is yours.
+- **Off-host copies and encryption** are optional flags (`--encrypt-to`,
+  `--rclone-remote`, §2), exercised against the dev stack with a local rclone
+  remote. They were not exercised against a real object store, and nothing
+  manages remote retention for you.
 - **Stalwart version upgrades.** Never exercised. Only `v0.16.20` was run.
 - **`stalwart --export` / `--import`.** Confirmed to exist and confirmed to need
   the server stopped. Never used for a real backup or restore here.
@@ -1004,9 +1182,14 @@ Stated plainly, because the gaps matter more than the coverage:
   backups. The granularity is whatever your cron interval is.
 - **Postgres physical backups.** `pg_basebackup`, streaming replicas and PITR are
   all reasonable for a larger deployment and none of them are set up here.
-- **A real health endpoint.** The app has none; `/login` stands in.
-- **Monitoring over time.** No metrics, alerting, disk-space or certificate
-  watch.
+- **Monitoring over time.** No metrics, alerting or history. Disk space,
+  certificate expiry and a stuck ACME renewal are point-in-time checks in
+  `healthcheck.sh`, not trends.
+- **Relay mode against a real relay.** Objects, read-back, idempotence and the
+  reload are verified; an actual TLS session and authentication against SES or
+  SMTP2GO is not (§1, "Relay mode").
+- **The systemd timer install.** `backup-timer.sh --print` renders the units and
+  was run; `enable --now` was not (this pass ran on macOS).
 - **Restore onto a genuinely different host.** The drill restored into a separate
   compose project on the same machine. Different architecture, different Docker
   version, different filesystem — untested, though nothing in the archive format

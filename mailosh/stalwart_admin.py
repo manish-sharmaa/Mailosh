@@ -517,6 +517,128 @@ class StalwartAdmin:
             value=f"v=DKIM1; k={k}; h=sha256; p={chosen['publicKey']}",
         )
 
+    async def get_dkim_records(self, domain: str) -> list[DkimRecord]:
+        """Every DKIM TXT record to publish for `domain`, preferred
+        algorithm first (`_DKIM_PREFERENCE`: RSA, then Ed25519).
+
+        `get_dkim_record` (singular) returns only the preferred one, and
+        that is what `mailosh setup` used to print -- but Stalwart's
+        `dkimManagement: Automatic` generates BOTH keys per domain and signs
+        every outgoing message with both. A receiver that verifies the
+        Ed25519 signature against a zone holding only the RSA record gets a
+        failed signature next to a passing one; some treat that as neutral,
+        some as a fail, and none as better than two passes. Found on the
+        first real deployment (docs/operations.md, "Mail-port TLS", item 1)
+        when Stalwart's own DNS publishing wrote the Ed25519 record the CLI
+        had never printed.
+
+        Same poll as `get_dkim_record` (keys are generated asynchronously
+        after `create_domain`), waiting for the preferred algorithm to
+        appear so a call immediately after creation still sees both.
+        Raises `JmapError` if the domain does not exist or no key appears
+        within the budget; returns whatever subset did appear otherwise.
+        """
+        domain_id = await self._find_domain_id(domain)
+        if domain_id is None:
+            raise JmapError(f"get_dkim_records: domain {domain!r} does not exist")
+        account_id = await self._admin_account_id()
+        by_algo: dict[str, dict] = {}
+        for attempt in range(_DKIM_POLL_ATTEMPTS):
+            out = await self._call(
+                [
+                    ("x:DkimSignature/query", {"accountId": account_id}, "q0"),
+                    (
+                        "x:DkimSignature/get",
+                        {
+                            "accountId": account_id,
+                            "#ids": {
+                                "resultOf": "q0",
+                                "name": "x:DkimSignature/query",
+                                "path": "/ids",
+                            },
+                            "properties": ["selector", "domainId", "publicKey", "@type"],
+                        },
+                        "g0",
+                    ),
+                ]
+            )
+            by_algo = {
+                item["@type"]: item
+                for item in (out["g0"].get("list") or [])
+                if item.get("domainId") == domain_id and item.get("@type") in _DKIM_ALGO_K
+            }
+            if all(algo in by_algo for algo in _DKIM_PREFERENCE):
+                break
+            if attempt < _DKIM_POLL_ATTEMPTS - 1:
+                await asyncio.sleep(_DKIM_POLL_DELAY_SECONDS)
+        if not by_algo:
+            raise JmapError(
+                f"get_dkim_records: no DKIM signature found for domain {domain!r} "
+                f"after {_DKIM_POLL_ATTEMPTS} attempts "
+                f"(~{_DKIM_POLL_ATTEMPTS * _DKIM_POLL_DELAY_SECONDS:.1f}s)"
+            )
+        ordered = [by_algo[a] for a in _DKIM_PREFERENCE if a in by_algo]
+        ordered += [v for k, v in by_algo.items() if k not in _DKIM_PREFERENCE]
+        return [
+            DkimRecord(
+                host=f"{item['selector']}._domainkey.{domain}",
+                value=f"v=DKIM1; k={_DKIM_ALGO_K[item['@type']]}; h=sha256; p={item['publicKey']}",
+            )
+            for item in ordered
+        ]
+
+    async def outbound_relay_host(self) -> str | None:
+        """`"host:port"` of the smarthost every remote delivery goes through,
+        or `None` for direct MX delivery (Stalwart's default).
+
+        Reads the `x:MtaOutboundStrategy` singleton's `route` expression --
+        its `else` branch is the route every non-local recipient takes --
+        and resolves that route name against `x:MtaRoute`; only a route of
+        `@type: Relay` counts. This is exactly the state
+        `scripts/stalwart-bootstrap.sh --relay-host` writes and reads back
+        (docs/operations.md, "Relay mode"), so the CLI's DNS block can print
+        the SPF record that is actually right for this server instead of
+        guessing. Any shape it does not recognise (no singleton, an
+        expression with no `else`, a route name that matches nothing)
+        resolves to `None` rather than raising: "print the direct-send SPF
+        with the relay caveat" is the safe default, and a setup wizard must
+        not fail over a DNS hint.
+        """
+        account_id = await self._admin_account_id()
+        out = await self._call(
+            [
+                (
+                    "x:MtaOutboundStrategy/get",
+                    {"accountId": account_id, "ids": ["singleton"], "properties": ["route"]},
+                    "s0",
+                ),
+                ("x:MtaRoute/query", {"accountId": account_id}, "q0"),
+                (
+                    "x:MtaRoute/get",
+                    {
+                        "accountId": account_id,
+                        "#ids": {"resultOf": "q0", "name": "x:MtaRoute/query", "path": "/ids"},
+                        "properties": ["name", "@type", "address", "port"],
+                    },
+                    "g0",
+                ),
+            ]
+        )
+        strategies = out.get("s0", {}).get("list") or []
+        if not strategies:
+            return None
+        # Expression literals are single-quoted: `'relay'` -> relay.
+        route_name = str((strategies[0].get("route") or {}).get("else") or "").strip().strip("'")
+        if not route_name:
+            return None
+        for route in out.get("g0", {}).get("list") or []:
+            if route.get("name") == route_name and route.get("@type") == "Relay":
+                address = route.get("address")
+                if not address:
+                    return None
+                return f"{address}:{route.get('port') or 25}"
+        return None
+
     async def create_api_key(self, username: str, name: str) -> ApiKey:
         """Mint a per-user Stalwart `x:ApiKey` for `username`, scoped to
         their own JMAP account (Task 4, SPK-3), and return its id + secret.

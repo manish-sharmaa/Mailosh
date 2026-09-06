@@ -309,6 +309,40 @@ class LoginAttempt(Base):
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class OrphanApiKey(Base):
+    """A Stalwart API key whose `x:ApiKey/set destroy` failed and is owed a
+    retry (`mailosh.web.orphan_keys`, added by
+    `migrations/versions/0004_orphan_api_key.py`).
+
+    The three places that destroy a user's key -- logout of the last
+    session, "sign out everywhere", and the reaper -- used to log a failed
+    destroy and move on, leaving a live Bearer credential on the mail
+    server that nothing would ever revoke (Stalwart unreachable for a
+    minute during a restart was enough). Each now records the key here
+    instead, and `create_app`'s maintenance loop retries the destroy every
+    sweep until it succeeds (row deleted) or `attempts` passes the cap
+    (row deleted, logged at error level so it is at least visible).
+
+    `stalwart_username` is stored rather than a foreign key to `app_user`:
+    the key belongs to the *Stalwart* account, and the destroy call needs
+    that name even if the app-side user row were gone by then.
+    """
+
+    __tablename__ = "orphan_api_key"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stalwart_username: Mapped[str] = mapped_column(String(255), nullable=False)
+    api_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    first_failed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    last_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class AuditLog(Base):
     """An append-only security/activity trail row (login success/failure,
     logout, etc. — design spec §9) — `mailosh.db.repo.audit` appends these;

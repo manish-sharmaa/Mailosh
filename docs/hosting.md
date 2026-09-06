@@ -34,6 +34,8 @@ Facts verified 2026-08-31 from official pages; items marked *unverified* could n
 | Mailgun | $15/mo per 10k | 100/day | Overage $1.80/1k |
 | Brevo | *unverified* (commonly cited 300/day free) | — | Marketing-suite oriented |
 
+**Configuring it:** `scripts/stalwart-bootstrap.sh --domain example.com --relay-host HOST:587 --relay-user USER --relay-password-file FILE` routes every non-local delivery through the relay with TLS required (465 = implicit TLS, otherwise STARTTLS), idempotently; `--verify-only` reports the current mode. Then publish the relay's SPF `include:` (e.g. `include:amazonses.com`, `include:spf.smtp2go.com`) instead of `v=spf1 mx` — `mailosh setup` prints both. Details and what was verified: `docs/operations.md`, "Relay mode".
+
 Benchmark for honesty in our docs: **Migadu Micro $19/yr** hosts mailboxes with zero ops (20 outbound/day cap) — self-hosting is about ownership, not saving money at tiny scale.
 
 ## Recommended paths (wizard defaults)

@@ -498,14 +498,23 @@ def test_migration_0003_creates_every_model_column():
     assert "def downgrade" in source and 'op.drop_table("outbound_submission")' in source
 
 
-def test_migration_0003_is_the_only_head():
-    """Every revision file names the previous one; exactly one is not
-    anyone's `down_revision`, and it is ours."""
+def test_the_migration_chain_has_exactly_one_head():
+    """Every revision file names the previous one, and exactly one revision
+    is nobody's `down_revision`. Which one that is changes as migrations
+    land -- what must never change is that there is only ever *one*, because
+    two heads make `alembic upgrade head` ambiguous and the container's
+    start-up migration fails.
+
+    `0003_outbound` was the head when it was written; `0004_orphan_api_key`
+    chained onto it during the merge that brought both branches together."""
     versions = pathlib.Path("migrations/versions")
     modules = [_load_migration(p.stem) for p in sorted(versions.glob("0*.py"))]
     revisions = {m.revision for m in modules}
     downs = {m.down_revision for m in modules}
-    assert revisions - downs == {"0003_outbound"}
+    heads = revisions - downs
+    assert len(heads) == 1, heads
+    # Every revision but the first must name a real predecessor.
+    assert downs - {None} <= revisions
 
 
 @pytest.mark.parametrize("state", list(OutboundState))
