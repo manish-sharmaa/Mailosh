@@ -363,20 +363,24 @@ done
 # soon as the container is running, but docker/entrypoint.sh still has to run
 # `alembic upgrade head` before uvicorn listens. Without this wait, "Restore
 # finished" prints while the web UI is still refusing connections, which reads
-# exactly like a failed restore. Same probe healthcheck.sh uses -- the app has
-# no health endpoint of its own, so /login stands in.
+# exactly like a failed restore. Same probe healthcheck.sh uses: the app's own
+# liveness route, GET /healthz -> 204 (no session, no template, no database
+# query -- it replaced a GET /login probe that rendered a whole page to learn
+# one bit).
 APP_STATE=unreachable
 if printf '%s\n' "$SERVICES" | grep -qx mailosh; then
 	for _ in $(seq 1 30); do
 		code="$(docker compose exec -T mailosh python3 -c '
 import urllib.error, urllib.request
 try:
-    with urllib.request.urlopen("http://localhost:8000/login", timeout=5) as r:
+    with urllib.request.urlopen("http://localhost:8000/healthz", timeout=5) as r:
         print(r.status)
+except urllib.error.HTTPError as e:
+    print(e.code)
 except Exception:
     print(0)
 ' 2>/dev/null | tr -d '\r')"
-		if [ "$code" = "200" ]; then APP_STATE="serving (GET /login 200)"; break; fi
+		if [ "$code" = "204" ]; then APP_STATE="serving (GET /healthz 204)"; break; fi
 		sleep 2
 	done
 	log "mailosh: $APP_STATE"

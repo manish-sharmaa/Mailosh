@@ -865,8 +865,9 @@ immediately afterwards, mail intact, `git status` clean.
 **Restore**: into `mailosh-drill`, through the interactive prompt (a wrong answer
 was tried first and rejected). **13.9 s** wall. The same restore re-run against
 the final version of the script — which additionally waits until the app answers
-`GET /login`, so that "Restore finished" is not printed while the web UI is still
-refusing connections — takes **16.2 s**.
+its liveness route (then `GET /login`, now `GET /healthz` → 204), so that
+"Restore finished" is not printed while the web UI is still refusing
+connections — takes **16.2 s**.
 
 **What it proved.** Every one of these was checked after the restore:
 
@@ -917,24 +918,33 @@ Found, not invented. Verified against the running stack on 2026-09-05:
 | Stalwart | `GET :8080/healthz/ready` | `200` |
 | Postgres | `pg_isready -U mailosh` | same probe as the compose healthcheck |
 | Schema | `select version_num from alembic_version` | proves Postgres is not just up but holds a migrated Mailosh database |
-| Mailosh app | `GET :8000/login` → `200` | **the app has no health endpoint of its own** |
-| Backups | age of the newest `backups/mailosh-*` | warns past `MAILOSH_BACKUP_MAX_AGE_DAYS` (default 7) |
+| Mailosh app | `GET :8000/healthz` → `204` | the app's own liveness route (`mailosh/web/app.py`). Verified 2026-09-06: `ok mailosh GET /healthz 204` |
+| Caddy | container status | only under `docker-compose.prod.yml`; the dev stack reports "not in project" as ok |
+| TLS | `openssl s_client` on 443 (via the mailosh container, SNI `MAILOSH_SITE_ADDRESS`) and 465 / 993 / 587-STARTTLS (Stalwart's loopback, SNI = server hostname) | warn < 21 days, FAIL < 7; issuer always named — `rcgen self signed cert` and Let's Encrypt **STAGING** are warnings even when "valid 89d" |
+| ACME | `x:Task` over the admin JMAP API | an `AcmeRenewal` task still `Pending` > 15 min past `due` is stuck (see "Mail-port TLS", item 3); warn with the remediation |
+| Disk | `df -P` of `/var/lib/stalwart` inside the container, Docker's data root when it exists on this host, and the backups directory | warn < 20 % free, FAIL < 10 % |
+| Backups | age of the newest `backups/mailosh-*` (directory or `.tar.age`) | warns past `MAILOSH_BACKUP_MAX_AGE_DAYS` (default 7) |
 
-**The app has no health endpoint, and that is worth stating plainly.**
-`/healthz`, `/health`, `/healthz/live` and `/healthz/ready` all return **404**
-from the Mailosh app (checked directly against the running app at commit
-`35de4dd`; the routers in `mailosh/web/` declare no such route). `GET /login` is
-the cheapest route that renders without a session, so it is the honest liveness
-probe until the app grows a real one.
+An earlier version of this section said the app had no health endpoint and
+probed `GET /login`. **That is out of date**: `GET /healthz` → `204` exists, is
+what `healthcheck.sh` and `restore.sh` probe, and is what
+`docker-compose.prod.yml`'s `mailosh` healthcheck uses. It is liveness only, on
+purpose — no session, no template, no database query — because Docker's answer
+to an unhealthy container is to restart it, and restarting the app neither
+fixes a failed Postgres nor preserves the SSE streams it was serving. So
+**`/healthz` answers 204 with Stalwart completely stopped**; the mail server
+and the database are probed separately, and the `schema` row is what proves
+Postgres holds a migrated database.
 
-Know what that probe does and does not tell you: **`/login` returned 200 with
-Stalwart completely stopped.** It proves the process is alive and serving HTTP.
-It does not prove the mail server is reachable, which is why `healthcheck.sh`
-probes Stalwart separately.
+The base `docker-compose.yml` defines no healthcheck for `mailosh`, so on the
+dev stack `docker compose ps` shows it as plain `Up`; the production overlay
+adds one. Do not read "Up" as "working".
 
-Also: `docker-compose.yml` defines **no healthcheck for the `mailosh` service**,
-so `docker compose ps` shows it as plain `Up` and never `healthy`/`unhealthy`.
-Do not read "Up" as "working".
+The TLS and ACME rows read Stalwart's admin API from **inside the mailosh
+container**, whose environment already holds `MAILOSH_STALWART_ADMIN_SECRET`;
+the probe program travels on stdin, reads the secret from `os.environ`, and
+prints only `HOSTNAME`/`ACME`/`ERR` records. The credential never appears in
+an argument, in `ps`, or in the output.
 
 ### Two Docker habits worth having
 
@@ -954,11 +964,31 @@ Verified output with Stalwart stopped:
 UNHEALTHY.
 ```
 
+### Orphaned Stalwart API keys
+
+Every webmail session holds a per-user Stalwart API key, destroyed when the
+user's last session ends (logout, "sign out everywhere", or the reaper). If
+that destroy fails — Stalwart restarting at the wrong moment is enough — the
+key is recorded in the `orphan_api_key` table (`migrations/versions/0003_orphan_api_key.py`)
+and retried by the app's maintenance loop every 300 s until it succeeds, or
+until 1000 attempts (about four days), after which it is dropped with an
+error-level log line naming the key so it can be revoked by hand in Stalwart's
+admin UI. Watch for:
+
+```
+WARNING mailosh.web.orphan_keys stalwart api key <id> for <user> could not be destroyed; queued for retry
+INFO    mailosh.web.orphan_keys destroyed orphaned stalwart api key <id> for <user> on retry <n>
+ERROR   mailosh.web.orphan_keys giving up on stalwart api key <id> for <user> after 1000 attempts ...
+```
+
+`select * from orphan_api_key` in Postgres shows what is pending.
+
 ### What is not monitored
 
-No metrics, no alerting, no history, no disk-space watch, no certificate-expiry
-watch, no queue-depth or delivery-failure monitoring. `healthcheck.sh` answers
-"is it up right now". Anything longitudinal is Phase 2's health panel.
+No metrics, no alerting, no history, no queue-depth or delivery-failure
+monitoring. `healthcheck.sh` answers "is it up right now" — disk space and
+certificate expiry are point-in-time checks, not trends. Anything longitudinal
+is Phase 2's health panel.
 
 ---
 
@@ -1152,9 +1182,14 @@ Stated plainly, because the gaps matter more than the coverage:
   backups. The granularity is whatever your cron interval is.
 - **Postgres physical backups.** `pg_basebackup`, streaming replicas and PITR are
   all reasonable for a larger deployment and none of them are set up here.
-- **A real health endpoint.** The app has none; `/login` stands in.
-- **Monitoring over time.** No metrics, alerting, disk-space or certificate
-  watch.
+- **Monitoring over time.** No metrics, alerting or history. Disk space,
+  certificate expiry and a stuck ACME renewal are point-in-time checks in
+  `healthcheck.sh`, not trends.
+- **Relay mode against a real relay.** Objects, read-back, idempotence and the
+  reload are verified; an actual TLS session and authentication against SES or
+  SMTP2GO is not (§1, "Relay mode").
+- **The systemd timer install.** `backup-timer.sh --print` renders the units and
+  was run; `enable --now` was not (this pass ran on macOS).
 - **Restore onto a genuinely different host.** The drill restored into a separate
   compose project on the same machine. Different architecture, different Docker
   version, different filesystem — untested, though nothing in the archive format
