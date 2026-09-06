@@ -267,3 +267,72 @@ def test_settings_js_is_on_the_shell_and_imports_nothing():
     assert "font_size" in source and "dataset.fontSize" in source
     css = (REPO / "styles/settings.css").read_text()
     assert "[data-font-size=lg]" in css and "[data-font-size=sm]" in css
+
+
+# ---------------------------------------------------------------------------
+# Reading
+# ---------------------------------------------------------------------------
+
+
+def test_reading_renders_the_stored_values_checked(app):
+    client = _login(app)
+    body = client.get("/settings/reading").text
+    assert _checked(body, "conversation_view") == "true"
+    assert _checked(body, "mark_read_delay") == "0"
+    assert _checked(body, "auto_advance") == "older"
+    assert _checked(body, "remote_images") == "ask"
+    assert _checked(body, "dark_restyle") == "true"
+
+
+def test_reading_save_persists_at_the_columns_own_types(app, sqlite_url):
+    client = _login(app)
+    r = _post(
+        client,
+        "/settings/reading",
+        {
+            "conversation_view": "false",
+            "mark_read_delay": "3",
+            "auto_advance": "list",
+            "remote_images": "contacts",
+            "dark_restyle": "false",
+        },
+    )
+    assert r.status_code == 204, r.text
+    trigger = json.loads(r.headers["HX-Trigger"])
+    assert trigger["om:prefs"] == {
+        "conversation_view": False,
+        "mark_read_delay": 3,
+        "auto_advance": "list",
+        "remote_images": "contacts",
+        "dark_restyle": False,
+    }
+    body = client.get("/settings/reading").text
+    assert _checked(body, "conversation_view") == "false"
+    assert _checked(body, "mark_read_delay") == "3"
+    assert _checked(body, "dark_restyle") == "false"
+    # And the popover, on the same shell, was rendered from the same row.
+    quick = body[body.index('id="quick-settings"') :]
+    assert re.search(r'name="mark_read_delay" value="3"[^>]*\s+checked', quick)
+
+
+@pytest.mark.parametrize(
+    "field,bad",
+    [
+        ("conversation_view", "yes"),
+        ("mark_read_delay", "7"),
+        ("auto_advance", "sideways"),
+        ("remote_images", "never"),
+        ("dark_restyle", "1"),
+    ],
+)
+def test_reading_refuses_a_value_outside_the_set(app, field, bad):
+    client = _login(app)
+    data = {
+        "conversation_view": "true",
+        "mark_read_delay": "0",
+        "auto_advance": "older",
+        "remote_images": "ask",
+        "dark_restyle": "true",
+        field: bad,
+    }
+    assert _post(client, "/settings/reading", data).status_code == 422

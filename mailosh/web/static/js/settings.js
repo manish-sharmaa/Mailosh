@@ -39,7 +39,28 @@ document.body.addEventListener("om:prefs", (event) => {
   const changed = event.detail ?? null;
   if (changed === null || typeof changed !== "object") return;
   if ("font_size" in changed) applyFontSize(changed.font_size);
+  syncQuickSettings(changed);
 });
+
+/** Re-check the quick-settings popover's *reading* radios from a save
+ *  made on the full page. The popover is rendered once with the values
+ *  the shell loaded with; `app.js` re-syncs the three `data-pref` controls
+ *  it owns and leaves the rest, so a mark-as-read delay changed on
+ *  `/settings/reading` would otherwise still show the old choice behind
+ *  the gear until the next full load. Values are compared as strings —
+ *  `mark_read_delay` arrives as a number, a boolean as `true`/`false` —
+ *  which is exactly how the radios spell them. */
+function syncQuickSettings(changed) {
+  const panel = document.getElementById("quick-settings");
+  if (panel === null) return;
+  for (const name of Object.keys(changed)) {
+    const value = String(changed[name]);
+    for (const radio of panel.querySelectorAll('input[type="radio"][name="' + name + '"]')) {
+      if (radio.dataset.pref !== undefined) continue;
+      radio.checked = radio.value === value;
+    }
+  }
+}
 
 // A per-row "Sign out" on the Security page and "Sign out everywhere" both
 // ask first. `hx-confirm` would do this, but it evaluates nothing and is

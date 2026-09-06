@@ -47,7 +47,16 @@ from mailosh.db.models import AppUser, SessionRow, UiPref
 from mailosh.jmap.client import JmapClient
 from mailosh.services.mailbox_tree import NavModel, build_nav
 from mailosh.web import deps
-from mailosh.web.prefs import Density, FontSize, ReadingPane, Theme
+from mailosh.web.prefs import (
+    AutoAdvance,
+    Density,
+    Flag,
+    FontSize,
+    MarkReadDelay,
+    ReadingPane,
+    RemoteImages,
+    Theme,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(deps.csrf_protect)])
 
@@ -235,6 +244,41 @@ async def save_appearance(
         "density": density,
         "reading_pane": reading_pane,
         "font_size": font_size,
+    }
+    await repo.set_prefs(db, user.id, **changed)
+    return _saved(prefs=changed)
+
+
+# ---------------------------------------------------------------------------
+# Reading
+# ---------------------------------------------------------------------------
+
+
+@router.post("/reading")
+async def save_reading(
+    user: UserDep,
+    db: DbDep,
+    conversation_view: Annotated[Flag, Form()],
+    mark_read_delay: Annotated[MarkReadDelay, Form()],
+    auto_advance: Annotated[AutoAdvance, Form()],
+    remote_images: Annotated[RemoteImages, Form()],
+    dark_restyle: Annotated[Flag, Form()],
+) -> Response:
+    """Persist the five Reading fields.
+
+    Each lands at its column's own type — the two flags as `bool`, the
+    delay as `int` — for the reason `mailosh.web.prefs.update_prefs` gives:
+    `repo.set_prefs` sets attributes straight onto the row, and a string in
+    an integer column reads back as a string on sqlite. `om:prefs` carries
+    them too; `app.js` ignores names it does not own, and
+    `static/js/settings.js` uses them to re-check the popover's radios.
+    """
+    changed: dict[str, object] = {
+        "conversation_view": conversation_view == "true",
+        "mark_read_delay": int(mark_read_delay),
+        "auto_advance": auto_advance,
+        "remote_images": remote_images,
+        "dark_restyle": dark_restyle == "true",
     }
     await repo.set_prefs(db, user.id, **changed)
     return _saved(prefs=changed)

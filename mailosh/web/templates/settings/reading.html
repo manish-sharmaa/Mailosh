@@ -1,0 +1,41 @@
+{# Reading (spec §10): conversation view, mark-as-read delay, auto-advance,
+   remote images, dark mail. Same shape as appearance.html; the value sets
+   are `mailosh/web/prefs.py`'s, and the copy under each group is the
+   popover's own explanation given room to breathe.
+
+   The two booleans are radio pairs rather than switches for the reason
+   `shell/quick_settings.html` gives: a checkbox posts only while checked,
+   so a form with an unchecked switch would post nothing for it and a
+   whole-form save could never turn it off. #}
+{% from "settings/_controls.html" import segmented, actions %}
+<form class="settings-form" method="post" action="/settings/reading"
+      hx-post="/settings/reading" hx-swap="none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  {{ segmented("conversation_view", "Conversation view",
+               [("true", "On"), ("false", "Off")],
+               "true" if prefs.conversation_view else "false",
+               help="Group replies into one conversation. The list is always grouped in this version; the choice is kept for when it can be turned off.") }}
+
+  {{ segmented("mark_read_delay", "Mark as read",
+               [("0", "Immediately"), ("1", "After 1s"), ("3", "After 3s"), ("-1", "Never")],
+               prefs.mark_read_delay,
+               help="When an opened conversation stops counting as unread.") }}
+
+  {{ segmented("auto_advance", "After archiving or deleting",
+               [("older", "Show older"), ("newer", "Show newer"), ("list", "Back to list")],
+               prefs.auto_advance,
+               help="Where you land after acting on the conversation you are reading.") }}
+
+  {{ segmented("remote_images", "Remote images",
+               [("ask", "Ask first"), ("contacts", "From contacts"), ("always", "Always load")],
+               prefs.remote_images,
+               help="Images fetched from the sender's server can tell them when you read a message. “From contacts” loads them only for people you have written to.") }}
+
+  {{ segmented("dark_restyle", "Dark mail",
+               [("true", "On"), ("false", "Off")],
+               "true" if prefs.dark_restyle else "false",
+               help="Restyle light messages to match the dark theme. Off shows every message as the sender styled it.") }}
+
+  {{ actions() }}
+</form>
