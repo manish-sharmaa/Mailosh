@@ -97,6 +97,7 @@ from mailosh.web import (
     frames,
     labels,
     mail,
+    orphan_keys,
     palette,
     prefs,
     search,
@@ -301,6 +302,7 @@ async def _maintenance_loop(app: FastAPI) -> None:
                 summary = await auth.reap_expired_sessions(
                     db, app.state.admin, app.state.settings, app.state.pool
                 )
+                await orphan_keys.retry(db, app.state.admin)
             logger.info(
                 "session reap: %d session(s) reaped, %d login_attempt row(s) pruned",
                 summary.sessions_reaped,
