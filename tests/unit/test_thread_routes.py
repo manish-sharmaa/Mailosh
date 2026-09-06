@@ -282,25 +282,53 @@ async def test_a_quoted_run_is_folded_behind_the_pill(authed, fake):
 # ---------------------------------------------------------------------------
 
 
-async def test_menu_offers_only_the_actions_this_task_implements(authed, fake):
+async def test_menu_offers_only_the_actions_that_have_routes_behind_them(authed, fake):
     """Scoped to the per-message menu, not the whole page.
 
     It used to assert "Reply all"/"Forward" appeared nowhere in the
     response, which held only while nothing anywhere could reply. Phase 1C
-    put both in the conversation's action bar, and a whole-page assertion
-    then failed for a change it was never about — the menu is still exactly
-    as it was. Narrowed to `details.msg-menu` so it keeps testing the menu's
-    contents and stops testing the rest of the page.
+    put both in the conversation's action bar; the menu now carries its own
+    per-message three as well. Narrowed to `details.msg-menu` so it tests
+    the menu's contents and not the rest of the page. Print is still absent
+    here — it arrives with the route behind it (spec §3).
     """
     fake.thread("T1", ["E1"])
     html = (await authed.get("/t/T1")).text
     menus = re.findall(r'<details class="msg-menu".*?</details>', html, re.S)
     assert len(menus) == 1
     menu = menus[0]
-    for present in ("Mark unread from here", "View source", "Delete message"):
-        assert menu.count(present) == 1
-    for absent in ("Reply all", "Forward", "Print"):
-        assert absent not in menu
+    labels = [
+        label.strip()
+        for label in re.findall(r'class="menu-item[^"]*"[^>]*>.*?</svg>\s*([^<]+)', menu, re.S)
+    ]
+    assert labels == [
+        "Reply",
+        "Reply all",
+        "Forward",
+        "Mark unread from here",
+        "View source",
+        "Delete message",
+    ]
+
+
+async def test_the_menus_reply_items_name_their_own_message(authed, fake):
+    """The conversation bar replies to whichever card holds focus; a menu
+    item has to reply to the card it is *in*, and a pointer click does not
+    focus a button on every platform. So each item names its message
+    outright, in the same `data-compose-reply` modes the bar and the
+    `r`/`a`/`f` keys use, with no `hx-*` of its own — the dock limit and
+    the inline-card slot stay `compose.js`'s.
+    """
+    fake.thread("T1", ["E1", "E2"])
+    html = (await authed.get("/t/T1")).text
+    menus = re.findall(r'<details class="msg-menu".*?</details>', html, re.S)
+    assert len(menus) == 2
+    for menu, email_id in zip(menus, ["E1", "E2"], strict=True):
+        items = re.findall(r"<button[^>]*data-compose-reply=\"([^\"]+)\"[^>]*>", menu)
+        assert items == ["reply", "reply_all", "forward"], menu
+        for tag in re.findall(r"<button[^>]*data-compose-reply[^>]*>", menu):
+            assert f'data-compose-email="{email_id}"' in tag
+            assert "hx-" not in tag
 
 
 async def test_the_conversation_bar_offers_reply_reply_all_and_forward(authed, fake):

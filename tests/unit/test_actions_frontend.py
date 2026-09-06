@@ -757,6 +757,40 @@ def test_a_control_acts_on_the_nearest_thing_that_names_its_own_messages():
     assert "querySelectorAll" not in body
 
 
+def test_a_menu_reply_is_scoped_to_its_card_before_compose_reads_the_focus():
+    """`compose.js` replies to the card holding focus. A menu item names
+    its message in `data-compose-email` instead, and this listener is what
+    honours the name: it focuses that card's summary and closes the menu.
+    Capture phase and registered from this module — whose tag precedes
+    `compose-boot.js` and `compose.js` in the layout — so it runs before
+    the loader's own capture listener stops propagation, and before
+    compose's bubble handler can read `document.activeElement`.
+    """
+    source = _actions_js()
+    at = source.index('closest?.("[data-compose-email]")')
+    start = source.rindex("addEventListener(", 0, at)
+    assert "document.body" in source[start - 40 : start]
+    _, closes, listener = _block_at(source, start)
+    assert 'getElementById("msg-" + control.dataset.composeEmail)' in listener
+    assert 'querySelector("summary")' in listener
+    assert "focus(" in listener
+    assert 'removeAttribute("open")' in listener
+    # The closing `, true)` is what makes it capture.
+    assert re.match(r"\s*,\s*true,?\s*\)", source[closes + 1 :]), source[closes : closes + 20]
+
+    # Script order is the other half: this module before both compose ones.
+    order = re.findall(
+        r"static\('((?:js|vendor)/[\w.-]+)'\)", _without_comments(APP_LAYOUT.read_text())
+    )
+    assert order.index("js/actions.js") < order.index("js/compose-boot.js")
+
+    # And the hook is only ever paired with compose's own reply hook.
+    for template in TEMPLATES:
+        markup = _without_comments(template.read_text())
+        for tag in re.findall(r"<[a-z]+\b[^>]*data-compose-email[^>]*>", markup):
+            assert "data-compose-reply=" in tag, (template.name, tag)
+
+
 def test_the_menus_two_mutating_items_still_carry_their_own_ids():
     """Deliberately *not* riding on the fix above. "Delete message" resolving
     to the whole conversation is data loss, so those two post real forms

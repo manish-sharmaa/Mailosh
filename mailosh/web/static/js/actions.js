@@ -1014,6 +1014,34 @@ async function emptyMailbox(key, confirmed = false) {
 // Wiring
 // ---------------------------------------------------------------------
 
+// The ⋮ menu's Reply / Reply all / Forward (`thread/menu.html`). They carry
+// `compose.js`'s own `data-compose-reply` hook, and compose decides which
+// message a reply quotes by which card holds focus — right for the
+// conversation bar, and right for `r` on a card, but a pointer click does
+// not focus a button on every platform, so a menu item cannot rely on it.
+// `data-compose-email` names the message, and this listener turns the name
+// into the focus compose reads: it moves focus to that card's own summary,
+// then lets the click carry on into compose's handler.
+//
+// Capture phase, on purpose. `compose-boot.js`'s loader is a capture
+// listener on this same element that stops propagation and replays the
+// click once the module is in, and `compose.js`'s handler is a bubble one;
+// this module's script tag precedes both (layouts/app.html), so a capture
+// listener here runs before either can read the focus. The menu is closed
+// on the way out — a `<details>` does not close itself — and closing it
+// does not detach the item, so the replayed click still finds it.
+document.body.addEventListener(
+  "click",
+  (event) => {
+    const control = event.target?.closest?.("[data-compose-email]");
+    if (control === null || control === undefined) return;
+    const card = document.getElementById("msg-" + control.dataset.composeEmail);
+    (card?.querySelector("summary") ?? card)?.focus({ preventScroll: true });
+    control.closest("details")?.removeAttribute("open");
+  },
+  true,
+);
+
 // The list toolbar's "Empty … now". `data-role`, not `data-action`: every
 // `data-action` acts on a selection and names its key in a tooltip, and
 // this control does neither — it names the mailbox it empties instead.
