@@ -192,10 +192,44 @@ class UiPref(Base):
     mark_read_delay: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     auto_advance: Mapped[str] = mapped_column(String(16), nullable=False, default="older")
     undo_send_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    default_reply: Mapped[str] = mapped_column(String(16), nullable=False, default="reply")
     remote_images: Mapped[str] = mapped_column(String(16), nullable=False, default="ask")
     dark_restyle: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     shortcuts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     font_size: Mapped[str] = mapped_column(String(8), nullable=False, default="md")
+
+
+class Signature(Base):
+    """One saved signature per *identity* (design spec §10's Compose page).
+
+    Keyed by `(user_id, account_id, identity_id)` rather than by user alone
+    because "send as" is per address: the point of the setting is that mail
+    from `ada@work` can sign off differently from mail from `ada@home`, and
+    a single per-user row could not say that. `account_id` rides along for
+    the same reason `LabelMeta` carries one — an identity id is only unique
+    inside its own JMAP account, so a user who ever reaches a second account
+    must not have its identities collide with the first's.
+
+    `html` is stored **already sanitised**, through
+    `mailosh.render.html_sanitize.sanitize_email_html` — the same nh3
+    allow-list the reading pane runs every stranger's mail through. It is
+    written by the settings page and read back into an outgoing body, so
+    it is markup that leaves this deployment; storing what was typed and
+    cleaning it later would leave exactly one path (a future reader of this
+    table that forgot) between a `<script>` and somebody's mailbox. Empty
+    string means "no signature", the value a cleared textarea saves, so
+    nothing here has to distinguish a blank row from a missing one.
+    """
+
+    __tablename__ = "signature"
+
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("app_user.id"), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    identity_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    html: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
 
 class Contact(Base):

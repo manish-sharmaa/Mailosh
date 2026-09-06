@@ -124,10 +124,17 @@ def env():
         id=1, email="demo@mailosh.test"
     )
     app.dependency_overrides[deps.prefs_for] = lambda: SimpleNamespace(
-        theme="light", density="comfortable", shortcuts=True
+        theme="light",
+        density="comfortable",
+        shortcuts=True,
+        undo_send_seconds=10,
+        default_reply="reply",
     )
     app.dependency_overrides[deps.client_for] = lambda: jmap
-    return SimpleNamespace(app=app, jmap=jmap, calls=calls)
+    # The two open-a-composer routes read this user's saved signature
+    # (`repo.signature_map`); `signatures` below is what that returns here.
+    app.dependency_overrides[deps.get_db] = lambda: None
+    return SimpleNamespace(app=app, jmap=jmap, calls=calls, signatures={})
 
 
 @pytest.fixture
@@ -167,7 +174,12 @@ def stub(env, monkeypatch):
     monkeypatch.setattr(compose_module, "send_draft", send_draft)
     monkeypatch.setattr(compose_module, "discard_draft", discard_draft)
     monkeypatch.setattr(compose_module, "list_identities", list_identities)
+
+    async def signature_map(db, user_id, account_id):
+        return dict(env.signatures)
+
     monkeypatch.setattr(compose_module, "build_reply", build_reply)
+    monkeypatch.setattr(compose_module.repo, "signature_map", signature_map)
     return env
 
 

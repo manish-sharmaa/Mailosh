@@ -35,6 +35,7 @@ body runs, from the same place the popover's own route gets that check.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -45,10 +46,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mailosh.db import repo
 from mailosh.db.models import AppUser, SessionRow, UiPref
 from mailosh.jmap.client import JmapClient
+from mailosh.jmap.models import Identity
+from mailosh.services.compose import clean_signature, list_identities
 from mailosh.services.mailbox_tree import NavModel, build_nav
 from mailosh.web import deps
 from mailosh.web.prefs import (
     AutoAdvance,
+    DefaultReply,
     Density,
     Flag,
     FontSize,
@@ -56,7 +60,10 @@ from mailosh.web.prefs import (
     ReadingPane,
     RemoteImages,
     Theme,
+    UndoSend,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(deps.csrf_protect)])
 
@@ -284,7 +291,110 @@ async def save_reading(
     return _saved(prefs=changed)
 
 
+# ---------------------------------------------------------------------------
+# Compose
+# ---------------------------------------------------------------------------
+
+#: A signature longer than this is not a signature, it is a document. The
+#: ceiling is checked on the *submitted* HTML, before sanitising, so a
+#: megabyte of markup is refused rather than parsed first.
+MAX_SIGNATURE_CHARS = 20_000
+
+
+async def _identities(client: JmapClient) -> list[Identity]:
+    """The account's send-as addresses, or none if they cannot be listed.
+
+    Swallowing every exception, exactly as `mailosh.web.compose._identities`
+    does and for the same reason: an `Identity/get` that is unavailable
+    must not take down a settings page whose other half is a pair of
+    radio groups this reader can still usefully change.
+    """
+    try:
+        return list(await list_identities(client))
+    except Exception:
+        logger.warning("settings: could not list identities; signatures omitted", exc_info=True)
+        return []
+
+
+async def _compose_page(
+    request: Request, *, user: AppUser, client: JmapClient, db: AsyncSession
+) -> dict[str, object]:
+    """The Compose page's own context: one signature textarea per identity.
+
+    One `Identity/get` and one `signature_map` query, whatever the account
+    has — never one lookup per address. An identity with no row saved gets
+    `""`, which is what an empty textarea posts back, so "never configured"
+    and "deliberately blank" render identically because they mean the same
+    thing.
+    """
+    identities = await _identities(client)
+    saved = await repo.signature_map(db, user.id, client.account_id)
+    return {
+        "identities": identities,
+        "signatures": {identity.id: saved.get(identity.id, "") for identity in identities},
+    }
+
+
+@router.post("/compose")
+async def save_compose(
+    user: UserDep,
+    db: DbDep,
+    undo_send_seconds: Annotated[UndoSend, Form()],
+    default_reply: Annotated[DefaultReply, Form()],
+) -> Response:
+    """Persist the undo-send window and what a plain Reply means.
+
+    `undo_send_seconds` arrives as a string `Literal` and is cast on the
+    way to its `Integer` column, the same pair of reasons
+    `mailosh.web.prefs` gives for `mark_read_delay`: the `Literal` is what
+    refuses a number the control could never have produced, and the cast is
+    what keeps the column an integer on sqlite.
+
+    Both ride out on `om:prefs`, which is how the compose dock currently on
+    screen would learn a new window without a reload — `data-undo-send-ms`
+    is rendered per dock, so the *next* one opened picks it up either way.
+    """
+    changed: dict[str, object] = {
+        "undo_send_seconds": int(undo_send_seconds),
+        "default_reply": default_reply,
+    }
+    await repo.set_prefs(db, user.id, **changed)
+    return _saved(prefs=changed)
+
+
+@router.post("/compose/signature")
+async def save_signature(
+    user: UserDep,
+    db: DbDep,
+    client: ClientDep,
+    identity_id: Annotated[str, Form()],
+    html: Annotated[str, Form()] = "",
+) -> Response:
+    """Save one identity's signature, sanitised.
+
+    `identity_id` is checked against the account's *actual* identities
+    rather than trusted: it is a form field, and a row keyed by an id this
+    account does not own would be a signature nobody could ever see or
+    delete again.
+
+    The stored value is `clean_signature`'s — the project's nh3 pipeline —
+    so a `<script>`, an `onerror=` or a `javascript:` href never reaches
+    the table, let alone somebody else's mailbox. `mailosh.web.compose`
+    runs the same pass again on the way into a draft; see
+    `mailosh.services.compose.clean_signature` for why both.
+    """
+    if len(html) > MAX_SIGNATURE_CHARS:
+        return _refused(f"That signature is too long (limit {MAX_SIGNATURE_CHARS:,} characters).")
+    identities = await _identities(client)
+    if not any(identity.id == identity_id for identity in identities):
+        return _refused("That isn't one of your addresses.")
+    await repo.set_signature(db, user.id, client.account_id, identity_id, clean_signature(html))
+    return _saved("Signature saved")
+
+
 #: Per-page context loaders — `page` -> coroutine returning that page's
 #: extra template context. Filled in by the sections below as each page's
 #: data needs arrive; a page absent here renders from `prefs` alone.
-_LOADERS: dict[str, object] = {}
+_LOADERS: dict[str, object] = {
+    "compose": _compose_page,
+}

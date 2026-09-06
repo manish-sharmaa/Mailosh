@@ -8,13 +8,22 @@ the brief's "Produces" list names.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mailosh.db.models import AppUser, AuditLog, LabelMeta, SenderPref, UiPref, Visibility
+from mailosh.db.models import (
+    AppUser,
+    AuditLog,
+    LabelMeta,
+    SenderPref,
+    Signature,
+    UiPref,
+    Visibility,
+)
 
 
 async def get_or_create_user(db: AsyncSession, username: str, email: str) -> AppUser:
@@ -271,6 +280,51 @@ async def set_sender_restyle(
     await db.commit()
     await db.refresh(pref)
     return pref
+
+
+async def signature_map(db: AsyncSession, user_id: int, account_id: str) -> dict[str, str]:
+    """`{identity_id: html}` for every signature `user_id` has saved in
+    `account_id` — shaped like `label_meta_map` and for the same reason: a
+    page that renders one row per identity wants one query, not one per
+    identity, and an identity with no row simply has no entry rather than
+    this helper inventing an empty one.
+
+    The stored `html` is already sanitised (`mailosh.db.models.Signature`),
+    so callers may embed it; they sanitise again on the way into a message
+    anyway (`mailosh.web.compose`), which is what makes a row written
+    before a tightening of the allow-list safe to keep serving.
+    """
+    result = await db.execute(
+        select(Signature).where(Signature.user_id == user_id, Signature.account_id == account_id)
+    )
+    return {row.identity_id: row.html for row in result.scalars()}
+
+
+async def set_signature(
+    db: AsyncSession, user_id: int, account_id: str, identity_id: str, html: str
+) -> None:
+    """Create-or-update one identity's signature.
+
+    An empty `html` is stored rather than deleting the row: "this identity
+    has no signature" and "this identity has never been configured" mean the
+    same thing to every reader, and a delete would make the two rows
+    indistinguishable from a lost write in the audit of the table itself.
+    """
+    result = await db.execute(
+        select(Signature).where(
+            Signature.user_id == user_id,
+            Signature.account_id == account_id,
+            Signature.identity_id == identity_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        row = Signature(user_id=user_id, account_id=account_id, identity_id=identity_id, html=html)
+        db.add(row)
+    else:
+        row.html = html
+        row.updated_at = datetime.now(UTC)
+    await db.commit()
 
 
 async def audit(

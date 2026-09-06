@@ -21,6 +21,7 @@ from conftest import make_settings
 from fastapi.testclient import TestClient
 from test_labels import FakeClient
 
+from mailosh.jmap.models import Identity
 from mailosh.security.exchange import VerifiedAccount
 from mailosh.stalwart_admin import ApiKey
 from mailosh.web import deps
@@ -62,9 +63,24 @@ class FakeAdmin:
         self.names.append((username, name))
 
 
+class SettingsClient(FakeClient):
+    """`FakeClient` plus the one method the settings pages need that the
+    label tests never did: `Identity/get`, which the Compose page's
+    signature editors are built from.
+    """
+
+    identities = (
+        Identity(id="i1", email=ME, name="Dee"),
+        Identity(id="i2", email="alt@x", name=None),
+    )
+
+    async def get_identities(self) -> list[Identity]:
+        return list(self.identities)
+
+
 @pytest.fixture
 def fake() -> FakeClient:
-    return FakeClient(placement={"e1": {"mb-inbox", "m-work"}})
+    return SettingsClient(placement={"e1": {"mb-inbox", "m-work"}})
 
 
 @pytest.fixture
@@ -336,3 +352,133 @@ def test_reading_refuses_a_value_outside_the_set(app, field, bad):
         field: bad,
     }
     assert _post(client, "/settings/reading", data).status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Compose
+# ---------------------------------------------------------------------------
+
+
+def test_compose_renders_the_stored_values_and_one_editor_per_identity(app):
+    client = _login(app)
+    body = client.get("/settings/compose").text
+    assert _checked(body, "undo_send_seconds") == "10"
+    assert _checked(body, "default_reply") == "reply"
+    # One signature form per send-as address, each carrying its own id.
+    for identity in SettingsClient.identities:
+        assert f'value="{identity.id}"' in body
+        assert f'id="sig-{identity.id}"' in body
+
+
+def test_compose_save_persists_and_echoes_both_fields(app):
+    client = _login(app)
+    data = {"undo_send_seconds": "30", "default_reply": "reply_all"}
+    r = _post(client, "/settings/compose", data)
+    assert r.status_code == 204, r.text
+    trigger = json.loads(r.headers["HX-Trigger"])
+    assert trigger["om:prefs"] == {"undo_send_seconds": 30, "default_reply": "reply_all"}
+    body = client.get("/settings/compose").text
+    assert _checked(body, "undo_send_seconds") == "30"
+    assert _checked(body, "default_reply") == "reply_all"
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"undo_send_seconds": "15", "default_reply": "reply"},
+        {"undo_send_seconds": "10", "default_reply": "reply_none"},
+        {"undo_send_seconds": "10"},
+    ],
+)
+def test_compose_refuses_a_value_outside_the_set(app, data):
+    client = _login(app)
+    assert _post(client, "/settings/compose", data).status_code == 422
+
+
+def test_a_signature_is_stored_sanitised_and_comes_back_in_the_editor(app):
+    client = _login(app)
+    r = _post(
+        client,
+        "/settings/compose/signature",
+        {"identity_id": "i1", "html": "<p>Dee<script>alert(1)</script></p>"},
+    )
+    assert r.status_code == 204, r.text
+    assert json.loads(r.headers["HX-Trigger"])["om:done"]["toast"] == "Signature saved"
+    body = client.get("/settings/compose").text
+    editor = body[body.index('id="sig-i1"') :]
+    editor = editor[: editor.index("</textarea>")]
+    assert "Dee" in editor
+    assert "script" not in editor.lower()
+
+
+def test_a_signature_for_an_identity_this_account_does_not_have_is_refused(app):
+    client = _login(app)
+    r = _post(client, "/settings/compose/signature", {"identity_id": "nope", "html": "<p>hi</p>"})
+    assert r.status_code == 200
+    assert "isn't one of your addresses" in r.headers["HX-Trigger"]
+    assert "nope" not in client.get("/settings/compose").text
+
+
+def test_a_signature_past_the_length_ceiling_is_refused(app):
+    from mailosh.web.settings import MAX_SIGNATURE_CHARS
+
+    client = _login(app)
+    r = _post(
+        client,
+        "/settings/compose/signature",
+        {"identity_id": "i1", "html": "x" * (MAX_SIGNATURE_CHARS + 1)},
+    )
+    assert r.status_code == 200
+    assert "too long" in r.headers["HX-Trigger"]
+
+
+def test_the_undo_send_window_reaches_the_dock_as_a_data_attribute(app):
+    """`compose.js` reads the window off the form rather than holding a
+    constant, because the value is a preference and the CSP forbids handing
+    it over in an inline script."""
+    client = _login(app)
+    _post(client, "/settings/compose", {"undo_send_seconds": "20", "default_reply": "reply"})
+    dock = client.get("/compose", headers={"HX-Request": "true"}).text
+    assert 'data-undo-send-ms="20000"' in dock
+    source = (REPO / "mailosh/web/static/js/compose.js").read_text()
+    assert "undoSendMs" in source
+    assert "}, undoWindowMs(root));" in source
+
+
+def test_a_new_message_opens_with_the_signature_below_the_caret(app):
+    client = _login(app)
+    _post(client, "/settings/compose/signature", {"identity_id": "i1", "html": "<p>Ada L</p>"})
+    dock = client.get("/compose", headers={"HX-Request": "true"}).text
+    assert "Ada L" in dock
+
+
+def test_a_signature_goes_above_the_quote_not_below_it():
+    """The one placement rule, tested where it lives: replying above your
+    own sign-off is the failure this ordering exists to prevent."""
+    from mailosh.services.compose import with_signature
+
+    reply = "<div><br></div><blockquote>old mail</blockquote>"
+    signed = with_signature(reply, "<p>Dee</p>")
+    assert signed.index("<p>Dee</p>") < signed.index("<blockquote>")
+    assert signed.startswith("<div><br></div>")
+    # A new message is just the spacer plus the signature.
+    assert with_signature("", "<p>Dee</p>") == "<div><br></div><p>Dee</p>"
+    # No signature changes nothing at all.
+    assert with_signature(reply, "") == reply
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [("reply", "reply"), ("reply_all", "reply_all")],
+)
+def test_a_default_reply_resolves_from_the_preference(stored, expected):
+    """`"default"` never reaches `build_reply` — one place resolves it."""
+    from types import SimpleNamespace
+
+    from mailosh.web.compose import _reply_mode
+
+    prefs = SimpleNamespace(default_reply=stored)
+    assert _reply_mode("default", prefs) == expected
+    # An explicit mode is never overridden by the preference.
+    assert _reply_mode("forward", prefs) == "forward"
+    assert _reply_mode("reply_all", SimpleNamespace(default_reply="reply")) == "reply_all"

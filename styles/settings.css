@@ -181,6 +181,17 @@
   .settings-table-wrap {
     overflow-x: auto;
   }
+  /* The settings pages stack sections, and a page whose *first* element is
+     one would otherwise open with a rule across the top under its own
+     title. */
+  .settings-section + .settings-section,
+  .settings-form + .settings-section {
+    margin-top: 18px;
+  }
+  .settings-section > .settings-section:first-of-type {
+    padding-top: 12px;
+    border-top: 0;
+  }
   .settings-row-muted {
     color: var(--fg-2);
   }

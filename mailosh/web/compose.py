@@ -61,14 +61,16 @@ import logging
 import re
 import secrets
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from email.utils import formataddr
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from mailosh.db import repo
 from mailosh.db.models import AppUser, SessionRow, UiPref
 from mailosh.jmap.client import JmapClient
 from mailosh.jmap.models import Identity
@@ -81,10 +83,12 @@ from mailosh.services.compose import (
     Recipient,
     UnknownIdentity,
     build_reply,
+    clean_signature,
     discard_draft,
     list_identities,
     save_draft,
     send_draft,
+    with_signature,
 )
 from mailosh.services.conversation import size_display
 from mailosh.web import deps
@@ -97,12 +101,27 @@ SessionDep = Annotated[SessionRow, Depends(deps.require_session)]
 UserDep = Annotated[AppUser, Depends(deps.current_user)]
 PrefsDep = Annotated[UiPref, Depends(deps.prefs_for)]
 ClientDep = Annotated[JmapClient, Depends(deps.client_for)]
+DbDep = Annotated[AsyncSession, Depends(deps.get_db)]
 
 #: What `GET /compose/reply/{id}` will build. Spelled as a `Literal` so an
 #: unknown mode is FastAPI's own 422 before this module's code runs, rather
 #: than a hand-written check here that could drift from what
 #: `mailosh.services.compose.build_reply` actually accepts.
-ReplyMode = Literal["reply", "reply_all", "forward"]
+#: `"default"` is not one of `build_reply`'s modes and never reaches it:
+#: it means "whatever this reader's Compose setting says a plain Reply is"
+#: (`UiPref.default_reply`), resolved by `_reply_mode` below before the
+#: service is called. It exists so the preference is applied in exactly one
+#: place, server side — the `r` key and the conversation bar's Reply button
+#: both ask for `default` and neither has to know what it currently means.
+ReplyMode = Literal["reply", "reply_all", "forward", "default"]
+
+
+def _reply_mode(mode: str, prefs: UiPref) -> str:
+    """`mode` as `mailosh.services.compose.build_reply` understands it."""
+    if mode != "default":
+        return mode
+    return "reply_all" if prefs.default_reply == "reply_all" else "reply"
+
 
 #: Hard ceiling on one uploaded file, enforced while the body is still
 #: being read (`_read_upload`) so an oversized upload is refused after this
@@ -638,9 +657,40 @@ def _blank(dom_id: str) -> DraftInput:
 # ---------------------------------------------------------------------------
 
 
+async def _signature_for(
+    db: AsyncSession,
+    user: AppUser,
+    client: JmapClient,
+    identities: list[Identity],
+    identity_id: str | None,
+) -> str:
+    """This reader's saved signature for the identity a new draft will be
+    sent from, sanitised again on the way out (`clean_signature`).
+
+    The identity is the draft's own when it has one and otherwise the first
+    in the From picker's list, which is the one the `<select>` renders
+    selected — so what the composer opens with matches what it would send.
+    A user with no signature saved, or none for this identity, gets `""`
+    and `with_signature` leaves the body exactly as it was built.
+
+    Nothing here is done for a *reopened* draft: that body already contains
+    whatever signature it was opened with, and adding one again on every
+    reopen is how a draft ends up signed four times.
+    """
+    if not identities:
+        return ""
+    saved = await repo.signature_map(db, user.id, client.account_id)
+    return clean_signature(saved.get(identity_id or identities[0].id, ""))
+
+
 @router.get("/compose", response_class=HTMLResponse)
 async def compose_new(
-    request: Request, session: SessionDep, prefs: PrefsDep, client: ClientDep, user: UserDep
+    request: Request,
+    session: SessionDep,
+    prefs: PrefsDep,
+    client: ClientDep,
+    user: UserDep,
+    db: DbDep,
 ) -> Response:
     """A fresh dock, as an htmx fragment appended into `#compose-dock`.
 
@@ -650,6 +700,9 @@ async def compose_new(
     `_dom_id`.
     """
     dom_id = _dom_id()
+    identities = await _identities(client)
+    blank = _blank(dom_id)
+    signature = await _signature_for(db, user, client, identities, blank.identity_id)
     return _templates(request).TemplateResponse(
         request,
         "compose/dock.html",
@@ -657,8 +710,8 @@ async def compose_new(
             request,
             session=session,
             prefs=prefs,
-            draft=_blank(dom_id),
-            identities=await _identities(client),
+            draft=replace(blank, html=with_signature(blank.html, signature)),
+            identities=identities,
             dom_id=dom_id,
             draft_id=None,
             title="New message",
@@ -676,8 +729,9 @@ async def compose_reply(
     prefs: PrefsDep,
     client: ClientDep,
     user: UserDep,
+    db: DbDep,
     thread: Annotated[str, Query()],
-    mode: ReplyMode = "reply",
+    mode: ReplyMode = "default",
     surface: Literal["inline", "dock"] = "inline",
 ) -> Response:
     """Reply / reply all / forward, as the inline composer card the
@@ -701,8 +755,9 @@ async def compose_reply(
     messages = await client.get_thread(thread)
     if not messages or all(message.id != email_id for message in messages):
         raise HTTPException(status_code=404, detail="no such message in that conversation")
+    resolved = _reply_mode(mode, prefs)
     try:
-        draft = build_reply(messages, email_id, mode, user.email)
+        draft = build_reply(messages, email_id, resolved, user.email)
     except ComposeError as exc:
         # `mode` is already a `Literal` and the message is already known to
         # be in the thread, so this is unreachable from the UI — which is
@@ -711,6 +766,8 @@ async def compose_reply(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     dom_id = _dom_id()
     titles = {"reply": "Reply", "reply_all": "Reply all", "forward": "Forward"}
+    identities = await _identities(client)
+    signature = await _signature_for(db, user, client, identities, draft.identity_id)
     return _templates(request).TemplateResponse(
         request,
         "compose/dock.html" if surface == "dock" else "compose/inline.html",
@@ -718,11 +775,11 @@ async def compose_reply(
             request,
             session=session,
             prefs=prefs,
-            draft=draft,
-            identities=await _identities(client),
+            draft=replace(draft, html=with_signature(draft.html, signature)),
+            identities=identities,
             dom_id=dom_id,
             draft_id=draft.draft_id,
-            title=titles[mode],
+            title=titles[resolved],
             surface=surface,
             me=user.email,
         ),

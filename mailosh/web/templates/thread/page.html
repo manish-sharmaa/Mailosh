@@ -60,8 +60,15 @@
     {# The same three actions `r` / `a` / `f` run, through the same
        `compose.js` surface — so the inline card lands in the same slot and
        counts against the same limit whichever way it was asked for. #}
-    <button type="button" class="btn-icon size-7" data-compose-reply="reply" title="Reply (r)">
-      {{ icon("reply", class_="size-4", label="Reply") }}
+    {# `default`, not `reply`: what a plain Reply means is spec §10's
+       Compose preference (`UiPref.default_reply`), and
+       `mailosh.web.compose._reply_mode` is the one place that resolves it.
+       The label follows it so the control never promises the other one. #}
+    {% set reply_all_first = prefs.default_reply == "reply_all" %}
+    <button type="button" class="btn-icon size-7" data-compose-reply="default"
+            title="{{ "Reply all (r)" if reply_all_first else "Reply (r)" }}">
+      {{ icon("reply-all" if reply_all_first else "reply", class_="size-4",
+              label="Reply all" if reply_all_first else "Reply") }}
     </button>
     <button type="button" class="btn-icon size-7" data-compose-reply="reply_all" title="Reply all (a)">
       {{ icon("reply-all", class_="size-4", label="Reply all") }}

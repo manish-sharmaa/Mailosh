@@ -99,7 +99,19 @@ const SOFT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 // Spec §6.3's send window: "immediate commit + reverse op" is undo
 // everywhere else in this app, and send is the one exception — a delayed
 // commit with a real cancellation window.
+//
+// The length is the reader's own (`/settings/compose`, `UiPref.
+// undo_send_seconds`) and arrives on the form as `data-undo-send-ms`.
+// This is the fallback for a dock rendered before that attribute existed,
+// or one whose attribute is unreadable — never a second opinion about
+// what the preference says.
 const SEND_UNDO_MS = 10000;
+
+/** How long this dock's send may be undone for, in milliseconds. */
+function undoWindowMs(root) {
+  const raw = Number(formOf(root)?.dataset?.undoSendMs);
+  return Number.isFinite(raw) && raw > 0 ? raw : SEND_UNDO_MS;
+}
 
 // The 12 label colours, in `mailosh.ui.format.LABEL_COLORS`' order. A chip
 // built here has to land on the same colour the server would have given
@@ -950,7 +962,7 @@ function send(root) {
   record.timer = window.setTimeout(() => {
     toastEl?.remove();
     flush(root);
-  }, SEND_UNDO_MS);
+  }, undoWindowMs(root));
   live.set(root, record);
   return true;
 }

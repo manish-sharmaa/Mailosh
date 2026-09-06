@@ -57,10 +57,12 @@ __all__ = [
     "SendResult",
     "UnknownIdentity",
     "build_reply",
+    "clean_signature",
     "discard_draft",
     "list_identities",
     "save_draft",
     "send_draft",
+    "with_signature",
 ]
 
 logger = logging.getLogger(__name__)
@@ -486,6 +488,53 @@ async def discard_draft(client: JmapClient, draft_id: str) -> None:
     it.
     """
     await client.destroy_emails([draft_id])
+
+
+def clean_signature(html: str) -> str:
+    """A signature through the project's nh3 pipeline, ready to store or to
+    put in an outgoing body.
+
+    The same `sanitize_email_html` every stranger's mail is read through,
+    under `_outbound_context` — so no `cid:` part resolves (a signature has
+    no message to belong to), no remote image is re-signed, `data:` images
+    survive, and a `<script>`, an `onerror=` or a `javascript:` href is
+    gone rather than stored.
+
+    Called on **both** ends on purpose: the settings page cleans before it
+    writes (`mailosh.db.models.Signature` never holds raw HTML), and
+    `mailosh.web.compose` cleans again on the way into a draft or a send.
+    The second pass is not distrust of the first — it is what makes a row
+    written under an older, looser allow-list safe the day the allow-list
+    is tightened, without a data migration nobody would remember to run.
+    """
+    if not html.strip():
+        return ""
+    try:
+        return sanitize_email_html(html, _outbound_context("")).html
+    except BodyTooDeep:
+        # A signature nested past the sanitiser's limit is not a signature.
+        logger.warning("compose: signature nests too deeply to sanitise; dropping it")
+        return ""
+
+
+def with_signature(html: str, signature_html: str) -> str:
+    """`html` with `signature_html` inserted where a signature belongs:
+    below the space the composer types into, above any quoted history.
+
+    Both bodies this app builds start the same way — a new message is empty
+    and a reply is `_COMPOSE_SPACER` followed by the quote — so the rule is
+    one line: keep the leading spacer, put the signature next, then
+    whatever came after. That is where Gmail, Apple Mail and Outlook all
+    put it, and it is the only position where replying above the quote does
+    not mean typing *below* your own sign-off.
+
+    An empty `signature_html` returns `html` unchanged, so the caller never
+    has to branch.
+    """
+    if not signature_html:
+        return html
+    rest = html[len(_COMPOSE_SPACER) :] if html.startswith(_COMPOSE_SPACER) else html
+    return f"{_COMPOSE_SPACER}{signature_html}{rest}"
 
 
 async def list_identities(client: JmapClient) -> list[Identity]:

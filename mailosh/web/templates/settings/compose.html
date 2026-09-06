@@ -1,0 +1,67 @@
+{# Compose (spec §10): the undo-send window, what a plain Reply means, and
+   one signature per "send as" address.
+
+   Two forms, not one, because they are two different saves: the pair of
+   radio groups is a preference save (`POST /settings/compose`, answered
+   with `om:prefs`), and each signature is its own row keyed by its own
+   identity (`POST /settings/compose/signature`). One combined form would
+   have to post every signature on every theme-sized change, and a save
+   button per address is also what tells the reader which one they just
+   changed.
+
+   The signature editor is a plain `<textarea>` of HTML, not a rich-text
+   surface. The composer's own editor (Squire) is loaded on the compose
+   dock, not here, and a second editor for a field that is stored,
+   sanitised and re-sanitised as markup would be a lot of machinery around
+   something people paste into once a year. Whatever is typed goes through
+   the same nh3 allow-list every stranger's mail is read through
+   (`mailosh.services.compose.clean_signature`), so a `<script>` in here is
+   simply not what comes back. #}
+{% from "settings/_controls.html" import segmented, actions %}
+<form class="settings-form" method="post" action="/settings/compose"
+      hx-post="/settings/compose" hx-swap="none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  {{ segmented("undo_send_seconds", "Undo send",
+               [("5", "5s"), ("10", "10s"), ("20", "20s"), ("30", "30s")],
+               prefs.undo_send_seconds,
+               help="How long a sent message waits before it actually goes, so you can take it back.") }}
+
+  {{ segmented("default_reply", "Default reply",
+               [("reply", "Reply"), ("reply_all", "Reply all")],
+               prefs.default_reply,
+               help="What the Reply button and the r key do. Reply all always has its own button and the a key.") }}
+
+  {{ actions() }}
+</form>
+
+<section class="settings-section" aria-labelledby="signatures-title">
+  <h3 id="signatures-title" class="settings-section-title">Signature</h3>
+  {% if identities %}
+    <p class="settings-help">
+      Added below what you write and above anything you are replying to. One
+      per address you send from.
+    </p>
+    {% for identity in identities %}
+      <form class="settings-form settings-section" method="post"
+            action="/settings/compose/signature"
+            hx-post="/settings/compose/signature" hx-swap="none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="identity_id" value="{{ identity.id }}">
+        <label class="settings-label" for="sig-{{ identity.id }}">
+          {{ identity.name ~ " <" ~ identity.email ~ ">" if identity.name else identity.email }}
+        </label>
+        <textarea class="settings-textarea" id="sig-{{ identity.id }}" name="html"
+                  rows="5" spellcheck="false"
+                  placeholder="&lt;p&gt;Ada Lovelace &amp;middot; Analytical Engines&lt;/p&gt;"
+                  >{{ signatures.get(identity.id, "") }}</textarea>
+        {{ actions("Save signature") }}
+      </form>
+    {% endfor %}
+  {% else %}
+    {# No identities means `Identity/get` was unavailable, not that the
+       account has no addresses — an empty editor here would offer to save
+       a signature against an id nothing could resolve. #}
+    <p class="settings-help">Your send-as addresses aren’t available right now.</p>
+  {% endif %}
+</section>

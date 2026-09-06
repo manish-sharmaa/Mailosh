@@ -102,7 +102,14 @@
       hx-swap="outerHTML"
       hx-push-url="false"
       autocomplete="off"
-      data-domain="{{ me_domain }}">
+      data-domain="{{ me_domain }}"
+      {# Spec §10's undo-send window, in milliseconds, read by
+         `static/js/compose.js` when a send starts counting down. An
+         attribute rather than a constant in that file because the value is
+         this reader's preference (`UiPref.undo_send_seconds`), and the CSP
+         (`script-src 'self'`, no `unsafe-eval`) rules out handing it over
+         in an inline script. #}
+      data-undo-send-ms="{{ prefs.undo_send_seconds * 1000 }}">
   {# `dom_id` comes back on every response so a reply from the server can
      only ever land in the dock that asked for it, even with three open. #}
   <input type="hidden" name="dom_id" value="{{ dom_id }}">
