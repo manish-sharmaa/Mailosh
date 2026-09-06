@@ -23,6 +23,7 @@ from .models import (
     BodyPart,
     EmailBody,
     EmailHeader,
+    EmailSubmission,
     Identity,
     Mailbox,
     Session,
@@ -140,6 +141,30 @@ _THREAD_ROW_PROPS = [
 #: — also used to size that call's read-timeout override (see its
 #: docstring for why the two are related, not independent numbers).
 _PING_SECONDS = 30
+
+#: ``EmailSubmission/get`` properties for delivery tracking
+#: (``mailosh.services.outbound``): the two ids that tie a submission back to
+#: the message it sent, and the RFC 8621 §7 status properties. Not
+#: ``envelope``/``identityId`` — nothing reads them back — and not
+#: ``mdnBlobIds``, since a read receipt is not a delivery outcome.
+_SUBMISSION_PROPS = [
+    "id",
+    "emailId",
+    "threadId",
+    "undoStatus",
+    "sendAt",
+    "deliveryStatus",
+    "dsnBlobIds",
+]
+
+#: The JMAP object types ``event_stream`` asks Stalwart to push. ``Email``/
+#: ``Mailbox`` are what a mail list re-renders for; ``EmailSubmission`` is
+#: what lets an outbound message's delivery state (``mailosh.services.
+#: outbound``) refresh the moment the server learns something, rather than
+#: on the next maintenance sweep. Verified live against Stalwart 0.16: its
+#: eventsource endpoint accepts ``types=EmailSubmission`` (the connection
+#: opens and stays open) — RFC 8620 §7.3 allows any type that has a state.
+_PUSH_TYPES = "Email,Mailbox,EmailSubmission"
 
 
 def _to_utc_date(dt: datetime) -> str:
@@ -1860,6 +1885,86 @@ class JmapClient:
 
         return submission_created["id"], draft_id
 
+    async def get_submissions(self, ids: Sequence[str]) -> list[EmailSubmission]:
+        """Fetch the EmailSubmission objects named by ``ids`` (RFC 8621 §7.1
+        ``EmailSubmission/get``) — one HTTP request, ``_SUBMISSION_PROPS``
+        only.
+
+        An id the server no longer knows (RFC 8620 §5.1 ``notFound``) is
+        simply absent from the result rather than an error: a submission
+        Stalwart has expired or purged is a normal thing for a tracker that
+        polls for days to run into, and the caller
+        (`mailosh.services.outbound.refresh`) decides what "gone" means for
+        its own row. An empty ``ids`` makes no request at all.
+        """
+        if not ids:
+            return []
+        out = await self._call(
+            [
+                (
+                    "EmailSubmission/get",
+                    {
+                        "accountId": self.account_id,
+                        "ids": list(dict.fromkeys(ids)),
+                        "properties": _SUBMISSION_PROPS,
+                    },
+                    "s0",
+                )
+            ]
+        )
+        return [EmailSubmission.model_validate(raw) for raw in out["s0"].get("list") or []]
+
+    async def query_submissions(
+        self,
+        *,
+        undo_status: str | None = None,
+        email_ids: Sequence[str] = (),
+        limit: int = 50,
+    ) -> list[EmailSubmission]:
+        """``EmailSubmission/query`` -> ``EmailSubmission/get`` (RFC 8621
+        §7.3/§7.1) in one batched request, newest first, returning up to
+        ``limit`` typed submissions.
+
+        ``undo_status`` and ``email_ids`` map to the §7.3 filter conditions
+        of the same names (``undoStatus``/``emailIds``); both omitted means
+        an unfiltered listing. The ``#ids`` result reference is the same
+        RFC 8620 §3.7 pattern ``query_page`` uses, and the sort is
+        ``sendAt`` descending because the newest submissions are the ones
+        whose outcome is still open. Verified live against Stalwart 0.16
+        (an ``undoStatus`` filter is accepted and honoured).
+        """
+        filter_: dict[str, object] = {}
+        if undo_status is not None:
+            filter_["undoStatus"] = undo_status
+        if email_ids:
+            filter_["emailIds"] = list(dict.fromkeys(email_ids))
+        query_args: dict[str, object] = {
+            "accountId": self.account_id,
+            "sort": [{"property": "sendAt", "isAscending": False}],
+            "limit": limit,
+        }
+        if filter_:
+            query_args["filter"] = filter_
+        out = await self._call(
+            [
+                ("EmailSubmission/query", query_args, "q0"),
+                (
+                    "EmailSubmission/get",
+                    {
+                        "accountId": self.account_id,
+                        "#ids": {
+                            "resultOf": "q0",
+                            "name": "EmailSubmission/query",
+                            "path": "/ids",
+                        },
+                        "properties": _SUBMISSION_PROPS,
+                    },
+                    "s0",
+                ),
+            ]
+        )
+        return [EmailSubmission.model_validate(raw) for raw in out["s0"].get("list") or []]
+
     async def event_stream(self) -> AsyncIterator[StateChange]:
         """Stream JMAP push ``StateChange`` objects from this session's
         EventSource endpoint (RFC 8620 §7.3), one long-lived streamed GET.
@@ -1867,7 +1972,7 @@ class JmapClient:
         The session's (already-rebased) ``eventSourceUrl`` is a URI
         template; this substitutes its three placeholders directly (no
         RFC 6570 library needed for three literal swaps):
-        ``{types}`` -> ``Email,Mailbox`` (the only two object types
+        ``{types}`` -> ``_PUSH_TYPES`` (the object types
         ``stalwart_listener`` acts on — narrower than ``*`` means the
         server has less to push in the first place), ``{closeafter}`` ->
         ``no`` (keep the connection open indefinitely; the RFC's other
@@ -1902,7 +2007,7 @@ class JmapClient:
         stops responding.
         """
         url = (
-            self._session.event_source_url.replace("{types}", "Email,Mailbox")
+            self._session.event_source_url.replace("{types}", _PUSH_TYPES)
             .replace("{closeafter}", "no")
             .replace("{ping}", str(_PING_SECONDS))
         )

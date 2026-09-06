@@ -294,6 +294,15 @@ def test_is_mail_change_true_if_any_account_touches_mail():
     assert is_mail_change(change) is True
 
 
+def test_is_mail_change_true_for_an_email_submission_only_change():
+    """Outbound delivery tracking (`mailosh.services.outbound`): a Sent
+    row's pill refreshes on the list re-GET this event triggers, so a
+    submission-only push must reach the browser like new mail does."""
+    change = StateChange(changed={"a1": {"EmailSubmission": "s1"}})
+    assert is_mail_change(change) is True
+    assert mail_change_types(change) == ["EmailSubmission"]
+
+
 # ---------------------------------------------------------------------------
 # mail_change_types / latest_state (the `mail` event's payload and id)
 # ---------------------------------------------------------------------------

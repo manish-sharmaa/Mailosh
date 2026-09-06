@@ -1,0 +1,26 @@
+{# Outbound delivery pill (`mailosh.services.outbound`): what the mail
+   server has said about a message the reader sent, drawn beside the row's
+   chips in Sent (`list/row.html`) and beside the subject in the
+   conversation header (`thread/header.html`) when its newest message is
+   the reader's own.
+
+   `pill` is an `OutboundSubmission` row or undefined. Only two of its four
+   states draw anything: "Queued" (muted — the server still has it) and
+   "Bounced" (danger — a recipient's server refused it, and the reply it
+   gave is the tooltip). `delivered` and `unknown` render nothing at all:
+   "Sent" already says as much, and a tick on every row would be noise on
+   the one list where nothing is usually wrong. Stalwart reports `unknown`
+   for every message until a DSN says otherwise, so quiet is also honest.
+
+   The detail is a stranger's text (a remote SMTP reply) and goes through
+   autoescaping into a `title`, never into markup. `aria-label` carries the
+   same sentence, since a tooltip is invisible to a screen reader. #}
+{% if pill and pill.state == "queued" %}
+  <span class="pill-outbound is-queued" role="status"
+        title="Still waiting to be delivered by the mail server"
+        aria-label="Queued: still waiting to be delivered">Queued</span>
+{% elif pill and pill.state == "failed" %}
+  <span class="pill-outbound is-failed" role="status"
+        title="{{ pill.detail or 'The message could not be delivered' }}"
+        aria-label="Bounced: {{ pill.detail or 'the message could not be delivered' }}">Bounced</span>
+{% endif %}

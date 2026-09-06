@@ -29,6 +29,7 @@ against an id the server has never heard of.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -47,7 +48,8 @@ from mailosh.jmap.models import EmailBody
 from mailosh.render.css_sanitize import sanitize_stylesheet
 from mailosh.render.dark import background_is_light, declares_color_scheme, restyle_mode
 from mailosh.render.html_sanitize import extract_styles
-from mailosh.services.conversation import build_conversation
+from mailosh.services import outbound
+from mailosh.services.conversation import ConversationView, build_conversation
 from mailosh.services.mailbox_tree import LabelNode, NavModel, build_nav
 from mailosh.services.thread_list import ThreadPage, build_page
 from mailosh.web import deps
@@ -136,6 +138,35 @@ def _is_fragment(request: Request) -> bool:
 def _apply_fragment(context: dict[str, object]) -> None:
     context["layout"] = "layouts/fragment.html"
     context["fragment"] = True
+
+
+def _bounce_headers(request: Request, context: dict[str, object]) -> dict[str, str]:
+    """The `HX-Trigger` that announces newly discovered bounces, or nothing.
+
+    Reuses the app's failure toast verbatim — `om:error`, the same header
+    shape `mailosh.web.app._error_toast` sends and the same body-level
+    listener in `static/js/actions.js` consumes — because a bounce *is* a
+    failure the reader needs to hear about once, and a second toast
+    mechanism for it would be one more thing to keep in step. `retry` is
+    false: there is nothing for the client to re-request.
+
+    Only for an htmx request: a full-page GET has no htmx to read the
+    header, and the toasts were already marked announced when
+    `_list_context` took them, so they would be lost. `_list_context` is
+    the only writer of `outbound_toasts`, and `take_unannounced_bounces`
+    runs inside it, so a full-page render that finds bounces is the one
+    case that (deliberately) says nothing — the row's own pill carries the
+    state from then on.
+    """
+    toasts = context.get("outbound_toasts") or []
+    if not toasts or request.headers.get("hx-request") != "true":
+        return {}
+    return {
+        "HX-Trigger": json.dumps(
+            {"om:error": {"toast": "; ".join(toasts), "retry": False}},
+            separators=(",", ":"),
+        )
+    }
 
 
 async def _nav_for(
@@ -237,12 +268,27 @@ async def _list_context(
         now=datetime.now(UTC),
     )
     label, unread = _active_item(nav, key)
+    # Outbound delivery state (`mailosh.services.outbound`). The poll runs
+    # on every list render, whatever the key: this GET is also what a
+    # Stalwart `EmailSubmission` push turns into (sse.js -> `mail:changed`
+    # -> `#list` re-GET), so it is the moment a state change can be read
+    # back — and it costs one SELECT when nothing is in flight. The pill
+    # lookup itself is Sent-only, and one query for the whole page.
+    await outbound.refresh_if_due(client, db, user.id)
+    pills: dict[str, object] = {}
+    if key == "sent":
+        pills = await outbound.states_for(db, user.id, (row.latest_email_id for row in page.rows))
     context.update(
         {
             "page": page,
             "view_label": label,
             "view_unread": unread,
             "range_label": _range_label(page, start),
+            "outbound": pills,
+            "outbound_toasts": [
+                outbound.bounce_toast(row)
+                for row in await outbound.take_unannounced_bounces(db, user.id)
+            ],
             # Only the sentinel reads this back (into its own `/rows` URL),
             # so a list that grows by scrolling keeps describing itself from
             # where the reader's list actually begins.
@@ -313,7 +359,7 @@ async def mail_view(
     if missing is not None:
         return missing
 
-    headers = {}
+    headers = _bounce_headers(request, context)
     if _is_fragment(request):
         _apply_fragment(context)
         url = f"/mail/{key}" + (f"?position={position}" if position else "")
@@ -372,7 +418,9 @@ async def mail_rows(
     if missing is not None:
         return missing
     context["standalone"] = True
-    return _templates(request).TemplateResponse(request, "list/rows.html", context)
+    return _templates(request).TemplateResponse(
+        request, "list/rows.html", context, headers=_bounce_headers(request, context)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -609,6 +657,26 @@ def _restyled_for(
     return restyled
 
 
+async def _outbound_pill(db: AsyncSession, user: AppUser, view: ConversationView):
+    """The tracked submission for this conversation's latest message, if
+    that message is the reader's own outbound one — else `None`.
+
+    "Latest own message is outbound" is read off the cards themselves: the
+    newest `MessageView` whose sender is `me`, and only if it is also the
+    newest message in the conversation. A reply that has since arrived
+    answers the question of whether the message got through better than
+    any pill could, so the pill steps aside for it. One query, over the
+    conversation's ids (`states_for`), never one per card.
+    """
+    if not view.messages:
+        return None
+    latest = view.messages[-1]
+    if latest.from_email.lower() != user.email.lower():
+        return None
+    states = await outbound.states_for(db, user.id, [latest.id])
+    return states.get(latest.id)
+
+
 async def _render_conversation(
     request: Request,
     *,
@@ -667,6 +735,9 @@ async def _render_conversation(
     context.update(
         {
             "view": view,
+            # The delivery pill beside the subject, when the newest message
+            # in this conversation is one the reader sent (`_outbound_pill`).
+            "outbound_pill": await _outbound_pill(db, user, view),
             # The viewer's own address, for the recipient disclosure's "to
             # me". It is the one thing a card renders that is about the
             # reader rather than about the message.
