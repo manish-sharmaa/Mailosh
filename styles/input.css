@@ -1556,6 +1556,11 @@
     border-radius: 6px;
     color: var(--fg);
     font-size: 13px;
+    /* The account menu's Settings entry is an `<a>` -- a real link, so it
+       middle-clicks and copies -- sitting between two submit buttons. It
+       has to look like them, and a link's default underline is the one
+       thing that would give it away. */
+    text-decoration: none;
     text-align: left;
     white-space: nowrap;
     cursor: pointer;

@@ -178,6 +178,18 @@
         {% endif %}
         <span class="account-email">{{ user.email }}</span>
       </div>
+      {# The six full settings pages (spec §10). The gear beside this menu
+         opens the quick-settings popover, which is a subset -- everything
+         else about this account lives here and had no control at all until
+         now. An `hx-get` into `#main` with the URL pushed, the same shape
+         as `shell/nav.html`'s own items, so it is a fragment swap rather
+         than a full load; the `href` is what makes it a real link for the
+         middle-click, the copy-link and the no-JavaScript cases. #}
+      <a class="menu-item" href="/settings/appearance"
+         hx-get="/settings/appearance" hx-target="#main"
+         hx-swap="morph:innerHTML show:none" hx-push-url="true">
+        {{ icon("settings-2", class_="size-4") }}Settings
+      </a>
       <form class="menu-form" method="post" action="/logout">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="menu-item">

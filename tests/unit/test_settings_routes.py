@@ -714,3 +714,30 @@ def test_the_user_agent_column_is_readable_and_never_empty(app):
     # Unrecognised is shown, not swallowed — a strange session is exactly
     # the one worth reading.
     assert _describe_agent("curl/8.7.1") == "curl/8.7.1"
+
+
+# ---------------------------------------------------------------------------
+# Wire-up
+# ---------------------------------------------------------------------------
+
+
+def test_the_account_menu_links_to_settings(app):
+    """`/settings/*` existed with no control anywhere pointing at it. The
+    gear beside this menu opens the quick-settings popover, which is a
+    subset; everything else about the account lives on these pages."""
+    client = _login(app)
+    body = client.get("/settings/appearance").text
+    panel = body[body.index("account-panel") :]
+    panel = panel[: panel.index("</details>")]
+    assert 'href="/settings/appearance"' in panel
+    assert 'hx-get="/settings/appearance"' in panel
+    assert 'hx-target="#main"' in panel
+
+
+def test_the_palette_offers_every_settings_page(app):
+    client = _login(app)
+    payload = client.get("/palette/index").json()
+    pages = [s for s in payload["settings"] if s["href"] is not None]
+    assert [s["href"] for s in pages] == [f"/settings/{key}" for key, _label in PAGES]
+    source = (REPO / "mailosh/web/static/js/palette.js").read_text()
+    assert "setting.href ? go(setting.href)" in source
