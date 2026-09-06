@@ -1,7 +1,8 @@
 """The action routes (design spec §6.3): `POST /a/{archive,delete,spam,star,
-read,undo}`.
+read,undo}`, plus the Trash/Spam four: `POST /a/{restore,unspam,destroy,
+empty}`.
 
-Six thin handlers over `mailosh.services.actions` — no JMAP call, no undo
+Ten thin handlers over `mailosh.services.actions` — no JMAP call, no undo
 crypto and no view model is built here. Every one of them is `POST`, CSRF
 protected (`deps.csrf_protect`, which also refuses `Sec-Fetch-Site:
 cross-site` and never trusts `HX-Request` on its own), takes its selection as
@@ -15,6 +16,14 @@ response's only job is to hand back the *canonical* delta.
 `undo` answers `{"om:done": {"toast": "Undone", "refresh": true}}` — after a
 reversal the client re-fetches rather than trying to re-derive which rows came
 back and where they belong.
+
+`destroy` and `empty` are the two that cannot be undone, and they say so with
+`undo_unavailable: "permanent"` rather than by simply omitting the token: a
+missing button beside "Deleted forever" is the one place the reader most needs
+to be told it is missing on purpose. `empty` also *always* asks first (a `409`
++ `om:confirm` until `confirm=1`), whatever the mailbox holds — it is one
+POST against everything in Trash or Spam, and there is no selection size
+below which that is safe to do silently.
 
 Deliberately *not* here (a later task owns the browser half): `static/js/
 actions.js`, the toast fragment, the row buttons, and mounting this router in
@@ -70,6 +79,16 @@ _CONFIRM_COPY = {
     "spam": "Report {count} messages as spam?",
     "star": "Update the star on {count} messages?",
     "read": "Update {count} messages?",
+    "restore": "Restore {count} messages to the Inbox?",
+    "unspam": "Move {count} messages to the Inbox?",
+    "destroy": "Delete {count} messages forever? This can't be undone.",
+}
+
+#: `om:confirm` copy for `/a/empty`, keyed by the nav key it empties. Always
+#: asked, never sized: the question is about a mailbox, not a selection.
+_EMPTY_CONFIRM_COPY = {
+    "trash": "Delete everything in Trash forever? This can't be undone.",
+    "spam": "Delete everything in Spam forever? This can't be undone.",
 }
 
 
@@ -122,10 +141,14 @@ def _done(request: Request, client: JmapClient, result: ActionResult) -> Respons
        (`undo_unavailable`) so the toast can explain the missing button
        instead of silently not having one.
 
-    `undo_unavailable` is a stable code (`"too_many"` or `"no_change"`), not
-    display copy: nothing reads it yet, but when the toast does, it owns the
-    wording — this field must never be turned back into an English fragment,
-    or every future copy edit or i18n pass becomes a server change.
+    `undo_unavailable` is a stable code (`"too_many"`, `"no_change"` or
+    `"permanent"`), not display copy: the client owns the wording — this
+    field must never be turned back into an English fragment, or every
+    future copy edit or i18n pass becomes a server change. `"permanent"` is
+    decided by the service (`ActionResult.undoable`), before any size
+    check: a destroyed message has nothing to restore however few there
+    were, and the code must not be shadowed by the `"no_change"` an empty
+    spec would otherwise earn.
 
     Undo is shed last on purpose: it is the affordance a user cannot recreate
     for themselves, whereas a list re-fetch is one the client makes anyway.
@@ -135,7 +158,7 @@ def _done(request: Request, client: JmapClient, result: ActionResult) -> Respons
     settings: Settings = request.app.state.settings
     token = (
         sign(result.spec, settings.secret_key, scope=client.account_id)
-        if result.spec.email_ids
+        if result.spec.email_ids and result.undoable
         else None
     )
     payload: dict[str, object] = {
@@ -144,7 +167,9 @@ def _done(request: Request, client: JmapClient, result: ActionResult) -> Respons
         "removed": result.removed,
         "counts": result.counts,
     }
-    if token is None:
+    if not result.undoable:
+        payload["undo_unavailable"] = "permanent"
+    elif token is None:
         payload["undo_unavailable"] = "no_change"
 
     # Shedding `removed` only helps when there was something in it: star and
@@ -257,6 +282,81 @@ async def read(
     if (guard := _needs_confirmation("read", ids, confirm)) is not None:
         return guard
     return _done(request, client, await actions.mark_read(client, await _nav(client), ids, on=on))
+
+
+@router.post("/restore")
+async def restore(
+    request: Request, client: ClientDep, ids: IdsForm, confirm: ConfirmForm = False
+) -> Response:
+    """Move the selection out of Trash and back to the Inbox (`e` in Trash)."""
+    if (guard := _needs_confirmation("restore", ids, confirm)) is not None:
+        return guard
+    return _done(request, client, await actions.restore(client, await _nav(client), ids))
+
+
+@router.post("/unspam")
+async def unspam(
+    request: Request, client: ClientDep, ids: IdsForm, confirm: ConfirmForm = False
+) -> Response:
+    """Move the selection back to the Inbox and clear `$junk` (`!` in Spam)."""
+    if (guard := _needs_confirmation("unspam", ids, confirm)) is not None:
+        return guard
+    return _done(request, client, await actions.not_spam(client, await _nav(client), ids))
+
+
+@router.post("/destroy")
+async def destroy(
+    request: Request, client: ClientDep, ids: IdsForm, confirm: ConfirmForm = False
+) -> Response:
+    """Permanently delete the selection (`#` in Trash). Not undoable; the
+    client asks before every post, and the >100 guard here still stands
+    behind that for a caller that did not.
+    """
+    if (guard := _needs_confirmation("destroy", ids, confirm)) is not None:
+        return guard
+    return _done(request, client, await actions.destroy(client, await _nav(client), ids))
+
+
+@router.post("/empty")
+async def empty(
+    request: Request,
+    client: ClientDep,
+    key: Annotated[str, Form()],
+    confirm: ConfirmForm = False,
+) -> Response:
+    """Destroy everything in Trash or Spam ("Empty Trash now").
+
+    `key` is refused outright for anything but those two — a 400, not a
+    silent no-op, because a client that posts `key=inbox` here has a bug
+    worth surfacing. Unconfirmed, it is the same `409` + `om:confirm` shape
+    every bulk action uses, so the client re-posts through one dialog path.
+    The reply carries `refresh: true` rather than a row list: the list this
+    empties is the one on screen, and asking for it again is the whole
+    reconciliation.
+    """
+    if key not in actions.EMPTYABLE:
+        raise HTTPException(status_code=400, detail="only trash and spam can be emptied")
+    if not confirm:
+        return Response(
+            status_code=409,
+            headers=_trigger(
+                {"om:confirm": {"kind": "empty", "count": 0, "message": _EMPTY_CONFIRM_COPY[key]}}
+            ),
+        )
+    result = await actions.empty_mailbox(client, await _nav(client), key)
+    return Response(
+        status_code=204,
+        headers=_trigger(
+            {
+                "om:done": {
+                    "toast": result.spec.toast,
+                    "undo": None,
+                    "undo_unavailable": "permanent",
+                    "refresh": True,
+                }
+            }
+        ),
+    )
 
 
 @router.post("/undo")

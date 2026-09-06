@@ -119,9 +119,9 @@ const DEFAULTS = [
   {"id": "select-starred", "keys": ["* s"], "scope": "list", "group": "Selection", "label": "Select starred", "available": true},
   {"id": "select-unstarred", "keys": ["* t"], "scope": "list", "group": "Selection", "label": "Select unstarred", "available": true},
 
-  {"id": "archive", "keys": ["e"], "scope": "list", "group": "Actions", "label": "Archive", "available": true},
-  {"id": "delete", "keys": ["#"], "scope": "list", "group": "Actions", "label": "Delete", "available": true},
-  {"id": "spam", "keys": ["!"], "scope": "list", "group": "Actions", "label": "Report spam", "available": true},
+  {"id": "archive", "keys": ["e"], "scope": "list", "group": "Actions", "label": "Archive (in Trash: restore to Inbox)", "available": true},
+  {"id": "delete", "keys": ["#"], "scope": "list", "group": "Actions", "label": "Delete (in Trash: delete forever)", "available": true},
+  {"id": "spam", "keys": ["!"], "scope": "list", "group": "Actions", "label": "Report spam (in Spam: not spam)", "available": true},
   {"id": "star", "keys": ["s"], "scope": "list", "group": "Actions", "label": "Star", "available": true},
   {"id": "mark-read", "keys": ["Shift+I"], "scope": "list", "group": "Actions", "label": "Mark as read", "available": true},
   {"id": "mark-unread", "keys": ["Shift+U"], "scope": "list", "group": "Actions", "label": "Mark as unread", "available": true},
@@ -297,12 +297,35 @@ function starred(el) {
   return stars.length > 0 && Array.from(stars).every((star) => star.classList.contains("is-on"));
 }
 
-/** Run one of `actions.js`'s six mutations against the current target, or
+/** Run one of `actions.js`'s mutations against the current target, or
  *  say there was nothing to run it on. */
 function act(kind) {
   if (targets().length === 0) return false;
   window.om.act(kind);
   return true;
+}
+
+/** Which mailbox the reader is looking at — `""` off any mailbox.
+ *
+ *  Read from the toolbar's `data-view-key` (`list/toolbar.html`, and the
+ *  conversation's own bar in `thread/page.html`, which carries the
+ *  mailbox the reader came from) rather than parsed out of the URL: a
+ *  conversation's address names no mailbox, and the toolbar is the one
+ *  element that already draws different buttons for Trash and Spam, so it
+ *  is the one the keys should agree with. */
+function viewKey() {
+  return document.querySelector("[data-view-key]")?.dataset.viewKey ?? "";
+}
+
+/** `e`, `#` and `!` keep their bindings everywhere and change their
+ *  meaning in Trash and Spam, exactly as the buttons they mirror do: in
+ *  Trash `e` restores and `#` deletes forever (archiving from Trash would
+ *  be a no-op, and there is no second trash to move to), and in Spam `!`
+ *  is "not spam". One registry entry each rather than a second entry per
+ *  mailbox: the `?` overlay lists one key once, with both readings in its
+ *  label, and `lookup` forbids a binding claimed twice at one scope. */
+function inView(key, there, elsewhere) {
+  return act(viewKey() === key ? there : elsewhere);
 }
 
 /** `s` toggles, so its direction comes from what is under the cursor: a
@@ -343,11 +366,14 @@ function archiveThen(delta) {
   const chosen = targets();
   // With a selection, `[`/`]` are just Archive: there is no single row the
   // cursor is leaving, so there is nothing to move it relative to.
-  if (list === null || row === null || chosen.length !== 1) return act("archive");
+  // The same reading of `e` the plain key has: in Trash the row leaves by
+  // being restored, and the cursor still moves to its neighbour.
+  const kind = viewKey() === "trash" ? "restore" : "archive";
+  if (list === null || row === null || chosen.length !== 1) return act(kind);
   const ids = list.ids();
   const at = ids.indexOf(row.dataset.id);
   const next = at === -1 ? null : (ids[at + delta] ?? null);
-  if (!act("archive")) return false;
+  if (!act(kind)) return false;
   if (next !== null) focusAfterRemoval(row.dataset.id, next);
   return true;
 }
@@ -719,9 +745,9 @@ const RUNNERS = {
   "select-starred": () => withList((list) => list.selectMatching("starred")),
   "select-unstarred": () => withList((list) => list.selectMatching("unstarred")),
 
-  archive: () => act("archive"),
-  delete: () => act("delete"),
-  spam: () => act("spam"),
+  archive: () => inView("trash", "restore", "archive"),
+  delete: () => inView("trash", "destroy", "delete"),
+  spam: () => inView("spam", "unspam", "spam"),
   star: () => toggleStar(),
   "mark-read": () => act("read"),
   "mark-unread": () => act("unread"),

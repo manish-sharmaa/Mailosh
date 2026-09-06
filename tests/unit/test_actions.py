@@ -19,6 +19,7 @@ import asyncio
 import json
 import random
 import string
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -26,9 +27,9 @@ from conftest import EMPTY_SET_RESPONSE, NOT_UPDATED_RESPONSE, make_settings
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from mailosh.jmap.client import EmailState
+from mailosh.jmap.client import EmailState, QueryPage
 from mailosh.jmap.errors import JmapError
-from mailosh.jmap.models import Mailbox
+from mailosh.jmap.models import EmailHeader, Mailbox
 from mailosh.services import actions
 from mailosh.services.mailbox_tree import build_nav
 from mailosh.services.undo import UndoSpec, sign, verify
@@ -139,6 +140,8 @@ class FakeClient:
         #: Set to make every `Mailbox/set` create fail, for the "the folder
         #: cannot be made" path.
         self.create_error: JmapError | None = None
+        self.destroyed: list[str] = []
+        self.query_calls: list[tuple[str, int, int]] = []
         self._account = account
 
     @property
@@ -218,6 +221,45 @@ class FakeClient:
         for email_id in email_ids:
             row = self.emails[email_id]
             row["keywords"].add(keyword) if on else row["keywords"].discard(keyword)
+
+    async def destroy_emails(self, email_ids) -> None:
+        """`Email/set` destroy: the rows really go, so a later snapshot cannot
+        find them — which is what the "not undoable" tests rely on."""
+        self.calls.append("destroy_emails")
+        self.destroyed.extend(email_ids)
+        for email_id in email_ids:
+            self.emails.pop(email_id, None)
+
+    async def query_page(self, *, mailbox_id, position, limit, **_ignored) -> QueryPage:
+        """A thread-collapsed page of `mailbox_id`, shaped the way the real
+        chain answers: every message of every matching thread comes back,
+        including members sitting in *other* mailboxes, so `empty_mailbox`
+        has to do its own membership check."""
+        self.calls.append("query_page")
+        self.query_calls.append((mailbox_id, position, limit))
+        threads: dict[str, list[EmailHeader]] = {}
+        for email_id, row in self.emails.items():
+            if mailbox_id in row["mailboxes"]:
+                threads.setdefault(row["thread"], [])
+        for email_id, row in self.emails.items():
+            if row["thread"] in threads:
+                threads[row["thread"]].append(
+                    EmailHeader(
+                        id=email_id,
+                        threadId=row["thread"],
+                        mailboxIds=set(row["mailboxes"]),
+                        keywords=set(row["keywords"]),
+                        receivedAt=datetime(2026, 9, 1, tzinfo=UTC),
+                        hasAttachment=False,
+                    )
+                )
+        order = list(threads)[position : position + limit]
+        return QueryPage(
+            thread_order=order,
+            total=len(threads),
+            emails_by_thread={tid: threads[tid] for tid in order},
+            position=position,
+        )
 
 
 async def _nav(fake: FakeClient):
@@ -779,7 +821,19 @@ def test_jmap_failures_propagate_rather_than_becoming_a_toast():
 def test_routes_are_all_post_only():
     fake = FakeClient({"e1": _email("t1", {"mb-inbox"})})
     paths = {route.path: route.methods for route in actions_router.routes}
-    assert set(paths) == {"/a/archive", "/a/delete", "/a/spam", "/a/star", "/a/read", "/a/undo"}
+    assert set(paths) == {
+        "/a/archive",
+        "/a/delete",
+        "/a/spam",
+        "/a/star",
+        "/a/read",
+        "/a/undo",
+        # Trash and Spam's four: the same POST-only, CSRF-checked shape.
+        "/a/restore",
+        "/a/unspam",
+        "/a/destroy",
+        "/a/empty",
+    }
     assert all(methods == {"POST"} for methods in paths.values())
     assert TestClient(_make_app(fake)).get("/a/archive").status_code == 405
 
@@ -978,3 +1032,186 @@ async def test_set_mailboxes_patch_of_nothing_makes_no_request(client, api_mock)
     await client.set_mailboxes_patch({})
     await client.set_mailboxes_patch({"e1": {}})
     assert not api_mock.called
+
+
+# ---------------------------------------------------------------------------
+# Trash and Spam: restore, not spam, delete forever, empty
+# ---------------------------------------------------------------------------
+
+
+async def test_restore_moves_everything_back_to_the_inbox_and_records_trash_for_undo():
+    fake = FakeClient({"e1": _email("t1", {"mb-trash"}), "e2": _email("t2", {"mb-trash"})})
+    result = await actions.restore(fake, await _nav(fake), ["e1", "e2"])
+
+    assert fake.emails["e1"]["mailboxes"] == {"mb-inbox"}
+    assert fake.emails["e2"]["mailboxes"] == {"mb-inbox"}
+    assert result.spec.kind == "restore"
+    assert result.spec.toast == "Restored"
+    assert result.spec.prev == {"e1": ["mb-trash"], "e2": ["mb-trash"]}
+    assert result.removed == ["t1", "t2"]
+    assert result.undoable is True
+    # Both were unread and now sit in the Inbox: the badge moves up.
+    assert result.counts == {"inbox": 2}
+
+    await actions.apply_undo(fake, result.spec)
+    assert fake.emails["e1"]["mailboxes"] == {"mb-trash"}
+
+
+async def test_not_spam_returns_to_the_inbox_and_clears_junk_in_one_email_set():
+    fake = FakeClient({"e1": _email("t1", {"mb-junk"})})
+    fake.emails["e1"]["keywords"].add("$junk")
+    result = await actions.not_spam(fake, await _nav(fake), ["e1"])
+
+    assert fake.calls.count("set_mailboxes_patch") == 1
+    assert fake.patch_calls == [({"e1": {"mb-inbox": True, "mb-junk": None}}, {"$junk": False})]
+    assert fake.emails["e1"]["mailboxes"] == {"mb-inbox"}
+    assert "$junk" not in fake.emails["e1"]["keywords"]
+    assert result.spec.kind == "unspam"
+    assert result.spec.toast == "Not spam"
+    assert (result.spec.keyword, result.spec.on) == ("$junk", False)
+
+    # Undo is report-spam again: back to Junk, `$junk` back on.
+    await actions.apply_undo(fake, result.spec)
+    assert fake.emails["e1"]["mailboxes"] == {"mb-junk"}
+    assert "$junk" in fake.emails["e1"]["keywords"]
+
+
+async def test_destroy_deletes_permanently_and_offers_nothing_to_undo():
+    fake = FakeClient({"e1": _email("t1", {"mb-trash"}), "e2": _email("t1", {"mb-trash"})})
+    result = await actions.destroy(fake, await _nav(fake), ["e1", "e2", "gone"])
+
+    assert fake.destroyed == ["e1", "e2"]
+    assert "e1" not in fake.emails
+    # No `Email/set` update rode along: destroy is not a move.
+    assert "set_mailboxes_patch" not in fake.calls
+    assert result.spec.toast == "Deleted forever"
+    assert result.removed == ["t1"]
+    assert result.undoable is False
+    # The spec is deliberately empty: nothing may sign it into a token.
+    assert result.spec.email_ids == []
+    assert result.spec.prev == {}
+
+
+async def test_destroy_still_moves_the_inbox_badge_for_an_unread_inbox_message():
+    fake = FakeClient({"e1": _email("t1", {"mb-inbox"})})
+    result = await actions.destroy(fake, await _nav(fake), ["e1"])
+    assert result.counts == {"inbox": -1}
+
+
+async def test_empty_trash_destroys_only_the_messages_actually_in_trash():
+    """A thread with one deleted reply and three live messages loses exactly
+    the one: the page comes back with the whole thread, and membership is
+    checked per message."""
+    fake = FakeClient(
+        {
+            "e1": _email("t1", {"mb-trash"}),
+            "e2": _email("t1", {"mb-inbox"}),
+            "e3": _email("t2", {"mb-trash"}),
+            "e4": _email("t3", {"mb-junk"}),
+        }
+    )
+    result = await actions.empty_mailbox(fake, await _nav(fake), "trash")
+
+    assert sorted(fake.destroyed) == ["e1", "e3"]
+    assert set(fake.emails) == {"e2", "e4"}
+    assert result.spec.toast == "Trash emptied"
+    assert result.undoable is False
+    assert result.removed == []
+    assert fake.query_calls == [("mb-trash", 0, actions._EMPTY_PAGE)]
+
+
+async def test_empty_spam_pages_from_the_top_until_nothing_is_left(monkeypatch):
+    monkeypatch.setattr(actions, "_EMPTY_PAGE", 2)
+    fake = FakeClient({f"e{n}": _email(f"t{n}", {"mb-junk"}) for n in range(5)})
+    result = await actions.empty_mailbox(fake, await _nav(fake), "spam")
+
+    assert fake.emails == {}
+    assert result.spec.toast == "Spam emptied"
+    # Always position 0: each destroyed page slides the next into place.
+    assert fake.query_calls == [("mb-junk", 0, 2)] * 3
+
+
+async def test_empty_refuses_any_mailbox_but_trash_and_spam():
+    fake = FakeClient({"e1": _email("t1", {"mb-inbox"})})
+    with pytest.raises(ValueError):
+        await actions.empty_mailbox(fake, await _nav(fake), "inbox")
+    assert fake.emails == {"e1": _email("t1", {"mb-inbox"})}
+
+
+async def test_empty_of_an_already_empty_mailbox_destroys_nothing():
+    fake = FakeClient({"e1": _email("t1", {"mb-inbox"})})
+    await actions.empty_mailbox(fake, await _nav(fake), "trash")
+    assert "destroy_emails" not in fake.calls
+
+
+def test_restore_and_unspam_routes_are_undoable_and_destroy_is_not():
+    fake = FakeClient({"e1": _email("t1", {"mb-trash"}), "e2": _email("t2", {"mb-junk"})})
+    app = _make_app(fake)
+
+    restored = _trigger(_post(app, "/a/restore", {"ids": ["e1"]}))
+    assert restored["toast"] == "Restored"
+    assert verify(restored["undo"], SECRET, scope=ACCOUNT).kind == "restore"
+    assert "undo_unavailable" not in restored
+
+    unspammed = _trigger(_post(app, "/a/unspam", {"ids": ["e2"]}))
+    assert unspammed["toast"] == "Not spam"
+    assert verify(unspammed["undo"], SECRET, scope=ACCOUNT).kind == "unspam"
+
+    response = _post(app, "/a/destroy", {"ids": ["e1"]})
+    assert response.status_code == 204
+    destroyed = _trigger(response)
+    assert destroyed["toast"] == "Deleted forever"
+    assert destroyed["undo"] is None
+    # `permanent`, never `no_change`: the reply must not describe a
+    # destroyed message as one nothing happened to.
+    assert destroyed["undo_unavailable"] == "permanent"
+    assert destroyed["removed"] == ["t1"]
+    assert "e1" not in fake.emails
+
+
+def test_destroy_over_the_bulk_line_asks_like_every_other_action():
+    ids = _long_ids(101)
+    fake = FakeClient({email_id: _email(f"t-{email_id}", {"mb-trash"}) for email_id in ids})
+    app = _make_app(fake)
+    asked = _post(app, "/a/destroy", {"ids": ids})
+    assert asked.status_code == 409
+    ask = _trigger(asked, "om:confirm")
+    assert ask["kind"] == "destroy"
+    assert "forever" in ask["message"]
+    assert fake.destroyed == []
+    assert _post(app, "/a/destroy", {"ids": ids, "confirm": "1"}).status_code == 204
+    assert len(fake.destroyed) == 101
+
+
+def test_empty_route_always_asks_first_and_then_refreshes():
+    fake = FakeClient({"e1": _email("t1", {"mb-trash"}), "e2": _email("t2", {"mb-inbox"})})
+    app = _make_app(fake)
+
+    asked = _post(app, "/a/empty", {"key": "trash"})
+    assert asked.status_code == 409
+    ask = _trigger(asked, "om:confirm")
+    assert ask["kind"] == "empty"
+    assert ask["message"] == "Delete everything in Trash forever? This can't be undone."
+    assert fake.destroyed == []
+
+    done = _post(app, "/a/empty", {"key": "trash", "confirm": "1"})
+    assert done.status_code == 204
+    payload = _trigger(done)
+    assert payload == {
+        "toast": "Trash emptied",
+        "undo": None,
+        "undo_unavailable": "permanent",
+        "refresh": True,
+    }
+    assert fake.destroyed == ["e1"]
+    assert "e2" in fake.emails
+
+
+@pytest.mark.parametrize("key", ["inbox", "archive", "m-work", "", "../trash"])
+def test_empty_route_refuses_every_other_key(key):
+    fake = FakeClient({"e1": _email("t1", {"mb-inbox"})})
+    response = _post(_make_app(fake), "/a/empty", {"key": key, "confirm": "1"})
+    # An empty `key` never reaches the route at all (FastAPI's own 422 for
+    # a missing form field); everything else is the route's 400.
+    assert response.status_code == (422 if key == "" else 400)
+    assert fake.destroyed == []

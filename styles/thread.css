@@ -1,0 +1,34 @@
+/* The conversation's mail-semantics additions: the list toolbar's
+   "Empty … now" control, the attachment preview dialog, and the dedicated
+   print page. A partial like search.css and labels.css, `@import`ed from
+   input.css, so `make css` rebuilds when it changes. */
+@layer components {
+  /* A labelled toolbar button, for the one control in the list toolbar that
+     needs a verb the reader can read without hovering ("Empty Trash now").
+     Same height and radius as `.btn-icon size-7` so it sits on the same
+     baseline as its neighbours. */
+  .toolbar-text-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: var(--radius-pill);
+    color: var(--fg-2);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease);
+  }
+  .toolbar-text-btn:hover,
+  .toolbar-text-btn:focus-visible {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .toolbar-text-btn svg {
+    color: var(--icon);
+  }
+}

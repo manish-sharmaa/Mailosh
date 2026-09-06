@@ -909,6 +909,11 @@ ACTION_KEY_IDS = {
     "read": "mark-read",
     "unread": "mark-unread",
     "select": "select",
+    # Trash and Spam's readings of the same three keys (`keys.js` `inView`):
+    # `e` restores, `#` deletes forever, `!` is "not spam".
+    "restore": "archive",
+    "destroy": "delete",
+    "unspam": "spam",
 }
 
 _MODIFIER_NAMES = {"shift", "ctrl", "control", "alt", "meta", "cmd", "mod"}
@@ -1408,6 +1413,14 @@ def test_every_action_control_names_its_key_from_the_registry():
         "unread": 3,
         # The selection toolbar's, and the conversation toolbar's.
         "spam": 2,
+        # Trash's pair stands where archive/delete stand, in the same three
+        # templates (row, selection toolbar, conversation toolbar); the
+        # templates carry both branches, so both are counted.
+        "restore": 3,
+        "destroy": 3,
+        # Spam's "Not spam" replaces the spam button in the two bars that
+        # have one; a row never had a spam button to replace.
+        "unspam": 2,
     }
 
 
@@ -2538,3 +2551,108 @@ def test_a_refresh_that_keeps_the_list_does_not_move_the_reader():
     guard = body.split("if (returning", 1)[0]
     # Nothing between entering `ensureFocus` and the guard may write scrollTop.
     assert "el.scrollTop =" not in guard
+
+
+# ---------------------------------------------------------------------------
+# Trash and Spam semantics
+# ---------------------------------------------------------------------------
+
+
+def _hover_actions(body: str, thread_id: str) -> list[str]:
+    row = _row_html(body, thread_id)
+    actions = row[row.index('class="row-actions"') :]
+    return re.findall(r'data-action="([^"]+)"', actions)
+
+
+def test_trash_rows_and_bars_offer_restore_and_delete_forever_instead(app, fake):
+    fake.threads = {"t9": [_header("e9", "t9", mailbox_ids={"mb-trash"})]}
+    body = _login(app).get("/mail/trash").text
+    assert _hover_actions(body, "t9") == ["restore", "destroy", "read", "unread"]
+    bar = _selection_toolbar(body)
+    assert re.findall(r'data-action="([^"]+)"', bar) == ["restore", "destroy", "read", "unread"]
+    assert "Delete forever (#)" in bar
+    assert "Restore (e)" in bar
+    # No spam button in Trash: there is nothing to report from there.
+    assert 'data-action="spam"' not in bar
+
+
+def test_spam_bars_swap_report_spam_for_not_spam(app, fake):
+    fake.threads = {"t9": [_header("e9", "t9", mailbox_ids={"mb-junk"})]}
+    body = _login(app).get("/mail/spam").text
+    bar = _selection_toolbar(body)
+    assert re.findall(r'data-action="([^"]+)"', bar) == [
+        "archive",
+        "unspam",
+        "delete",
+        "read",
+        "unread",
+    ]
+    assert "Not spam (!)" in bar
+    # Rows keep the ordinary pair — a row never had a spam button.
+    assert _hover_actions(body, "t9") == ["archive", "delete", "read", "unread"]
+
+
+def test_the_inbox_is_untouched_by_the_trash_and_spam_branches(app):
+    body = _login(app).get("/mail/inbox").text
+    first = next(iter(_default_threads()))
+    assert _hover_actions(body, first) == ["archive", "delete", "read", "unread"]
+    assert 'data-role="empty-mailbox"' not in body
+
+
+@pytest.mark.parametrize(("key", "label"), [("trash", "Trash"), ("spam", "Spam")])
+def test_trash_and_spam_carry_an_empty_now_control_naming_their_key(app, key, label):
+    body = _login(app).get(f"/mail/{key}").text
+    controls = re.findall(r'<button[^>]*data-role="empty-mailbox"[^>]*>.*?</button>', body, re.S)
+    assert len(controls) == 1
+    assert f'data-mailbox-key="{key}"' in controls[0]
+    assert f"Empty {label} now" in controls[0]
+    # It lives in the default toolbar, which is the one the reader sees
+    # with nothing selected.
+    assert 'data-role="empty-mailbox"' not in _selection_toolbar(body)
+
+
+def test_every_toolbar_names_the_mailbox_the_keys_should_read(app):
+    """`keys.js`'s `viewKey()` reads `data-view-key` off the toolbar, so
+    `#` can mean delete forever in Trash and plain delete elsewhere. Both
+    the list's bar and the conversation's own carry it — the conversation
+    keeps the mailbox it was opened from."""
+    client = _login(app)
+    assert 'data-view-key="trash"' in client.get("/mail/trash").text
+    first = next(iter(_default_threads()))
+    page = client.get(f"/t/{first}", headers={"HX-Current-URL": "http://x/mail/trash"}).text
+    assert 'data-view-key="trash"' in page
+    bar = re.search(r'<div class="list-toolbar"[^>]*>.*?</div>', page, re.S)
+    assert bar is not None
+    assert re.findall(r'data-action="([^"]+)"', bar.group(0))[:2] == ["restore", "destroy"]
+
+    source = KEYS_JS.read_text()
+    assert 'querySelector("[data-view-key]")' in source
+    runners = _js_block(source, "const RUNNERS =")
+    assert re.search(
+        r'^  archive: \(\) => inView\("trash", "restore", "archive"\),$', runners, re.M
+    )
+    assert re.search(r'^  delete: \(\) => inView\("trash", "destroy", "delete"\),$', runners, re.M)
+    assert re.search(r'^  spam: \(\) => inView\("spam", "unspam", "spam"\),$', runners, re.M)
+    # ...and the `?` overlay tells the reader about both readings.
+    entries = _by_id()
+    assert "Trash" in entries["delete"]["label"]
+    assert "Trash" in entries["archive"]["label"]
+    assert "Spam" in entries["spam"]["label"]
+
+
+@pytest.mark.parametrize(
+    ("key", "title"),
+    [
+        ("trash", "Trash is empty"),
+        ("spam", "No spam"),
+        ("drafts", "No drafts"),
+        ("sent", "Nothing sent yet"),
+    ],
+)
+def test_the_four_system_folders_have_their_own_empty_state(app, fake, key, title):
+    fake.threads = {}
+    fake.total = 0
+    body = _login(app).get(f"/mail/{key}").text
+    assert title in body
+    assert "Nothing here" not in body
+    assert "all caught up" not in body
