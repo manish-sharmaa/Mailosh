@@ -14,7 +14,7 @@ def _settings(**kw):
     # same default for every other call site while letting this one
     # override it in both directions, which is what the test clearly needs.
     kw.setdefault("cookie_secure", False)
-    return Settings(stalwart_admin_secret="s", secret_key="k" * 40, **kw)
+    return Settings(stalwart_admin_secret="test-admin-secret-0123456789", secret_key="k" * 40, **kw)
 
 
 async def test_create_load_touch_and_secret(db):

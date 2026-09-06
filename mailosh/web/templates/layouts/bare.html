@@ -31,12 +31,11 @@
   <body class="flex min-h-dvh items-center justify-center bg-bg text-fg">
     {% block content %}{% endblock %}
 
-    {# A deliberately smaller vendor set than layouts/app.html: no
-       idiomorph/preload (nothing here streams list rows), no command-
-       score (no palette), no keys/actions/palette/sse (nothing to key
-       into, act on, or live-update on an unauthenticated page). #}
-    <script src="{{ static('vendor/htmx.min.js') }}"></script>
-    <script src="{{ static('vendor/alpine.min.js') }}" defer></script>
+    {# No vendor scripts at all. The one page on this layout is the sign-in
+       form, which carries no `hx-` or `x-` attribute and whose own
+       `auth.js` is plain JavaScript — htmx and Alpine were 40 KB (gzipped)
+       loaded here for nothing. A page that needs them adds them in this
+       block. #}
     {% block scripts %}{% endblock %}
   </body>
 </html>

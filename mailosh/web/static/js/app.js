@@ -359,10 +359,47 @@ const ui = {
     // interrupt the last); `#status` is, so the same words go there once.
     const status = document.getElementById("status");
     if (status) status.textContent = note ? message + ". " + note : message;
-    setTimeout(dismiss, timeout);
+    // WCAG 2.2.1: a timed control the reader can pause. The ten seconds
+    // stop while the pointer is over the toast or focus is inside it — a
+    // reader tabbing to Undo, or a mouse on its way there, is not racing
+    // the timer — and start again from the full window on leaving.
+    let timer = setTimeout(dismiss, timeout);
+    const hold = () => clearTimeout(timer);
+    const release = () => {
+      clearTimeout(timer);
+      timer = setTimeout(dismiss, timeout);
+    };
+    el.addEventListener("mouseenter", hold);
+    el.addEventListener("focusin", hold);
+    el.addEventListener("mouseleave", release);
+    el.addEventListener("focusout", release);
     return el;
   },
 };
+
+// ---------------------------------------------------------------------
+// The reader's clock
+// ---------------------------------------------------------------------
+//
+// Every "today" / "yesterday" / "10:42 AM" on a page is decided on the
+// server, in whatever zone `mailosh.web.deps.viewer_now` is handed. This is
+// where it learns the browser's: one cookie, written once per zone, read
+// on every page render. A year's expiry, `SameSite=Lax`, and `Secure` when
+// the page itself is — it carries nothing worth protecting, but a cookie
+// that a browser refuses on a secure origin is a cookie that never lands.
+(function tellTheServerOurTimezone() {
+  let zone = "";
+  try {
+    zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return;
+  }
+  if (!zone || zone.length > 64) return;
+  const current = document.cookie.split("; ").find((c) => c.startsWith("tz="));
+  if (current === "tz=" + encodeURIComponent(zone)) return;
+  const secure = location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = "tz=" + encodeURIComponent(zone) + "; Path=/; Max-Age=31536000; SameSite=Lax" + secure;
+})();
 
 // ---------------------------------------------------------------------
 // Quick settings (spec §10)
@@ -811,6 +848,13 @@ window.addEventListener("keydown", dispatch);
 // Nothing needs re-binding: the click model is one delegated listener on
 // `document.body`, which no swap can detach.
 let idsBeforeSwap = null;
+// Set by a live-update refetch and consumed by the settle that lands it:
+// only that pair may announce "N new messages" (spec §6.5). A navigation
+// swap replaces every row and would otherwise announce a whole mailbox.
+let announceNewRows = false;
+document.body.addEventListener("mail:changed", () => {
+  announceNewRows = true;
+});
 document.body.addEventListener("htmx:beforeSwap", () => {
   const state = store("list") ?? list;
   idsBeforeSwap = state.ids();
@@ -826,7 +870,18 @@ document.body.addEventListener("htmx:afterSettle", () => {
   syncListLimit();
   const previous = idsBeforeSwap;
   idsBeforeSwap = null;
-  (store("list") ?? list).ensureFocus(previous);
+  const state = store("list") ?? list;
+  state.ensureFocus(previous);
+  if (announceNewRows) {
+    announceNewRows = false;
+    if (previous !== null && previous.length > 0) {
+      const fresh = state.ids().filter((id) => !previous.includes(id)).length;
+      const status = document.getElementById("status");
+      if (fresh > 0 && status) {
+        status.textContent = fresh === 1 ? "1 new message" : fresh + " new messages";
+      }
+    }
+  }
 });
 
 // …and once for the page as loaded. `htmx:afterSettle` does not fire on a

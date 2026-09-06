@@ -40,7 +40,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="{{ static('brand/mark-32.png') }}">
     <link rel="icon" type="image/png" sizes="192x192" href="{{ static('brand/mark-192.png') }}">
     <link rel="apple-touch-icon" href="{{ static('brand/mark-180.png') }}">
-    <link rel="preload" as="font" type="font/woff2" crossorigin href="{{ static('fonts/inter-latin.woff2') }}">
+    {% include "shell/fonts.html" %}
     <link rel="stylesheet" href="{{ static('app.css') }}">
     <meta name="csrf-token" content="{{ csrf_token }}">
   </head>

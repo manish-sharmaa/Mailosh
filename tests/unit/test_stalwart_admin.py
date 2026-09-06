@@ -985,7 +985,7 @@ def test_setup_cli_prints_all_four_dns_record_types(monkeypatch):
     `Settings()` is satisfied the same way `test_config.py`/`test_sse_hub.py`
     already do it: monkeypatched env vars, no dependence on a real `.env`.
     """
-    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "x")
+    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "test-admin-secret-0123456789")
     monkeypatch.setenv("MAILOSH_DEMO_PASSWORD", "y")
     monkeypatch.setenv("MAILOSH_SECRET_KEY", "x" * 32)
 
@@ -1054,7 +1054,7 @@ def test_setup_cli_generates_and_prints_a_password_when_omitted(monkeypatch):
     returns `True` (freshly created), so the generated password really was
     applied and printing it is accurate.
     """
-    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "x")
+    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "test-admin-secret-0123456789")
     monkeypatch.setenv("MAILOSH_DEMO_PASSWORD", "y")
     monkeypatch.setenv("MAILOSH_SECRET_KEY", "x" * 32)
 
@@ -1094,7 +1094,7 @@ def test_setup_cli_warns_and_omits_password_when_account_already_existed(monkeyp
     of a "Generated password" line that would misrepresent an unapplied
     password as the account's real, current one.
     """
-    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "x")
+    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "test-admin-secret-0123456789")
     monkeypatch.setenv("MAILOSH_DEMO_PASSWORD", "y")
     monkeypatch.setenv("MAILOSH_SECRET_KEY", "x" * 32)
 
@@ -1128,7 +1128,7 @@ def test_setup_cli_warns_when_explicit_password_given_but_account_already_existe
     silently ignored because the account already existed -- must warn the
     same way, not stay silent just because nothing was "generated".
     """
-    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "x")
+    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "test-admin-secret-0123456789")
     monkeypatch.setenv("MAILOSH_DEMO_PASSWORD", "y")
     monkeypatch.setenv("MAILOSH_SECRET_KEY", "x" * 32)
 

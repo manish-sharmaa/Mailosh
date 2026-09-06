@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated
 from urllib.parse import quote, urlsplit
 
@@ -234,7 +234,7 @@ async def _list_context(
         position=position,
         limit=limit,
         me=user.email,
-        now=datetime.now(UTC),
+        now=deps.viewer_now(request),
     )
     label, unread = _active_item(nav, key)
     context.update(
@@ -655,7 +655,7 @@ async def _render_conversation(
         client,
         thread_id=thread_id,
         me=user.email,
-        now=datetime.now(UTC),
+        now=deps.viewer_now(request),
         label_meta=label_meta,
         nav=nav,
         restyled=_restyled_for(db, user, prefs),
@@ -754,7 +754,7 @@ async def thread_view(
     place = None
     if known and key != "" and pos is not None:
         place = await _thread_position(
-            client, nav, key, max(0, pos), me=user.email, now=datetime.now(UTC)
+            client, nav, key, max(0, pos), me=user.email, now=deps.viewer_now(request)
         )
 
     return await _render_conversation(
@@ -805,7 +805,9 @@ async def mail_at(
     if key not in _valid_keys(nav):
         return _not_found(request, context, message="That mailbox doesn't exist.")
 
-    place = await _thread_position(client, nav, key, position, me=user.email, now=datetime.now(UTC))
+    place = await _thread_position(
+        client, nav, key, position, me=user.email, now=deps.viewer_now(request)
+    )
     if place.thread_id is None:
         return _not_found(request, context, message="That conversation no longer exists.")
 

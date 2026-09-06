@@ -147,7 +147,7 @@ _SECURITY_HEADERS = {
 #: client carries it but does not yet act on it (`static/js/actions.js`'s
 #: failure-contract header says why: nothing may silently re-issue a write
 #: the reader has just been told did not happen).
-_JMAP_ERROR_TOAST = "Couldn't reach the mail server — retrying"
+_JMAP_ERROR_TOAST = "Couldn't reach the mail server. Try again."
 
 #: `RequestValidationError`'s own toast copy — no exact string is pinned by
 #: the brief the way `_JMAP_ERROR_TOAST`'s is, so this is this module's own
@@ -553,6 +553,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """
         if isinstance(exc, CsrfError) and _is_htmx(request):
             return _error_toast(toast=_STALE_CSRF_TOAST, retry=False)
+        # A wrong URL typed into the address bar used to get Starlette's bare
+        # `{"detail":"Not Found"}`. A browser asking for a page gets a page;
+        # every other caller (htmx, a script, a test asserting the JSON)
+        # keeps FastAPI's own answer.
+        if (
+            exc.status_code == 404
+            and not _is_htmx(request)
+            and "text/html" in request.headers.get("accept", "")
+        ):
+            return _error_page(request, status_code=404, message="There's nothing at this address.")
         return await http_exception_handler(request, exc)
 
     @app.exception_handler(RequestValidationError)

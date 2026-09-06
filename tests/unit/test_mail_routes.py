@@ -1327,9 +1327,9 @@ def test_the_selection_toolbar_carries_the_bulk_actions_and_the_count(app):
     # tests/unit/test_actions_frontend.py for the invariant this is the one
     # documented exception to.
     assert "data-email-ids" not in bar
-    # Label as and Move to went live with 1D. Only More still belongs to the
-    # palette, and still says so rather than pretending: no hook, no handler.
-    assert bar.count('aria-disabled="true"') == 1
+    # Label as and Move to went live with 1D. The "More" placeholder is gone:
+    # a permanently disabled control is a tab stop that does nothing.
+    assert bar.count('aria-disabled="true"') == 0
     assert bar.count('data-role="label-picker"') == 1
     assert bar.count('data-role="label-move"') == 1
 
@@ -1399,13 +1399,15 @@ def test_every_action_control_names_its_key_from_the_registry():
     # could not pass this by having nothing left to check.
     assert dict(seen) == {
         "select": 1,
-        # The list row's star, and the conversation card's own.
-        "star": 2,
+        # The list row's star, the conversation card's own, and the
+        # conversation toolbar's (spec §7: the same action bar as the list).
+        "star": 3,
         "archive": 3,
         "delete": 3,
         "read": 2,
         "unread": 3,
-        "spam": 1,
+        # The selection toolbar's, and the conversation toolbar's.
+        "spam": 2,
     }
 
 
@@ -1737,9 +1739,9 @@ def test_the_gear_is_live_and_opens_the_panel():
     assert "arrives" not in button.group(0)
     # `data-action` names one of the six routes; this control posts nothing.
     assert "data-action" not in button.group(0)
-    # What is left disabled up there: the nav-rail toggle, and only it.
-    # The search pill left this count with 1D.
-    assert topbar.count('aria-disabled="true"') == 1
+    # Nothing is left disabled up there: the nav-rail toggle placeholder went
+    # the way of the "More" buttons -- absent until the feature exists.
+    assert topbar.count('aria-disabled="true"') == 0
 
     handler = _js_block(LIST_APP_JS.read_text(), r"function openQuickSettings\(\)")
     assert "showModal()" in handler

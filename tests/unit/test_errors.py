@@ -274,12 +274,12 @@ def test_transport_error_hx_request_gets_200_reswap_none_and_the_exact_om_error_
     assert r.headers["HX-Reswap"] == "none"
     assert json.loads(r.headers["HX-Trigger"]) == {
         "om:error": {
-            "toast": "Couldn't reach the mail server — retrying",
+            "toast": "Couldn't reach the mail server. Try again.",
             "retry": True,
         }
     }
     # The brief's own exact string, not just this module's idea of it.
-    assert _JMAP_ERROR_TOAST == "Couldn't reach the mail server — retrying"
+    assert _JMAP_ERROR_TOAST == "Couldn't reach the mail server. Try again."
 
 
 @pytest.mark.parametrize("exc", [TransportError("down"), JmapError("bad")])
@@ -324,7 +324,7 @@ def test_jmap_error_hx_request_gets_the_same_contract_as_transport_error(app, fa
     assert r.status_code == 200
     assert r.headers["HX-Reswap"] == "none"
     assert json.loads(r.headers["HX-Trigger"]) == {
-        "om:error": {"toast": "Couldn't reach the mail server — retrying", "retry": True}
+        "om:error": {"toast": "Couldn't reach the mail server. Try again.", "retry": True}
     }
 
 

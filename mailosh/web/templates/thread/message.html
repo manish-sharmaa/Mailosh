@@ -44,7 +44,8 @@
        thing that can turn that index into a palette *name*, and a name is
        what keeps a user-controlled value out of the `style` attribute. #}
     <summary class="msg-summary">
-      <span class="avatar-sm" style="background: var(--label-{{ none | label_color(message.from_email or message.id) }})">
+      {% set hue = none | label_color(message.from_email or message.id) %}
+      <span class="avatar-sm" style="background: var(--label-{{ hue }}); color: var(--label-{{ hue }}-ink)">
         {{- message.initials -}}
       </span>
       <span class="msg-who">

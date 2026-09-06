@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.3 — 2026-09-06
+
+- Dates and times are shown in your timezone. They were rendered in UTC,
+  so "today" changed at 05:30 for readers in India.
+- The conversation toolbar has the same actions as the list: spam, star,
+  label and move, with their shortcuts.
+- Undo toasts pause while you hover or focus them; new mail is announced
+  to screen readers; list and search pages have a heading.
+- Printing a conversation prints the conversation, not the app shell.
+- Unknown URLs get a page instead of raw JSON.
+- The Inter font was fetched twice per load and the login page shipped
+  40 KB of JavaScript it never used; both fixed. The first live-update
+  connection no longer re-fetches the list the server just rendered.
+- Avatar initials are readable on every label colour.
+- Removed three permanently disabled placeholder buttons.
+- `MAILOSH_STALWART_ADMIN_SECRET` now refuses its placeholder, like
+  `MAILOSH_SECRET_KEY` already did.
+
 ## 0.1.2 — 2026-09-06
 
 - The Docker image now builds its own static assets (vendored JS, icons,

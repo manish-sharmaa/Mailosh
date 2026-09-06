@@ -48,11 +48,11 @@ def _clean_env(monkeypatch):
 
 
 def test_settings_reads_env(monkeypatch):
-    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "s3cret")
+    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "test-admin-secret-0123456789")
     monkeypatch.setenv("MAILOSH_SECRET_KEY", "x" * 32)
     s = Settings(_env_file=None)
     assert s.stalwart_url == "http://localhost:8080"
-    assert s.stalwart_admin_secret == "s3cret"
+    assert s.stalwart_admin_secret == "test-admin-secret-0123456789"
     assert s.demo_user is None
     assert s.demo_password is None
     assert s.database_url == "postgresql+asyncpg://mailosh:mailosh@localhost:5432/mailosh"
@@ -62,7 +62,7 @@ def test_settings_reads_env(monkeypatch):
 
 
 def test_settings_demo_credentials_used_when_set(monkeypatch):
-    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "s3cret")
+    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "test-admin-secret-0123456789")
     monkeypatch.setenv("MAILOSH_SECRET_KEY", "x" * 32)
     monkeypatch.setenv("MAILOSH_DEMO_USER", "demo@mailosh.test")
     monkeypatch.setenv("MAILOSH_DEMO_PASSWORD", "pw")
@@ -72,7 +72,7 @@ def test_settings_demo_credentials_used_when_set(monkeypatch):
 
 
 def test_settings_rejects_short_secret_key(monkeypatch):
-    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "s3cret")
+    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "test-admin-secret-0123456789")
     monkeypatch.setenv("MAILOSH_SECRET_KEY", "too-short")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
@@ -84,7 +84,7 @@ def test_settings_rejects_env_example_placeholder_secret_key(monkeypatch):
     it through and an operator who forgets to regenerate one would ship a
     publicly-known secret_key. Must be rejected anyway, with guidance.
     """
-    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "s3cret")
+    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "test-admin-secret-0123456789")
     placeholder = "change-me-to-32-plus-random-characters"
     assert len(placeholder) >= 32, "only the change-me check should catch this, not the length one"
     monkeypatch.setenv("MAILOSH_SECRET_KEY", placeholder)
@@ -96,7 +96,7 @@ def test_settings_rejects_any_change_me_prefixed_secret_key(monkeypatch):
     """Not just the one exact placeholder string — any "change-me..." value,
     e.g. a different placeholder someone pastes in by hand.
     """
-    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "s3cret")
+    monkeypatch.setenv("MAILOSH_STALWART_ADMIN_SECRET", "test-admin-secret-0123456789")
     monkeypatch.setenv("MAILOSH_SECRET_KEY", "change-me-" + "x" * 30)
     with pytest.raises(ValidationError, match="openssl rand -hex 32"):
         Settings(_env_file=None)

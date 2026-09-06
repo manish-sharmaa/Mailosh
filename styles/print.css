@@ -1,0 +1,88 @@
+/* Printing a conversation (spec §7).
+
+   The app shell is a fixed-height, overflow-hidden grid — exactly the shape
+   that prints as one clipped page. On paper the shell disappears, the
+   conversation column becomes ordinary flowing content, and every folded
+   quote and collapsed message is opened, because a printout cannot be
+   clicked. Nothing here is loaded on screen: it is all under one media
+   query, so it costs the screen stylesheet nothing but bytes. */
+@media print {
+  .app-header,
+  #app-nav,
+  .nav-drawer-toggle,
+  .thread-toolbar,
+  .list-toolbar,
+  .selection-toolbar,
+  .compose-dock,
+  #toasts,
+  #status,
+  .offline-banner,
+  .msg-actions,
+  .msg-menu,
+  .row-actions,
+  .btn-icon,
+  .skip-link,
+  dialog {
+    display: none !important;
+  }
+
+  html,
+  body,
+  .app,
+  #main,
+  .thread-scroll,
+  .list-body {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11pt;
+  }
+
+  #main {
+    display: block !important;
+    width: 100% !important;
+    padding: 0 !important;
+  }
+
+  /* Folded quotes and collapsed messages open for the printout. */
+  details {
+    display: block;
+  }
+  details > summary {
+    display: none;
+  }
+  details > :not(summary) {
+    display: block !important;
+  }
+
+  .msg-frame,
+  .msg-frame iframe {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    border: 0 !important;
+  }
+
+  .msg {
+    break-inside: avoid;
+    border-bottom: 1px solid #999;
+    padding-bottom: 8pt;
+    margin-bottom: 8pt;
+  }
+
+  a[href]::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    color: #555;
+  }
+  a[href^="#"]::after,
+  a[href^="/"]::after {
+    content: "";
+  }
+}

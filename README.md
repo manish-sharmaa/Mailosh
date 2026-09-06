@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-[![Release](https://img.shields.io/badge/release-v0.1.2-1a73e8)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v0.1.3-1a73e8)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-3776ab)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-passing-2ea043)](#development)

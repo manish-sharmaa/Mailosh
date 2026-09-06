@@ -265,14 +265,6 @@
     padding-bottom: 4px;
   }
 
-  /* `shell/topbar.html`'s menu button is an `aria-disabled` placeholder for
-     spec §5.1's desktop rail toggle, which is a different feature and not
-     this pass's. It is hidden here so the phone frame never shows two
-     hamburgers, one of which does nothing. */
-  .app-header > button[aria-disabled=true] {
-    display: none;
-  }
-
   /* The wordmark keeps its mark and loses its word: "Mailosh" is a bare
      text node inside the link (not an element that could be hidden), so
      the text is zeroed on the anchor and the image, which carries explicit

@@ -341,15 +341,17 @@ def test_the_drawer_swallows_keystrokes_rather_than_letting_them_reach_the_list(
 
 
 def test_the_toggle_is_the_layouts_and_the_dead_placeholder_is_hidden():
-    """`shell/topbar.html`'s menu button is an `aria-disabled` placeholder
-    for spec §5.1's *desktop* rail toggle. Two hamburgers, one of which does
-    nothing, is not a phone frame."""
+    """The phone frame has exactly one hamburger: `nav.js`'s drawer toggle.
+    The old `aria-disabled` placeholder for spec §5.1's desktop rail toggle
+    is gone until that feature exists."""
     markup = _jinja_free(APP_LAYOUT.read_text())
     assert 'data-role="nav-toggle"' in markup
     assert 'aria-expanded="false"' in markup
     assert 'aria-controls="app-nav"' in markup
     drawer = _without_comments(_blocks(_css(), DRAWER_QUERY))
-    assert ".app-header > button[aria-disabled=true]" in drawer
+    # The desktop rail-toggle placeholder is gone from the markup, so there is
+    # nothing for the drawer block to hide any more.
+    assert "button[aria-disabled=true]" not in drawer
     assert ".nav-drawer-toggle" in drawer
     # ...and it holds no space at all above 768px.
     top = _without_comments(re.split(r"@media", _css())[0])

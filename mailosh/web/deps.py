@@ -13,7 +13,9 @@ needing to know it happens to live in a different module.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -145,3 +147,23 @@ async def prefs_for(
     for `data-theme`/`data-density`.
     """
     return await repo.get_prefs(db, user.id)
+
+
+def viewer_now(request: Request) -> datetime:
+    """The current time *in the reader's timezone*, for every "today" /
+    "yesterday" / clock-time decision a page makes.
+
+    `mailosh.ui.format.format_date` has always done its calendar arithmetic
+    in `now.tzinfo`; every caller passed `datetime.now(UTC)`, so every time
+    in the UI was a UTC time and "today" turned over at midnight UTC — 05:30
+    in the morning for a reader in India. `app.js` writes the browser's IANA
+    zone into a `tz` cookie on load; this reads it back. An unknown or
+    missing zone falls back to UTC rather than failing the page.
+    """
+    name = request.cookies.get("tz", "")
+    if name and len(name) <= 64:
+        try:
+            return datetime.now(ZoneInfo(name))
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+    return datetime.now(UTC)

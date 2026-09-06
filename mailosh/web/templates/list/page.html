@@ -15,6 +15,7 @@
 {% block nav %}{% include "shell/nav.html" %}{% endblock %}
 
 {% block main %}
+  <h1 class="sr-only">{{ view_label }}</h1>
   {% include "list/toolbar.html" %}
   <div class="list-body">
     <div id="list"

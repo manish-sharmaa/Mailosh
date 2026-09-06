@@ -9,6 +9,7 @@
    needing specificity tricks. */
 @import "./a11y.css";
 @import "./responsive.css";
+@import "./print.css";
 
 /* ==========================================================================
    Design tokens — spec §4.1 (Graphite & Blue, approach C in
@@ -131,6 +132,23 @@
   --label-lime: #84CC16;
   --label-slate: #64748B;
   --label-red: #EF4444;
+  /* Text that sits ON a label fill (avatar initials). White fails contrast
+     on the light hues -- 1.9:1 on lime, 2.1:1 on amber -- so each hue
+     names its own ink. The dark theme's fills are all lighter and take
+     dark ink throughout. */
+  --label-indigo-ink: #FFFFFF;
+  --label-emerald-ink: #0B1220;
+  --label-rose-ink: #FFFFFF;
+  --label-amber-ink: #0B1220;
+  --label-sky-ink: #0B1220;
+  --label-violet-ink: #FFFFFF;
+  --label-teal-ink: #0B1220;
+  --label-orange-ink: #0B1220;
+  --label-pink-ink: #0B1220;
+  --label-lime-ink: #0B1220;
+  --label-slate-ink: #FFFFFF;
+  --label-red-ink: #FFFFFF;
+
 
   /* Label *ink* — the text colour of a chip, spec §4.1: "text = the
      colour's ink shade (light) or the light shade (dark)". These twelve
@@ -239,6 +257,19 @@
   --label-lime: #A3E635;
   --label-slate: #94A3B8;
   --label-red: #F87171;
+  --label-indigo-ink: #0B1220;
+  --label-emerald-ink: #0B1220;
+  --label-rose-ink: #0B1220;
+  --label-amber-ink: #0B1220;
+  --label-sky-ink: #0B1220;
+  --label-violet-ink: #0B1220;
+  --label-teal-ink: #0B1220;
+  --label-orange-ink: #0B1220;
+  --label-pink-ink: #0B1220;
+  --label-lime-ink: #0B1220;
+  --label-slate-ink: #0B1220;
+  --label-red-ink: #0B1220;
+
 
   /* Dark chip ink. The chip's wash is transparent, so its composited
      background lightens with the row underneath it — and the ratio is
@@ -425,13 +456,8 @@
    finishes loading (`font-display: swap` between them).
    ========================================================================== */
 
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-  src: url("/static/fonts/inter-latin.woff2") format("woff2");
-}
+/* Inter's own @font-face is emitted inline by shell/fonts.html so its URL
+   carries the content hash the preload uses; see that file. */
 
 @font-face {
   font-family: "Inter Fallback";

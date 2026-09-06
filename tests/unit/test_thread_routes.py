@@ -345,7 +345,10 @@ async def test_mark_unread_from_here_covers_this_message_and_every_later_one(aut
 async def test_every_message_has_a_star_control_pointing_at_the_action_route(authed, fake):
     fake.thread("T1", ["E1", "E2"])
     html = (await authed.get("/t/T1")).text
-    assert html.count('data-action="star"') == 2
+    # One per message card, plus the conversation toolbar's own (spec §7:
+    # the same action bar as the list), which acts on the whole thread.
+    assert len(re.findall(r'class="[^"]*\bmsg-star\b[^"]*"', html)) == 2
+    assert html.count('data-action="star"') == 3
 
 
 async def test_an_already_starred_message_says_so_so_a_click_unstars_it(authed, fake):

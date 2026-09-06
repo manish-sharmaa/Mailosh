@@ -18,10 +18,9 @@
    choice — the rail appears on its own under 1100px today, but nothing lets
    a reader ask for it. The title names that, rather than a pass that is
    done. #}
-<button type="button" class="btn-icon shrink-0" aria-disabled="true"
-        title="Collapsing the sidebar on demand is not built yet">
-  {{ icon("menu", class_="size-5", label="Toggle navigation") }}
-</button>
+{# No desktop rail toggle yet (spec §5.1). Until it exists there is no
+   button for it: a permanently `aria-disabled` control is a tab stop that
+   announces itself and does nothing, which spec §3 rules out. #}
 
 {# The mark is the supplied artwork; "Mailosh" stays live text rather than
    the wordmark PNG, which sets the name in near-black and would disappear

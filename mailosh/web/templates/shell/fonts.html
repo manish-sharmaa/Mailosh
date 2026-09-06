@@ -1,0 +1,19 @@
+{# Inter's @font-face lives here, inline, rather than in styles/input.css —
+   so that its URL can carry the same `?v=<hash>` the preload uses.
+   Tailwind compiles the stylesheet before the hash exists, so a CSS-side
+   rule had to name the bare `/static/fonts/inter-latin.woff2`: the browser
+   then fetched the font twice per cold load (once for the versioned
+   preload, once for the unversioned CSS URL), warned that the preload went
+   unused, and the CSS URL missed Caddy's `immutable` cache matcher. One
+   versioned URL, in both places, fixes all three. The metrics-matched
+   fallback face stays in input.css; it has no URL. #}
+<link rel="preload" as="font" type="font/woff2" crossorigin href="{{ static('fonts/inter-latin.woff2') }}">
+<style>
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("{{ static('fonts/inter-latin.woff2') }}") format("woff2");
+  }
+</style>

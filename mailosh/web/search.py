@@ -822,7 +822,7 @@ async def _context(
     # nobody asked.
     text = q.strip()
     if text:
-        result = parse_query(text, resolver=NavResolver(nav), now=datetime.now(UTC))
+        result = parse_query(text, resolver=NavResolver(nav), now=deps.viewer_now(request))
         page = await _run(client, result, nav=nav, position=position, limit=limit, me=user.email)
     else:
         result = ParseResult(

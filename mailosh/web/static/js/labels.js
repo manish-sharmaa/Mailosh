@@ -427,7 +427,7 @@ async function send(url, values) {
   try {
     response = await post(url, values);
   } catch {
-    toast("Couldn't reach the mail server");
+    toast("Couldn't reach the mail server. Try again.");
     refresh();
     return;
   }

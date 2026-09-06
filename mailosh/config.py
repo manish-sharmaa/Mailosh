@@ -50,6 +50,25 @@ class Settings(BaseSettings):
     session_remember_days: int = 30
     session_absolute_days: int = 90
 
+    @field_validator("stalwart_admin_secret")
+    @classmethod
+    def _admin_secret_is_real(cls, value: str) -> str:
+        # The one credential that can mint a Stalwart API key for *any*
+        # mailbox on the server. It shipped as `changeme` in .env.example
+        # with no check at all, while `secret_key` below refused its
+        # placeholder -- so an operator who set one and forgot the other
+        # ran a mail server whose master credential was a dictionary word.
+        # Same shape of check as `secret_key`: the placeholder family by
+        # prefix, then a length floor.
+        if value.lower().startswith("change"):
+            raise ValueError(
+                "MAILOSH_STALWART_ADMIN_SECRET is still a placeholder. "
+                "Generate a real one with: openssl rand -hex 24"
+            )
+        if len(value) < 16:
+            raise ValueError("MAILOSH_STALWART_ADMIN_SECRET must be at least 16 characters long")
+        return value
+
     @field_validator("secret_key")
     @classmethod
     def _secret_key_is_real(cls, value: str) -> str:

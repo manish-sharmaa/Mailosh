@@ -61,8 +61,9 @@
   <span class="recipient{% if person.external %} is-external{% endif %}"
         data-recipient data-email="{{ person.email }}"
         {% if person.external %}title="{{ person.email }} — outside your domain"{% else %}title="{{ person.email }}"{% endif %}>
+    {% set hue = none | label_color(person.email) %}
     <span class="recipient-avatar" aria-hidden="true"
-          style="background: var(--label-{{ none | label_color(person.email) }})">{{- person.name | initials(person.email) -}}</span>
+          style="background: var(--label-{{ hue }}); color: var(--label-{{ hue }}-ink)">{{- person.name | initials(person.email) -}}</span>
     <span class="recipient-label">{{ person.name or person.email }}</span>
     <button type="button" class="recipient-x" data-role="unchip"
             aria-label="Remove {{ person.name or person.email }}">{{ icon("x", class_="size-3") }}</button>

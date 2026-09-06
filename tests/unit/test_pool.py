@@ -28,7 +28,7 @@ from mailosh.security import crypto
 
 def _settings(**kw) -> Settings:
     kw.setdefault("cookie_secure", False)
-    return Settings(stalwart_admin_secret="s", secret_key="k" * 40, **kw)
+    return Settings(stalwart_admin_secret="test-admin-secret-0123456789", secret_key="k" * 40, **kw)
 
 
 def _session_row(sid: str, settings: Settings, *, api_key_id: str = "k1") -> SessionRow:

@@ -50,7 +50,7 @@ from mailosh.web import auth
 
 def _settings(**kw) -> Settings:
     kw.setdefault("cookie_secure", False)
-    return Settings(stalwart_admin_secret="s", secret_key="k" * 40, **kw)
+    return Settings(stalwart_admin_secret="test-admin-secret-0123456789", secret_key="k" * 40, **kw)
 
 
 @pytest.fixture

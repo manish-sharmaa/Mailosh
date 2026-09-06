@@ -96,17 +96,27 @@ function onMail(event) {
   coalesceTimer ??= setTimeout(flush, COALESCE_MS);
 }
 
+// The first `open` after a full page render has nothing to catch up on: the
+// server rendered the list moments ago. Every open after that — a reconnect
+// after a drop, a wake from the bfcache — may have missed events and does.
+let firstOpen = true;
+
 function onOpen() {
   clearTimeout(offlineTimer);
   offlineTimer = null;
   clearInterval(pollTimer);
   pollTimer = null;
   setOffline(false);
+  if (firstOpen) {
+    firstOpen = false;
+    return;
+  }
   // Catch-up: anything delivered while this connection was down was
   // published to a hub nobody was subscribed to, so it is simply gone.
-  // One refetch on every open (including the first, right after page
-  // load) is the cheap, always-correct answer — it morphs, so a page that
-  // was already current does not visibly change.
+  // One refetch on every reopen is the cheap, always-correct answer — it
+  // morphs, so a page that was already current does not visibly change.
+  // (It used to run on the first open too, which re-fetched the list the
+  // server had just rendered: a duplicate 70–90 KB request on every load.)
   // `lastId`, not `source.lastEventId`: that property lives on the
   // `MessageEvent`, not on the `EventSource`, so reading it here was always
   // `undefined` and every catch-up went out with `id: null`.

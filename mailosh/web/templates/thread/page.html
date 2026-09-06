@@ -35,11 +35,26 @@
     <button type="button" class="btn-icon size-7" data-action="archive" title="Archive (e)">
       {{ icon("archive", class_="size-4", label="Archive") }}
     </button>
+    <button type="button" class="btn-icon size-7" data-action="spam" title="Report spam (!)">
+      {{ icon("shield-alert", class_="size-4", label="Report spam") }}
+    </button>
     <button type="button" class="btn-icon size-7" data-action="delete" title="Delete (#)">
       {{ icon("trash-2", class_="size-4", label="Delete") }}
     </button>
     <button type="button" class="btn-icon size-7" data-action="unread" title="Mark as unread (Shift+U)">
       {{ icon("mail", class_="size-4", label="Mark as unread") }}
+    </button>
+    {# Spec §7: "the same action bar as the list". Label and Move open the
+       same popovers the selection toolbar does, aimed at this conversation
+       through `om.targets()`; star toggles by what `s` would do. #}
+    <button type="button" class="btn-icon size-7" data-action="star" title="Star (s)">
+      {{ icon("star", class_="size-4", label="Star") }}
+    </button>
+    <button type="button" class="btn-icon size-7" data-role="label-picker" title="Label as (l)">
+      {{ icon("tag", class_="size-4", label="Label as") }}
+    </button>
+    <button type="button" class="btn-icon size-7" data-role="label-move" title="Move to (v)">
+      {{ icon("archive-restore", class_="size-4", label="Move to") }}
     </button>
     <span class="toolbar-sep"></span>
     {# The same three actions `r` / `a` / `f` run, through the same
