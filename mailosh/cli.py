@@ -156,6 +156,23 @@ def _format_dns_block(
     cannot know the server's public address, so the value is an explicit
     placeholder rather than a plausible-looking guess.
 
+    That stanza spends most of its length warning *against* the AAAA half,
+    which is not a hedge: the block used to say "AAAA, if you have one", and
+    a cloud VPS always has one. Publishing it is only correct if IPv6 reaches
+    the containers, and under the `docker compose` + ufw layout
+    ``docs/hosting.md`` describes it does not — Docker writes `iptables`
+    rules and not `ip6tables` ones, so IPv4 bypasses ufw to reach the
+    published ports while IPv6 is dropped by ufw's INPUT policy. The result
+    answers ping6 with every port black-holed, which is a worse failure than
+    omitting the record: a missing AAAA makes senders use IPv4 immediately,
+    while an unroutable one makes them wait out a connection timeout first,
+    so inbound mail is merely *slow* and nothing anywhere reports an error.
+    Found on this project's own production deployment, where it cost ~250 ms
+    on every new browser connection to the webmail host (0.65 s TTFB against
+    0.14 s once the record was removed) on top of whatever it was costing
+    inbound mail. The `nc -6` checks are printed because "do you have IPv6"
+    is the wrong question and "does IPv6 answer on port 25" is the right one.
+
     The SPF stanza carries the relay variant alongside the direct-send
     record. ``v=spf1 mx ~all`` authorises the MX host's own addresses, which
     is correct only when this server delivers outbound mail itself on port
@@ -228,7 +245,25 @@ def _format_dns_block(
             "                  and mail never arrives if the name does not resolve)",
             f"  Host:  {mx_target}",
             "  Value: <this server's public IPv4 address>        (A)",
-            "         <this server's public IPv6 address>        (AAAA, if you have one)",
+            "         <this server's public IPv6 address>        (AAAA — read below first)",
+            "",
+            "  Publish the AAAA only if this server actually ANSWERS on IPv6. Having",
+            "  an IPv6 address is not the same thing: Docker manages `iptables` but",
+            "  not `ip6tables`, so with the ufw setup docs/hosting.md describes, IPv4",
+            "  reaches the containers while IPv6 stops at ufw's default-DROP INPUT",
+            "  chain. The host answers ping6 and every port is dead.",
+            "",
+            "  An AAAA pointing at ports nothing answers on is worse than no AAAA.",
+            "  Senders that prefer IPv6 — Google does — connect, wait for the",
+            "  timeout, and only then retry over IPv4, so inbound mail is delayed",
+            "  rather than lost, which is why this goes unnoticed for months. Browsers",
+            "  pay it too, stalling on each new connection to the webmail host.",
+            "",
+            "  Check from another machine before publishing, and again after:",
+            "      nc -6 -z -v <this server's public IPv6 address> 25",
+            "      nc -6 -z -v <this server's public IPv6 address> 443",
+            "  If either times out, leave the AAAA off. IPv4-only is a correct,",
+            "  fully-supported deployment; a black-holed AAAA is not.",
             "",
             "MX record",
             f"  Host:     {domain}",

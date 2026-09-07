@@ -169,6 +169,16 @@ In order, with the reason each one exists.
 2. **Reverse DNS (PTR)** for the box's IP, matching the **mail** hostname (`mail.mailosh.com`), not the webmail one. Set it in your provider's console. A missing or mismatched PTR is the single most common reason self-hosted mail lands in spam.
 3. **Outbound port 25.** Most budget VPS providers block it by default, some permanently. `docs/hosting.md` has the per-provider table and the relay alternatives; sort this out before you migrate a mailbox, not after.
 4. **Firewall.** Allow exactly the §3.1 list. Docker publishes ports by writing DNAT rules that on many distributions bypass a `ufw`/`firewalld` policy entirely — check what is actually reachable from outside rather than what your firewall rules say.
+
+   That bypass is **IPv4-only**, and the asymmetry is the trap: Docker writes `iptables` rules and not `ip6tables` ones, so v4 sails past `ufw` to the published ports while v6 is dropped by `ufw`'s default `INPUT` policy. A box in this state answers `ping6` with every service port black-holed — so if you publish `AAAA` records for it (§3's DNS block offers them), senders that prefer IPv6 wait out a connection timeout before retrying over IPv4, and browsers stall on each new connection to the webmail host. Inbound mail still arrives, just late, and nothing logs an error, which is why this survives for months.
+
+   This was live on this project's own deployment: removing the two `AAAA` records took webmail TTFB from 0.65 s to 0.14 s. Verify from another machine, per port, not per host:
+
+   ```bash
+   nc -6 -z -v <the box's IPv6 address> 25    # and 443, 465, 587, 993
+   ```
+
+   If those time out, either leave the `AAAA` records unpublished — IPv4-only is a fully supported deployment — or give Docker IPv6 (`"ip6tables": true` plus an IPv6 subnet in `/etc/docker/daemon.json`) and open the §3.1 ports over v6 in `ufw`, then re-check with the same command before publishing.
 5. **`.env`**, from `.env.example`, `chmod 600`. Generate every secret; the app refuses to start while `MAILOSH_SECRET_KEY` begins with `change-me`, and the prod overlay refuses to render while the others are unset. Delete `MAILOSH_DEMO_USER` / `MAILOSH_DEMO_PASSWORD` — they name a dev mailbox and nothing in the web app reads them.
 6. **Stalwart's own first-boot setup.** A fresh Stalwart container starts in *bootstrap mode*: only its HTTP port is up and no mail listeners are running at all, until `x:Bootstrap/set` completes and the server restarts. Meanwhile `/healthz/live` answers 200 and `docker compose ps` says *healthy*, so nothing signals the problem.
 

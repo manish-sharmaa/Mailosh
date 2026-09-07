@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Menus close when you click away from them. The account menu, advanced
+  search, the search chips and a message's ⋮ all used to stay open until
+  you clicked the button again.
+- `mailosh setup` no longer suggests publishing an `AAAA` record without
+  saying what has to be true first. Docker only manages the IPv4 firewall,
+  so on a stock setup the box answers `ping6` with every port closed —
+  and an `AAAA` pointing there makes senders wait out a timeout before
+  falling back to IPv4, delaying inbound mail with nothing in the logs.
+  The DNS block now prints the two `nc -6` checks to run before publishing.
+
 ## 0.2.0 — 2026-09-06
 
 ### Settings

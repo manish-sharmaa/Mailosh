@@ -1219,6 +1219,43 @@ def test_dns_block_includes_an_a_record_for_the_mx_target():
     assert "<this server's public IPv4 address>" in out
 
 
+def test_dns_block_warns_that_an_aaaa_needs_ipv6_to_actually_answer():
+    """The AAAA half of that stanza used to read "if you have one" -- and a
+    cloud VPS always has one, so the honest answer was always yes.
+
+    It is the wrong question. Under the `docker compose` + ufw layout
+    `docs/hosting.md` describes, Docker writes `iptables` rules and not
+    `ip6tables` ones: IPv4 bypasses ufw and reaches the published ports
+    while IPv6 is dropped by ufw's INPUT policy. The box answers ping6 with
+    every port black-holed, and publishing an AAAA for it is worse than
+    publishing nothing -- a sender that prefers IPv6 (Google does) waits out
+    a connection timeout before falling back, so inbound mail goes slow
+    rather than missing and no error is logged anywhere. This was live on
+    this project's own deployment.
+
+    So the block has to say what to verify, not just what to publish.
+    """
+    from mailosh.cli import _format_dns_block
+
+    out = _format_dns_block(
+        "mailosh.com",
+        DkimRecord(host="sel._domainkey.mailosh.com", value="v=DKIM1; k=rsa; p=X"),
+    )
+
+    # The question the operator has to answer is "does it answer", not "does
+    # it exist" -- the old wording invited the second one.
+    assert "if you have one" not in out
+    assert "only if this server actually ANSWERS on IPv6" in out
+    # A runnable check beats a caveat: both ports, because a webmail-only
+    # probe would pass a box whose port 25 is still black-holed.
+    assert "nc -6 -z -v <this server's public IPv6 address> 25" in out
+    assert "nc -6 -z -v <this server's public IPv6 address> 443" in out
+    # And the way out, so "leave it off" doesn't read as a degraded setup.
+    assert "IPv4-only is a correct" in out
+    # Still before the MX stanza that depends on the name resolving at all.
+    assert out.index("A / AAAA") < out.index("MX record")
+
+
 def test_dns_block_gives_the_relay_spf_variant_next_to_the_direct_send_one():
     """`v=spf1 mx ~all` authorises the MX host's own addresses, which is
     correct only for direct send on port 25. `docs/hosting.md` recommends
