@@ -37,7 +37,22 @@ from mailosh.services import outbound
 from mailosh.services.outbound import OutboundState, Outcome, classify
 
 ACCOUNT = "c"
-NOW = datetime(2026, 9, 6, 12, 0, tzinfo=UTC)
+#: "Just now", by the real clock -- see `NOW()` in `test_outbound_routes.py`
+#: for the full story.
+#:
+#: Most calls here inject `now=NOW` and are self-consistent whatever it
+#: says, but not all of them can: `states_for` takes no `now` and filters on
+#: `created_at >= datetime.now(UTC) - TRACK_FOR` (7 days). With a frozen
+#: literal the rows `_record` seeds age out of that window for real, and
+#: every assertion about them starts failing a week after the date in the
+#: literal -- silently green until then.
+#:
+#: A constant is enough here, unlike in that file: the shortest window these
+#: tests sit inside is seven days, so the minutes between importing this
+#: module and running its last test cannot carry a row out of it. The routes
+#: file is up against `MIN_POLL_INTERVAL`, ten seconds, and needs the value
+#: read per call.
+NOW = datetime.now(UTC).replace(microsecond=0)
 
 #: `EmailSubmission/get` exactly as Stalwart 0.16 answered it live (one
 #: entry of the response recorded in the commit that added this module):

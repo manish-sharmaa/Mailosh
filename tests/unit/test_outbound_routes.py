@@ -34,7 +34,33 @@ from mailosh.security.exchange import VerifiedAccount
 from mailosh.web import deps
 from mailosh.web.app import create_app
 
-NOW = datetime(2026, 9, 6, 12, 0, tzinfo=UTC)
+
+def NOW() -> datetime:
+    """ "Just now", read at the moment the caller runs.
+
+    A function and not a constant, which is the whole point. Every field
+    this feeds -- `created_at`, `last_checked_at`, `notified_at` -- is
+    compared by `mailosh.services.outbound` against `datetime.now(UTC)`,
+    never against a value a test injects (a route builds its own `now`;
+    there is nowhere to pass one in). So a fixed value here is not a fixed
+    point, it is a receding one, and both windows it has to sit inside
+    expire:
+
+      - `refresh_if_due` re-polls any open row not checked within
+        `MIN_POLL_INTERVAL`, which is **10 seconds**. Once the seeded rows
+        are due, the poll runs against a `TrackingClient` with nothing
+        scripted for these ids and clears the very states the test seeded:
+        the pills vanish and the assertions fail.
+      - `TRACK_FOR` (7 days) then drops the rows out of `states_for`
+        altogether, which would take out every test in this file.
+
+    This was `datetime(2026, 9, 6, 12, 0)`, so the suite passed on the day
+    it was written and failed from the next one. Ten seconds is also far
+    shorter than a full run, so evaluating this once at import time is not
+    enough either -- collection happens minutes before these tests execute,
+    and the rows would be stale again by then. It has to be read per call.
+    """
+    return datetime.now(UTC).replace(microsecond=0)
 
 
 def _sent(email_id: str, thread_id: str, *, sender: str = ME, minute: int = 0) -> EmailHeader:
@@ -106,7 +132,7 @@ def _seed(sqlite_url: str, rows: list[dict[str, object]]) -> None:
                     OutboundSubmission(
                         user_id=user.id,
                         account_id=ACCOUNT,
-                        created_at=NOW,
+                        created_at=NOW(),
                         **row,
                     )
                 )
@@ -137,20 +163,25 @@ def test_sent_rows_render_queued_and_bounced_pills_and_nothing_for_the_rest(app,
     _seed(
         sqlite_url,
         [
-            {"submission_id": "s-q", "email_id": "e-q", "state": "queued", "last_checked_at": NOW},
+            {
+                "submission_id": "s-q",
+                "email_id": "e-q",
+                "state": "queued",
+                "last_checked_at": NOW(),
+            },
             {
                 "submission_id": "s-b",
                 "email_id": "e-b",
                 "state": "failed",
                 "detail": "bob@x.test: 550 5.1.1 <bob@x.test> user unknown",
-                "notified_at": NOW,
-                "last_checked_at": NOW,
+                "notified_at": NOW(),
+                "last_checked_at": NOW(),
             },
             {
                 "submission_id": "s-ok",
                 "email_id": "e-ok",
                 "state": "delivered",
-                "last_checked_at": NOW,
+                "last_checked_at": NOW(),
             },
         ],
     )
@@ -268,7 +299,7 @@ def test_thread_header_shows_the_pill_when_the_newest_message_is_mine(app, sqlit
                 "email_id": "e-b",
                 "state": "failed",
                 "detail": "bob@x.test: 550 nope",
-                "notified_at": NOW,
+                "notified_at": NOW(),
             }
         ],
     )
