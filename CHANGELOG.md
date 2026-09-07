@@ -1,16 +1,27 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 — 2026-09-07
 
-- Menus close when you click away from them. The account menu, advanced
-  search, the search chips and a message's ⋮ all used to stay open until
-  you clicked the button again.
-- `mailosh setup` no longer suggests publishing an `AAAA` record without
-  saying what has to be true first. Docker only manages the IPv4 firewall,
-  so on a stock setup the box answers `ping6` with every port closed —
-  and an `AAAA` pointing there makes senders wait out a timeout before
-  falling back to IPv4, delaying inbound mail with nothing in the logs.
-  The DNS block now prints the two `nc -6` checks to run before publishing.
+A small one: an annoying menu bug, and a piece of setup advice that was
+quietly costing people mail.
+
+- **Menus close when you click away from them.** The account menu,
+  advanced search, the search chips and a message's ⋮ all used to stay
+  open until you clicked their button a second time. Escape closes them
+  now too, and puts the focus back where you left it.
+- **`mailosh setup` no longer tells you to publish an `AAAA` record
+  without saying what has to be true first.** It used to offer one "if you
+  have one" — and every VPS has one, so everybody said yes. The catch is
+  that Docker only manages the IPv4 firewall, so on a stock box with `ufw`
+  the server answers `ping6` while every mail and web port is shut over
+  IPv6. Publish an `AAAA` for a machine in that state and senders that
+  prefer IPv6 — Google does — sit through a connection timeout before
+  falling back, so your mail arrives late and nothing in the logs explains
+  why. The DNS block now prints the two checks to run first, and says
+  outright that IPv4-only is a perfectly good way to run this.
+
+  This was live on our own server. Removing the two records took the
+  webmail from 0.65 s to 0.14 s to first byte.
 
 ## 0.2.0 — 2026-09-06
 
